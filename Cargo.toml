@@ -1,0 +1,6 @@
+[package]
+name = "mold"
+version = "0.1.0"
+authors = ["John Weachock <jweachock@gmail.com>"]
+
+[dependencies]
