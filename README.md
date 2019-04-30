@@ -1,6 +1,6 @@
 # Mold
 
-A fresh (ironic? maybe) approach to project task management.
+A fresh (ironic? maybe!) approach to project task management.
 
 ## Why
 
