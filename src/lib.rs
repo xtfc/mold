@@ -4,20 +4,22 @@ use serde_derive::Serialize;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::exit;
 use std::process::Command;
 
-pub type RecipeSet = BTreeMap<String, Recipe>;
-pub type TypeSet = BTreeMap<String, Type>;
+pub type RecipeMap = BTreeMap<String, Recipe>;
+pub type TypeMap = BTreeMap<String, Type>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Moldfile {
+  /// The directory that recipe scripts can be found in
   #[serde(default = "default_recipe_dir")]
   pub recipe_dir: String,
 
-  pub recipes: RecipeSet,
+  /// A map of recipes.
+  pub recipes: RecipeMap,
 
-  pub types: TypeSet,
+  /// A map of interpreter types and characteristics.
+  pub types: TypeMap,
 }
 
 fn default_recipe_dir() -> String {
@@ -26,24 +28,46 @@ fn default_recipe_dir() -> String {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Recipe {
+  /// Which interpreter should be used to execute this script.
   #[serde(alias = "type")]
   pub type_: String,
+
+  /// A short description of the command.
   pub help: Option<String>,
+
+  /// The script file name.
+  ///
+  /// If left undefined, Mold will attempt to discover the recipe name by
+  /// searching the recipe_dir for any files that start with the recipe name and
+  /// have an appropriate extension for the specified interpreter type.
   pub script: Option<PathBuf>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Type {
+  /// A list of arguments used as a shell command.
+  ///
+  /// Any element "?" will be / replaced with the desired script when
+  /// executing. eg:
+  ///   ["python", "-m", "?"]
+  /// will produce the shell command when .exec("foo") is called:
+  ///   $ python -m foo
   pub command: Vec<String>,
 
+  /// A list of extensions used to search for the script name.
+  ///
+  /// These should omit the leading dot.
   #[serde(default = "default_extensions")]
   pub extensions: Vec<String>,
 }
 
 impl Type {
+  /// Execute a file using self.command
   pub fn exec(&self, path: &Path) -> Result<(), Error> {
     let mut args = self.command.clone();
     let command = args.remove(0);
+
+    // replace "?" with the script name
     let args: Vec<_> = args
       .iter()
       .map(|x| if x == "?" { path.to_str().unwrap() } else { x })
@@ -61,9 +85,13 @@ impl Type {
     Ok(())
   }
 
+  /// Attempt to discover an appropriate script in a recipe directory.
   pub fn find(&self, dir: &Path, name: &str) -> Result<PathBuf, Error> {
+    // set up the pathbuf to look for dir/name
     let mut pb = dir.to_path_buf();
     pb.push(name);
+
+    // try all of our known extensions, early returning on the first match
     for ext in &self.extensions {
       pb.set_extension(ext);
       if pb.is_file() {
