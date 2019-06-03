@@ -1,8 +1,8 @@
-// use failure::ResultExt;
 use exitfailure::ExitFailure;
 use mold::Moldfile;
 use std::fs::File;
 use std::io::prelude::*;
+use std::path::Path;
 use structopt::StructOpt;
 
 /// A new front-end for Git
@@ -17,8 +17,12 @@ pub struct Root {
   #[structopt(long = "quiet", short = "q")]
   pub quiet: bool,
 
+  /// dbg! the parsed moldfile
+  #[structopt(long = "debug", short = "d")]
+  pub debug: bool,
+
   /// Which recipe to run
-  pub recipe: String,
+  pub target: String,
 }
 
 fn main() -> Result<(), ExitFailure> {
@@ -31,7 +35,22 @@ fn main() -> Result<(), ExitFailure> {
 
   let data: Moldfile = toml::de::from_str(&contents)?;
 
-  dbg!(data);
+  if args.debug {
+    dbg!(&data);
+  }
+
+  let target = data
+    .recipes
+    .get(&args.target)
+    .ok_or_else(|| failure::err_msg("couldn't locate target"))?;
+  let type_ = data
+    .types
+    .get(&target.type_)
+    .ok_or_else(|| failure::err_msg("couldn't locate type"))?;
+
+  let script = type_.find(Path::new(&data.recipe_dir), &args.target)?;
+
+  type_.exec(&script)?;
 
   Ok(())
 }
