@@ -1,0 +1,15 @@
+[types.python]
+command = ["python", "?"]
+extensions = ["py"]
+
+[types.zsh]
+command = ["zsh", "?"]
+extensions = ["sh", "zsh"]
+
+[recipes.shell]
+type = "zsh"
+help = "Test zsh script"
+
+[recipes.python]
+type = "python"
+help = "Test Python script"
