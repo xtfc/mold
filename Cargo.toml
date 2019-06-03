@@ -2,5 +2,21 @@
 name = "mold"
 version = "0.1.0"
 authors = ["John Weachock <jweachock@gmail.com>"]
+edition = "2018"
 
 [dependencies]
+clap = "2.33.0"
+colored = "1.8"
+env_logger = "0.6.1"
+exitcode = "1.1.2"
+exitfailure = "0.5.1"
+failure = "0.1.5"
+log = "0.4.6"
+serde = "1.0.92"
+serde_derive = "1.0.92"
+structopt = "0.2.17"
+toml = "0.5.1"
+
+[[bin]]
+name = "mold"
+path = "src/main.rs"

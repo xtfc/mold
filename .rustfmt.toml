@@ -1,0 +1,4 @@
+tab_spaces = 2
+
+# this isn't stable yet, qq
+# control_brace_style = "ClosingNextLine"
