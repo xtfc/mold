@@ -29,6 +29,7 @@ pub struct Recipe {
   #[serde(alias = "type")]
   pub type_: String,
   pub help: Option<String>,
+  pub script: Option<PathBuf>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
