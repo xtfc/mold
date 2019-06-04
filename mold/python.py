@@ -1,1 +1,2 @@
-print("Hello from Python")
+import os
+print(f"Hello from Python: {os.environ.get('NAME')}")

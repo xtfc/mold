@@ -153,7 +153,7 @@ fn run(args: Args) -> Result<(), Error> {
   // unwrap the script or quit
   match target {
     Recipe::Command(target) => {
-      mold::exec(target.command.iter().map(AsRef::as_ref).collect())?;
+      mold::exec(target.command.iter().map(AsRef::as_ref).collect(), &data.environment)?;
     }
     Recipe::Script(target) => {
       // what the interpreter is for this recipe
@@ -174,7 +174,7 @@ fn run(args: Args) -> Result<(), Error> {
         None => type_.find(&mold_dir, &target_name)?,
       };
 
-      type_.exec(&script.to_str().unwrap())?;
+      type_.exec(&script.to_str().unwrap(), &data.environment)?;
     }
     Recipe::Group(_) => return Err(failure::err_msg("Can't execute a group")),
   };

@@ -1,1 +1,1 @@
-echo "Hello from shell"
+echo "Hello from shell: $NAME"

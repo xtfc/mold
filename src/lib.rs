@@ -28,7 +28,7 @@ pub struct Moldfile {
 
   /// A list of environment variables used to parametrize recipes
   #[serde(default)]
-  pub env: EnvMap,
+  pub environment: EnvMap,
 }
 
 fn default_recipe_dir() -> String {
@@ -117,14 +117,14 @@ pub struct Type {
 
 impl Type {
   /// Execute a file using self.command
-  pub fn exec(&self, cmd: &str) -> Result<(), Error> {
+  pub fn exec(&self, cmd: &str, env: &EnvMap) -> Result<(), Error> {
     let args: Vec<_> = self
       .command
       .iter()
       .map(|x| if x == "?" { cmd } else { x })
       .collect();
 
-    exec(args)?;
+    exec(args, env)?;
 
     Ok(())
   }
@@ -147,12 +147,13 @@ impl Type {
 }
 
 /// Execute an external command
-pub fn exec(cmd: Vec<&str>) -> Result<(), Error> {
+pub fn exec(cmd: Vec<&str>, env: &EnvMap) -> Result<(), Error> {
   let mut args = cmd.clone();
   let command = args.remove(0);
 
   let exit_status = process::Command::new(&command)
     .args(&args[..])
+    .envs(env)
     .spawn()
     .and_then(|mut handle| handle.wait())?;
 
