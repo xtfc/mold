@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use structopt::StructOpt;
 
-/// A new front-end for Git
+/// A fresh task runner
 #[derive(StructOpt, Debug)]
 #[structopt(raw(setting = "structopt::clap::AppSettings::ColoredHelp"))]
 pub struct Args {
