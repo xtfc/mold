@@ -5,8 +5,6 @@ use mold::Moldfile;
 use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
-use std::path::Path;
-use std::path::PathBuf;
 use structopt::StructOpt;
 
 /// A new front-end for Git
@@ -70,7 +68,6 @@ fn run(args: Args) -> Result<(), Error> {
   }
 
   // clone or update all of our remotes if we haven't already
-  // FIXME how should this work recursively...?
   for (name, recipe) in &data.recipes {
     match recipe {
       mold::Recipe::Script(_) => {}
@@ -97,6 +94,7 @@ fn run(args: Args) -> Result<(), Error> {
         let group_name = splits[0];
         let recipe_name = splits[1];
 
+        // FIXME pull the moldfile from the group config
         let new_args = Args {
           file: mold_dir.join(group_name).join("moldfile"),
           target: Some(recipe_name.to_string()),

@@ -43,10 +43,18 @@ pub struct Group {
   /// Git ref to keep up with
   #[serde(alias = "ref", default = "default_git_ref")]
   pub ref_: String,
+
+  /// Moldfile to look at
+  #[serde(default = "default_moldfile")]
+  pub file: String,
 }
 
 fn default_git_ref() -> String {
   "origin/master".to_string()
+}
+
+fn default_moldfile() -> String {
+  "moldfile".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
