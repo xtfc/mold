@@ -6,6 +6,9 @@ extensions = ["py"]
 command = ["zsh", "?"]
 extensions = ["sh", "zsh"]
 
+[recipes.this]
+url = "https://github.com/scizzorz/mold.git"
+
 [recipes.shell]
 type = "zsh"
 help = "Test zsh script"

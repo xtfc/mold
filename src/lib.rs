@@ -6,6 +6,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 
+pub mod remote;
+
 pub type RecipeMap = BTreeMap<String, Recipe>;
 pub type TypeMap = BTreeMap<String, Type>;
 
@@ -23,11 +25,40 @@ pub struct Moldfile {
 }
 
 fn default_recipe_dir() -> String {
-  "./recipes".to_string()
+  "./mold".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Recipe {
+#[serde(untagged)]
+pub enum Recipe {
+  Group(Group),
+  Script(Script),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Group {
+  /// Git URL of a remote repo
+  pub url: String,
+
+  /// Git ref to keep up with
+  #[serde(alias = "ref", default = "default_git_ref")]
+  pub ref_: String,
+
+  /// Moldfile to look at
+  #[serde(default = "default_moldfile")]
+  pub file: String,
+}
+
+fn default_git_ref() -> String {
+  "origin/master".to_string()
+}
+
+fn default_moldfile() -> String {
+  "moldfile".to_string()
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Script {
   /// Which interpreter should be used to execute this script.
   #[serde(alias = "type")]
   pub type_: String,
