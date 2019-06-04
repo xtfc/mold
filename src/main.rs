@@ -153,6 +153,7 @@ fn run(args: Args) -> Result<(), Error> {
           }
 
           // we need to look it up based on our interpreter's known extensions
+          // FIXME or what if we have a .command or something so we can run `cargo build` instead of needing `mold/cargo-build.sh`?
           None => type_.find(&mold_dir, &target_name)?,
         };
 
