@@ -24,11 +24,11 @@ pub struct Root {
   #[structopt(long = "debug", short = "d")]
   pub debug: bool,
 
-  #[structopt(long = "foo", short = "o")]
-  pub foo: bool,
+  #[structopt(long = "update", short = "u")]
+  pub update: bool,
 
   /// Which recipe to run
-  pub target: String,
+  pub target: Option<String>,
 }
 
 fn main() -> Result<(), ExitFailure> {
@@ -52,7 +52,8 @@ fn main() -> Result<(), ExitFailure> {
     fs::create_dir(".mold")?;
   }
 
-  // clone all of our remotes if we can
+  // clone or update all of our remotes if we haven't already
+  // FIXME how should this work recursively...?
   for (name, recipe) in &data.recipes {
     match recipe {
       mold::Recipe::Script(_) => {}
@@ -62,11 +63,23 @@ fn main() -> Result<(), ExitFailure> {
         if !pb.is_dir() {
           remote::clone(&g.url, &pb)?;
         }
+        else if args.update {
+          remote::checkout(&pb, &g.ref_)?;
+        }
       }
     }
   }
 
-  /* FIXME this is a little broken for now.
+  /*
+  // FIXME this is a little broken for now because of the new remote things,
+  // but I'm planning to make it so the groups act as a namespace, eg:
+  //   $ mold this:shell
+  // is the equivalent of:
+  //   $ mold -f .mold/this/moldfile shell
+
+  // FIXME also target can be None, in which case we should just list out the name and help values
+  // for everything, and then maybe recurse into groups?
+
   // which recipe we're trying to execute
   let target = data
     .recipes
@@ -83,6 +96,7 @@ fn main() -> Result<(), ExitFailure> {
   let script = match &target.script {
     // either it was explicitly set in the moldfile, or...
     Some(x) => {
+      // FIXME recipe_dir needs to be localized to where the moldfile is
       let mut pb = PathBuf::from(&data.recipe_dir);
       pb.push(x);
       pb

@@ -72,6 +72,7 @@ fn print(state: &mut State) {
 
 pub fn clone(url: &str, path: &Path) -> Result<(), git2::Error> {
   println!("Cloning {} into {}...", url, path.display());
+
   let state = RefCell::new(State {
     progress: None,
     total: 0,
@@ -105,5 +106,11 @@ pub fn clone(url: &str, path: &Path) -> Result<(), git2::Error> {
     .clone(url, path)?;;
   println!("");
 
+  Ok(())
+}
+
+pub fn checkout(path: &Path, ref_: &str) -> Result<(), git2::Error> {
+  println!("Updating {} to {}...", path.display(), ref_);
+  // FIXME do this thing
   Ok(())
 }
