@@ -14,96 +14,70 @@
 
 use colored::*;
 use failure::Error;
-use git2::build::{CheckoutBuilder, RepoBuilder};
+use git2::build::CheckoutBuilder;
+use git2::build::RepoBuilder;
+use git2::FetchOptions;
+use git2::RemoteCallbacks;
 use git2::Repository;
-use git2::{FetchOptions, Progress, RemoteCallbacks};
 use std::cell::RefCell;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::io;
+use std::io::Write;
+use std::path::Path;
+use std::time::Instant;
 
-struct State {
-  progress: Option<Progress<'static>>,
-  total: usize,
-  current: usize,
-  path: Option<PathBuf>,
-  newline: bool,
+struct State<'a> {
+  start: Instant,
+  present: &'a str,
+  past: &'a str,
+  dots: usize,
+  label: &'a str,
 }
 
-fn print(state: &mut State) {
-  let stats = state.progress.as_ref().unwrap();
-  let network_pct = (100 * stats.received_objects()) / stats.total_objects();
-  let index_pct = (100 * stats.indexed_objects()) / stats.total_objects();
-  let co_pct = if state.total > 0 {
-    (100 * state.current) / state.total
-  } else {
-    0
-  };
-  let kbytes = stats.received_bytes() / 1024;
-  if stats.received_objects() == stats.total_objects() {
-    if !state.newline {
-      println!("");
-      state.newline = true;
-    }
+fn print_progress(state: &mut State) {
+  let duration = (Instant::now() - state.start).as_millis() as usize;
+  let dotlist = [
+    "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
+  ];
+  if duration > 33 {
+    state.start = Instant::now();
+    state.dots = (state.dots + 1) % dotlist.len();
     print!(
-      "Resolving deltas {}/{}\r",
-      stats.indexed_deltas(),
-      stats.total_deltas()
+      "{} {}... {}\r",
+      state.present.yellow(),
+      state.label,
+      dotlist[state.dots]
     );
-  } else {
-    print!(
-      "net {:3}% ({:4} kb, {:5}/{:5})  /  idx {:3}% ({:5}/{:5})  \
-       /  chk {:3}% ({:4}/{:4}) {}\r",
-      network_pct,
-      kbytes,
-      stats.received_objects(),
-      stats.total_objects(),
-      index_pct,
-      stats.indexed_objects(),
-      stats.total_objects(),
-      co_pct,
-      state.current,
-      state.total,
-      state
-        .path
-        .as_ref()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default()
-    )
+    io::stdout().flush().unwrap();
   }
+}
+
+fn print_done(state: &mut State) {
+  println!("{} {}     ", state.past.green(), state.label);
   io::stdout().flush().unwrap();
 }
 
 pub fn clone(url: &str, path: &Path) -> Result<(), Error> {
-  println!(
-    "{} {} into {}...",
-    "     Cloning".green(),
-    url,
-    path.display()
-  );
+  let label = format!("{} into {}", url, path.display());
 
   let state = RefCell::new(State {
-    progress: None,
-    total: 0,
-    current: 0,
-    path: None,
-    newline: false,
+    start: Instant::now(),
+    present: "     Cloning",
+    past: "      Cloned",
+    label: &label,
+    dots: 0,
   });
 
   let mut cb = RemoteCallbacks::new();
-  cb.transfer_progress(|stats| {
+  cb.transfer_progress(|_| {
     let mut state = state.borrow_mut();
-    state.progress = Some(stats.to_owned());
-    print(&mut *state);
+    print_progress(&mut *state);
     true
   });
 
   let mut co = CheckoutBuilder::new();
-  co.progress(|path, cur, total| {
+  co.progress(|_, _, _| {
     let mut state = state.borrow_mut();
-    state.path = path.map(|p| p.to_path_buf());
-    state.current = cur;
-    state.total = total;
-    print(&mut *state);
+    print_progress(&mut *state);
   });
 
   let mut fo = FetchOptions::new();
@@ -112,35 +86,29 @@ pub fn clone(url: &str, path: &Path) -> Result<(), Error> {
     .fetch_options(fo)
     .with_checkout(co)
     .clone(url, path)?;;
-  println!("");
+
+  print_done(&mut state.borrow_mut());
 
   Ok(())
 }
 
 pub fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
-  println!(
-    "{} {} to {}...",
-    "    Updating".green(),
-    path.display(),
-    ref_
-  );
-
   let repo = Repository::discover(path)?;
   let mut remote = repo.find_remote("origin")?;
 
+  let label = &format!("{} to {}", path.display(), ref_);
   let state = RefCell::new(State {
-    progress: None,
-    total: 0,
-    current: 0,
-    path: None,
-    newline: false,
+    start: Instant::now(),
+    present: "    Updating",
+    past: "     Updated",
+    label: &label,
+    dots: 0,
   });
 
   let mut cb = RemoteCallbacks::new();
-  cb.transfer_progress(|stats| {
+  cb.transfer_progress(|_| {
     let mut state = state.borrow_mut();
-    state.progress = Some(stats.to_owned());
-    print(&mut *state);
+    print_progress(&mut *state);
     true
   });
 
