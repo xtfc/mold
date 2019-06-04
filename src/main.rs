@@ -36,7 +36,7 @@ fn main() -> Result<(), ExitFailure> {
   env_logger::init();
 
   // read and deserialize the moldfile
-  let mut file = File::open(args.file)?;
+  let mut file = File::open(&args.file)?;
   let mut contents = String::new();
   file.read_to_string(&mut contents)?;
   let data: Moldfile = toml::de::from_str(&contents)?;
@@ -46,10 +46,18 @@ fn main() -> Result<(), ExitFailure> {
     dbg!(&data);
   }
 
-  // create a .mold directory to store our groups
-  let mold_dir = PathBuf::from(".mold");
+  // find our mold recipe dir and create it if it doesn't exist
+  let mut mold_dir = args.file.clone();
+  mold_dir.pop();
+  mold_dir.push(&data.recipe_dir);
+  let mold_dir = fs::canonicalize(mold_dir)?;
+
   if !mold_dir.is_dir() {
-    fs::create_dir(".mold")?;
+    fs::create_dir(&mold_dir)?;
+  }
+
+  if args.debug {
+    dbg!(&mold_dir);
   }
 
   // clone or update all of our remotes if we haven't already
@@ -95,14 +103,13 @@ fn main() -> Result<(), ExitFailure> {
   let script = match &target.script {
     // either it was explicitly set in the moldfile, or...
     Some(x) => {
-      // FIXME recipe_dir needs to be localized to where the moldfile is
-      let mut pb = PathBuf::from(&data.recipe_dir);
+      let mut pb = mold_dir.clone()
       pb.push(x);
       pb
     }
 
     // we need to look it up based on our interpreter's known extensions
-    None => type_.find(Path::new(&data.recipe_dir), &args.target)?,
+    None => type_.find(&mold_dir, &args.target)?,
   };
 
   type_.exec(&script)?;

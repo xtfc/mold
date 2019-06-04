@@ -25,7 +25,7 @@ pub struct Moldfile {
 }
 
 fn default_recipe_dir() -> String {
-  "./recipes".to_string()
+  "./mold".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
