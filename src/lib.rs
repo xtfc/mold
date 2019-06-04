@@ -50,7 +50,7 @@ pub struct Group {
 }
 
 fn default_git_ref() -> String {
-  "origin/master".to_string()
+  "master".to_string()
 }
 
 fn default_moldfile() -> String {

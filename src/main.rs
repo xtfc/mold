@@ -1,8 +1,8 @@
-use mold::Recipe;
 use exitfailure::ExitFailure;
 use failure::Error;
 use mold::remote;
 use mold::Moldfile;
+use mold::Recipe;
 use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
@@ -72,13 +72,15 @@ fn run(args: Args) -> Result<(), Error> {
   for (name, recipe) in &data.recipes {
     match recipe {
       Recipe::Script(_) => {}
-      Recipe::Group(g) => {
+      Recipe::Group(group) => {
         let mut pb = mold_dir.clone();
         pb.push(name);
+
         if !pb.is_dir() {
-          remote::clone(&g.url, &pb)?;
+          remote::clone(&group.url, &pb)?;
+          remote::checkout(&pb, &group.ref_)?;
         } else if args.update {
-          remote::checkout(&pb, &g.ref_)?;
+          remote::checkout(&pb, &group.ref_)?;
         }
       }
     }
@@ -95,10 +97,15 @@ fn run(args: Args) -> Result<(), Error> {
         let group_name = splits[0];
         let recipe_name = splits[1];
 
-        let target = data.recipes.get(group_name).ok_or_else(|| failure::err_msg("couldn't locate target group"))?;
+        let target = data
+          .recipes
+          .get(group_name)
+          .ok_or_else(|| failure::err_msg("couldn't locate target group"))?;
 
         let target = match target {
-          Recipe::Script(_) => return Err(failure::err_msg("Can't execute a subrecipe of a script")),
+          Recipe::Script(_) => {
+            return Err(failure::err_msg("Can't execute a subrecipe of a script"))
+          }
           Recipe::Group(target) => target,
         };
 

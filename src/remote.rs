@@ -12,7 +12,9 @@
  * <http://creativecommons.org/publicdomain/zero/1.0/>.
  */
 
+use failure::Error;
 use git2::build::{CheckoutBuilder, RepoBuilder};
+use git2::Repository;
 use git2::{FetchOptions, Progress, RemoteCallbacks};
 use std::cell::RefCell;
 use std::io::{self, Write};
@@ -70,7 +72,7 @@ fn print(state: &mut State) {
   io::stdout().flush().unwrap();
 }
 
-pub fn clone(url: &str, path: &Path) -> Result<(), git2::Error> {
+pub fn clone(url: &str, path: &Path) -> Result<(), Error> {
   println!("Cloning {} into {}...", url, path.display());
 
   let state = RefCell::new(State {
@@ -109,8 +111,34 @@ pub fn clone(url: &str, path: &Path) -> Result<(), git2::Error> {
   Ok(())
 }
 
-pub fn checkout(path: &Path, ref_: &str) -> Result<(), git2::Error> {
+pub fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
   println!("Updating {} to {}...", path.display(), ref_);
-  // FIXME do this thing
+
+  let repo = Repository::discover(path)?;
+  let mut remote = repo.find_remote("origin")?;
+
+  let state = RefCell::new(State {
+    progress: None,
+    total: 0,
+    current: 0,
+    path: None,
+    newline: false,
+  });
+
+  let mut cb = RemoteCallbacks::new();
+  cb.transfer_progress(|stats| {
+    let mut state = state.borrow_mut();
+    state.progress = Some(stats.to_owned());
+    print(&mut *state);
+    true
+  });
+
+  let mut fo = FetchOptions::new();
+  fo.remote_callbacks(cb);
+  remote.fetch(&[ref_], Some(&mut fo), None)?;
+
+  let name = String::from("refs/remotes/origin/") + ref_;
+  repo.set_head(&name)?;
+
   Ok(())
 }
