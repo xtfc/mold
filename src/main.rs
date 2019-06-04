@@ -1,4 +1,5 @@
 use exitfailure::ExitFailure;
+use failure::Error;
 use mold::remote;
 use mold::Moldfile;
 use std::fs;
@@ -11,7 +12,7 @@ use structopt::StructOpt;
 /// A new front-end for Git
 #[derive(StructOpt, Debug)]
 #[structopt(raw(setting = "structopt::clap::AppSettings::ColoredHelp"))]
-pub struct Root {
+pub struct Args {
   /// Path to the moldfile
   #[structopt(long = "file", short = "f", default_value = "moldfile")]
   pub file: std::path::PathBuf,
@@ -32,9 +33,15 @@ pub struct Root {
 }
 
 fn main() -> Result<(), ExitFailure> {
-  let args = Root::from_args();
+  let args = Args::from_args();
   env_logger::init();
 
+  run(args)?;
+
+  Ok(())
+}
+
+fn run(args: Args) -> Result<(), Error> {
   // read and deserialize the moldfile
   // FIXME this should probably do a "discover"-esque thing and crawl up the tree
   // looking for one
@@ -79,19 +86,27 @@ fn main() -> Result<(), ExitFailure> {
     }
   }
 
-  match args.target {
+  match &args.target {
     None => {
       // FIXME pretty print please
       dbg!(&data.recipes);
     }
     Some(target_name) => {
-      if target_name.contains("/") {
-        // FIXME recurse
-      }
-      else {
+      if target_name.contains('/') {
+        let splits: Vec<_> = target_name.splitn(2, '/').collect();
+        let group_name = splits[0];
+        let recipe_name = splits[1];
+
+        let new_args = Args {
+          file: mold_dir.join(group_name).join("moldfile"),
+          target: Some(recipe_name.to_string()),
+          ..args
+        };
+        run(new_args)?;
+      } else {
         let target = data
           .recipes
-          .get(&target_name)
+          .get(target_name)
           .ok_or_else(|| failure::err_msg("couldn't locate target"))?;
 
         match target {
@@ -107,7 +122,7 @@ fn main() -> Result<(), ExitFailure> {
               // either it was explicitly set in the moldfile, or...
               Some(x) => {
                 let mut pb = mold_dir.clone();
-                  pb.push(x);
+                pb.push(x);
                 pb
               }
 
