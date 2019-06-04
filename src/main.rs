@@ -1,3 +1,4 @@
+use mold::Recipe;
 use exitfailure::ExitFailure;
 use failure::Error;
 use mold::remote;
@@ -70,8 +71,8 @@ fn run(args: Args) -> Result<(), Error> {
   // clone or update all of our remotes if we haven't already
   for (name, recipe) in &data.recipes {
     match recipe {
-      mold::Recipe::Script(_) => {}
-      mold::Recipe::Group(g) => {
+      Recipe::Script(_) => {}
+      Recipe::Group(g) => {
         let mut pb = mold_dir.clone();
         pb.push(name);
         if !pb.is_dir() {
@@ -94,9 +95,15 @@ fn run(args: Args) -> Result<(), Error> {
         let group_name = splits[0];
         let recipe_name = splits[1];
 
-        // FIXME pull the moldfile from the group config
+        let target = data.recipes.get(group_name).ok_or_else(|| failure::err_msg("couldn't locate target group"))?;
+
+        let target = match target {
+          Recipe::Script(_) => return Err(failure::err_msg("Can't execute a subrecipe of a script")),
+          Recipe::Group(target) => target,
+        };
+
         let new_args = Args {
-          file: mold_dir.join(group_name).join("moldfile"),
+          file: mold_dir.join(group_name).join(&target.file),
           target: Some(recipe_name.to_string()),
           ..args
         };
@@ -107,33 +114,32 @@ fn run(args: Args) -> Result<(), Error> {
           .get(target_name)
           .ok_or_else(|| failure::err_msg("couldn't locate target"))?;
 
-        match target {
-          mold::Recipe::Script(target) => {
-            // what the interpreter is for this recipe
-            let type_ = data
-              .types
-              .get(&target.type_)
-              .ok_or_else(|| failure::err_msg("couldn't locate type"))?;
+        // unwrap the script or quit
+        let target = match target {
+          Recipe::Script(target) => target,
+          Recipe::Group(_) => return Err(failure::err_msg("Can't execute a group")),
+        };
 
-            // find the script file to execute
-            let script = match &target.script {
-              // either it was explicitly set in the moldfile, or...
-              Some(x) => {
-                let mut pb = mold_dir.clone();
-                pb.push(x);
-                pb
-              }
+        // what the interpreter is for this recipe
+        let type_ = data
+          .types
+          .get(&target.type_)
+          .ok_or_else(|| failure::err_msg("couldn't locate type"))?;
 
-              // we need to look it up based on our interpreter's known extensions
-              None => type_.find(&mold_dir, &target_name)?,
-            };
-
-            type_.exec(&script)?;
+        // find the script file to execute
+        let script = match &target.script {
+          // either it was explicitly set in the moldfile, or...
+          Some(x) => {
+            let mut pb = mold_dir.clone();
+            pb.push(x);
+            pb
           }
-          mold::Recipe::Group(_target) => {
-            println!("Can't execute a group");
-          }
-        }
+
+          // we need to look it up based on our interpreter's known extensions
+          None => type_.find(&mold_dir, &target_name)?,
+        };
+
+        type_.exec(&script)?;
       }
     }
   }
