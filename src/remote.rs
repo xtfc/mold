@@ -121,8 +121,7 @@ pub fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
 
   let mut checkout = CheckoutBuilder::new();
   checkout.force();
-  repo
-    .checkout_head(Some(&mut checkout))?;
+  repo.checkout_head(Some(&mut checkout))?;
 
   print_done(&mut state.borrow_mut());
 

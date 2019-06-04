@@ -2,26 +2,30 @@
 command = ["python", "?"]
 extensions = ["py"]
 
-[types.zsh]
-command = ["zsh", "?"]
-extensions = ["sh", "zsh"]
+[types.sh]
+command = ["sh", "?"]
+extensions = ["sh"]
 
 [recipes.this]
 url = "https://github.com/scizzorz/mold.git"
 help = "Recursive remote include"
 
 [recipes.shell]
-type = "zsh"
-help = "Test zsh script"
+help = "Test sh script"
+type = "sh"
 
 [recipes.python]
-type = "python"
 help = "Test Python script"
+type = "python"
 
 [recipes.fmt]
-command = ["cargo", "fmt"]
 help = "Format using rustfmt"
+command = ["cargo", "fmt"]
 
 [recipes.build]
-command = ["cargo", "build"]
 help = "Build using cargo"
+command = ["cargo", "build"]
+
+[recipes.lint]
+help = "Lint using clippy"
+type = "sh"
