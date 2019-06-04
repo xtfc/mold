@@ -8,6 +8,7 @@ extensions = ["sh", "zsh"]
 
 [recipes.this]
 url = "https://github.com/scizzorz/mold.git"
+help = "Recursive remote include"
 
 [recipes.shell]
 type = "zsh"

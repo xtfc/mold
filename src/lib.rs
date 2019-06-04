@@ -47,6 +47,10 @@ pub struct Group {
   /// Moldfile to look at
   #[serde(default = "default_moldfile")]
   pub file: String,
+
+  /// A short description of the group's contents
+  #[serde(default)]
+  pub help: String,
 }
 
 fn default_git_ref() -> String {
@@ -64,7 +68,8 @@ pub struct Script {
   pub type_: String,
 
   /// A short description of the command.
-  pub help: Option<String>,
+  #[serde(default)]
+  pub help: String,
 
   /// The script file name.
   ///

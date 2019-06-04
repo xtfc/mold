@@ -1,3 +1,4 @@
+use colored::*;
 use exitfailure::ExitFailure;
 use failure::Error;
 use mold::remote;
@@ -86,10 +87,19 @@ fn run(args: Args) -> Result<(), Error> {
     }
   }
 
+  if args.update {
+    return Ok(());
+  }
+
   match &args.target {
     None => {
-      // FIXME pretty print please
-      dbg!(&data.recipes);
+      for (name, recipe) in &data.recipes {
+        let help = match recipe {
+          Recipe::Script(s) => &s.help,
+          Recipe::Group(g) => &g.help,
+        };
+        println!("{:>12} {}", name.cyan(), help);
+      }
     }
     Some(target_name) => {
       if target_name.contains('/') {

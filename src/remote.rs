@@ -12,6 +12,7 @@
  * <http://creativecommons.org/publicdomain/zero/1.0/>.
  */
 
+use colored::*;
 use failure::Error;
 use git2::build::{CheckoutBuilder, RepoBuilder};
 use git2::Repository;
@@ -73,7 +74,7 @@ fn print(state: &mut State) {
 }
 
 pub fn clone(url: &str, path: &Path) -> Result<(), Error> {
-  println!("Cloning {} into {}...", url, path.display());
+  println!("{} {} into {}...", "     Cloning".green(), url, path.display());
 
   let state = RefCell::new(State {
     progress: None,
@@ -112,7 +113,7 @@ pub fn clone(url: &str, path: &Path) -> Result<(), Error> {
 }
 
 pub fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
-  println!("Updating {} to {}...", path.display(), ref_);
+  println!("{} {} to {}...", "    Updating".green(), path.display(), ref_);
 
   let repo = Repository::discover(path)?;
   let mut remote = repo.find_remote("origin")?;
