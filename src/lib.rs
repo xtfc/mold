@@ -10,6 +10,7 @@ pub mod remote;
 
 pub type RecipeMap = BTreeMap<String, Recipe>;
 pub type TypeMap = BTreeMap<String, Type>;
+pub type EnvMap = BTreeMap<String, String>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Moldfile {
@@ -18,10 +19,16 @@ pub struct Moldfile {
   pub recipe_dir: String,
 
   /// A map of recipes.
+  #[serde(default)]
   pub recipes: RecipeMap,
 
   /// A map of interpreter types and characteristics.
+  #[serde(default)]
   pub types: TypeMap,
+
+  /// A list of environment variables used to parametrize recipes
+  #[serde(default)]
+  pub env: EnvMap,
 }
 
 fn default_recipe_dir() -> String {
@@ -104,7 +111,7 @@ pub struct Type {
   /// A list of extensions used to search for the script name.
   ///
   /// These should omit the leading dot.
-  #[serde(default = "default_extensions")]
+  #[serde(default)]
   pub extensions: Vec<String>,
 }
 
@@ -139,10 +146,7 @@ impl Type {
   }
 }
 
-fn default_extensions() -> Vec<String> {
-  return vec![];
-}
-
+/// Execute an external command
 pub fn exec(cmd: Vec<&str>) -> Result<(), Error> {
   let mut args = cmd.clone();
   let command = args.remove(0);
