@@ -1,5 +1,7 @@
 use exitfailure::ExitFailure;
+use mold::remote;
 use mold::Moldfile;
+use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
@@ -22,6 +24,9 @@ pub struct Root {
   #[structopt(long = "debug", short = "d")]
   pub debug: bool,
 
+  #[structopt(long = "foo", short = "o")]
+  pub foo: bool,
+
   /// Which recipe to run
   pub target: String,
 }
@@ -41,6 +46,27 @@ fn main() -> Result<(), ExitFailure> {
     dbg!(&data);
   }
 
+  // create a .mold directory to store our groups
+  let mold_dir = PathBuf::from(".mold");
+  if !mold_dir.is_dir() {
+    fs::create_dir(".mold")?;
+  }
+
+  // clone all of our remotes if we can
+  for (name, recipe) in &data.recipes {
+    match recipe {
+      mold::Recipe::Script(_) => {}
+      mold::Recipe::Group(g) => {
+        let mut pb = mold_dir.clone();
+        pb.push(name);
+        if !pb.is_dir() {
+          remote::clone(&g.url, &pb)?;
+        }
+      }
+    }
+  }
+
+  /* FIXME this is a little broken for now.
   // which recipe we're trying to execute
   let target = data
     .recipes
@@ -67,6 +93,7 @@ fn main() -> Result<(), ExitFailure> {
   };
 
   type_.exec(&script)?;
+  */
 
   Ok(())
 }
