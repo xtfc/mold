@@ -62,8 +62,7 @@ fn main() -> Result<(), ExitFailure> {
         pb.push(name);
         if !pb.is_dir() {
           remote::clone(&g.url, &pb)?;
-        }
-        else if args.update {
+        } else if args.update {
           remote::checkout(&pb, &g.ref_)?;
         }
       }
