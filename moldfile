@@ -20,6 +20,8 @@ help = "Test Python script"
 
 [recipes.fmt]
 command = ["cargo", "fmt"]
+help = "Format using rustfmt"
 
 [recipes.build]
 command = ["cargo", "build"]
+help = "Build using cargo"
