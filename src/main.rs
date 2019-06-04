@@ -72,71 +72,77 @@ fn run(args: Args) -> Result<(), Error> {
   // clone or update all of our remotes if we haven't already
   for (name, recipe) in &data.recipes {
     match recipe {
+      Recipe::Command(_) => {}
       Recipe::Script(_) => {}
       Recipe::Group(group) => {
-        let mut pb = mold_dir.clone();
-        pb.push(name);
+        let mut path = mold_dir.clone();
+        path.push(name);
 
-        if !pb.is_dir() {
-          remote::clone(&group.url, &pb)?;
-          remote::checkout(&pb, &group.ref_)?;
+        if !path.is_dir() {
+          remote::clone(&group.url, &path)?;
+          remote::checkout(&path, &group.ref_)?;
         } else if args.update {
-          remote::checkout(&pb, &group.ref_)?;
+          remote::checkout(&path, &group.ref_)?;
         }
       }
     }
   }
 
+  // early return if we passed a --update
   if args.update {
     return Ok(());
   }
 
-  match &args.target {
-    None => {
-      for (name, recipe) in &data.recipes {
-        let help = match recipe {
-          Recipe::Script(s) => &s.help,
-          Recipe::Group(g) => &g.help,
-        };
-        println!("{:>12} {}", name.cyan(), help);
-      }
+  // print help if we didn't pass a target
+  if args.target.is_none() {
+    for (name, recipe) in &data.recipes {
+      let (name, help) = match recipe {
+        Recipe::Command(c) => (name.yellow(), &c.help),
+        Recipe::Script(s) => (name.cyan(), &s.help),
+        Recipe::Group(g) => (format!("{}/", name).magenta(), &g.help),
+      };
+      println!("{:>12} {}", name, help);
     }
-    Some(target_name) => {
-      if target_name.contains('/') {
-        let splits: Vec<_> = target_name.splitn(2, '/').collect();
-        let group_name = splits[0];
-        let recipe_name = splits[1];
+    return Ok(());
+  }
 
-        let target = data
-          .recipes
-          .get(group_name)
-          .ok_or_else(|| failure::err_msg("couldn't locate target group"))?;
+  // this is safe because of the is_none() check right above
+  let target_name = args.target.unwrap();
 
-        let target = match target {
-          Recipe::Script(_) => {
-            return Err(failure::err_msg("Can't execute a subrecipe of a script"))
-          }
-          Recipe::Group(target) => target,
-        };
+  if target_name.contains('/') {
+    let splits: Vec<_> = target_name.splitn(2, '/').collect();
+    let group_name = splits[0];
+    let recipe_name = splits[1];
 
-        let new_args = Args {
-          file: mold_dir.join(group_name).join(&target.file),
-          target: Some(recipe_name.to_string()),
-          ..args
-        };
-        run(new_args)?;
-      } else {
-        let target = data
-          .recipes
-          .get(target_name)
-          .ok_or_else(|| failure::err_msg("couldn't locate target"))?;
+    let target = data
+      .recipes
+      .get(group_name)
+      .ok_or_else(|| failure::err_msg("couldn't locate target group"))?;
 
-        // unwrap the script or quit
-        let target = match target {
-          Recipe::Script(target) => target,
-          Recipe::Group(_) => return Err(failure::err_msg("Can't execute a group")),
-        };
+    let target = match target {
+      Recipe::Script(_) => return Err(failure::err_msg("Can't execute a subrecipe of a script")),
+      Recipe::Command(_) => return Err(failure::err_msg("Can't execute a subrecipe of a command")),
+      Recipe::Group(target) => target,
+    };
 
+    let new_args = Args {
+      file: mold_dir.join(group_name).join(&target.file),
+      target: Some(recipe_name.to_string()),
+      ..args
+    };
+    run(new_args)?;
+  } else {
+    let target = data
+      .recipes
+      .get(&target_name)
+      .ok_or_else(|| failure::err_msg("couldn't locate target"))?;
+
+    // unwrap the script or quit
+    match target {
+      Recipe::Command(target) => {
+        mold::exec(target.command.iter().map(AsRef::as_ref).collect())?;
+      }
+      Recipe::Script(target) => {
         // what the interpreter is for this recipe
         let type_ = data
           .types
@@ -145,11 +151,10 @@ fn run(args: Args) -> Result<(), Error> {
 
         // find the script file to execute
         let script = match &target.script {
-          // either it was explicitly set in the moldfile, or...
           Some(x) => {
-            let mut pb = mold_dir.clone();
-            pb.push(x);
-            pb
+            let mut path = mold_dir.clone();
+            path.push(x);
+            path
           }
 
           // we need to look it up based on our interpreter's known extensions
@@ -157,9 +162,10 @@ fn run(args: Args) -> Result<(), Error> {
           None => type_.find(&mold_dir, &target_name)?,
         };
 
-        type_.exec(&script)?;
+        type_.exec(&script.to_str().unwrap())?;
       }
-    }
+      Recipe::Group(_) => return Err(failure::err_msg("Can't execute a group")),
+    };
   }
 
   Ok(())

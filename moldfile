@@ -17,3 +17,9 @@ help = "Test zsh script"
 [recipes.python]
 type = "python"
 help = "Test Python script"
+
+[recipes.fmt]
+command = ["cargo", "fmt"]
+
+[recipes.build]
+command = ["cargo", "build"]

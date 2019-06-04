@@ -4,7 +4,7 @@ use serde_derive::Serialize;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process;
 
 pub mod remote;
 
@@ -33,6 +33,7 @@ fn default_recipe_dir() -> String {
 pub enum Recipe {
   Group(Group),
   Script(Script),
+  Command(Command),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -80,6 +81,16 @@ pub struct Script {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct Command {
+  /// A short description of the command.
+  #[serde(default)]
+  pub help: String,
+
+  /// A list of command arguments
+  pub command: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Type {
   /// A list of arguments used as a shell command.
   ///
@@ -99,24 +110,14 @@ pub struct Type {
 
 impl Type {
   /// Execute a file using self.command
-  pub fn exec(&self, path: &Path) -> Result<(), Error> {
-    let mut args = self.command.clone();
-    let command = args.remove(0);
-
-    // replace "?" with the script name
-    let args: Vec<_> = args
+  pub fn exec(&self, cmd: &str) -> Result<(), Error> {
+    let args: Vec<_> = self
+      .command
       .iter()
-      .map(|x| if x == "?" { path.to_str().unwrap() } else { x })
+      .map(|x| if x == "?" { cmd } else { x })
       .collect();
 
-    let exit_status = Command::new(&command)
-      .args(&args[..])
-      .spawn()
-      .and_then(|mut handle| handle.wait())?;
-
-    if !exit_status.success() {
-      return Err(failure::err_msg("recipe exited with non-zero code"));
-    }
+    exec(args)?;
 
     Ok(())
   }
@@ -140,4 +141,20 @@ impl Type {
 
 fn default_extensions() -> Vec<String> {
   return vec![];
+}
+
+pub fn exec(cmd: Vec<&str>) -> Result<(), Error> {
+  let mut args = cmd.clone();
+  let command = args.remove(0);
+
+  let exit_status = process::Command::new(&command)
+    .args(&args[..])
+    .spawn()
+    .and_then(|mut handle| handle.wait())?;
+
+  if !exit_status.success() {
+    return Err(failure::err_msg("recipe exited with non-zero code"));
+  }
+
+  Ok(())
 }
