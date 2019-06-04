@@ -36,6 +36,8 @@ fn main() -> Result<(), ExitFailure> {
   env_logger::init();
 
   // read and deserialize the moldfile
+  // FIXME this should probably do a "discover"-esque thing and crawl up the tree
+  // looking for one
   let mut file = File::open(&args.file)?;
   let mut contents = String::new();
   file.read_to_string(&mut contents)?;
@@ -77,43 +79,51 @@ fn main() -> Result<(), ExitFailure> {
     }
   }
 
-  /*
-  // FIXME this is a little broken for now because of the new remote things,
-  // but I'm planning to make it so the groups act as a namespace, eg:
-  //   $ mold this:shell
-  // is the equivalent of:
-  //   $ mold -f .mold/this/moldfile shell
-
-  // FIXME also target can be None, in which case we should just list out the name and help values
-  // for everything, and then maybe recurse into groups?
-
-  // which recipe we're trying to execute
-  let target = data
-    .recipes
-    .get(&args.target)
-    .ok_or_else(|| failure::err_msg("couldn't locate target"))?;
-
-  // what the interpreter is for this recipe
-  let type_ = data
-    .types
-    .get(&target.type_)
-    .ok_or_else(|| failure::err_msg("couldn't locate type"))?;
-
-  // find the script file to execute
-  let script = match &target.script {
-    // either it was explicitly set in the moldfile, or...
-    Some(x) => {
-      let mut pb = mold_dir.clone()
-      pb.push(x);
-      pb
+  match args.target {
+    None => {
+      // FIXME pretty print please
+      dbg!(&data.recipes);
     }
+    Some(target_name) => {
+      if target_name.contains("/") {
+        // FIXME recurse
+      }
+      else {
+        let target = data
+          .recipes
+          .get(&target_name)
+          .ok_or_else(|| failure::err_msg("couldn't locate target"))?;
 
-    // we need to look it up based on our interpreter's known extensions
-    None => type_.find(&mold_dir, &args.target)?,
-  };
+        match target {
+          mold::Recipe::Script(target) => {
+            // what the interpreter is for this recipe
+            let type_ = data
+              .types
+              .get(&target.type_)
+              .ok_or_else(|| failure::err_msg("couldn't locate type"))?;
 
-  type_.exec(&script)?;
-  */
+            // find the script file to execute
+            let script = match &target.script {
+              // either it was explicitly set in the moldfile, or...
+              Some(x) => {
+                let mut pb = mold_dir.clone();
+                  pb.push(x);
+                pb
+              }
+
+              // we need to look it up based on our interpreter's known extensions
+              None => type_.find(&mold_dir, &target_name)?,
+            };
+
+            type_.exec(&script)?;
+          }
+          mold::Recipe::Group(_target) => {
+            println!("Can't execute a group");
+          }
+        }
+      }
+    }
+  }
 
   Ok(())
 }
