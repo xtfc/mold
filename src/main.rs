@@ -2,6 +2,7 @@ use colored::*;
 use exitfailure::ExitFailure;
 use failure::Error;
 use mold::remote;
+use mold::EnvMap;
 use mold::Moldfile;
 use mold::Recipe;
 use std::fs;
@@ -36,7 +37,7 @@ fn main() -> Result<(), ExitFailure> {
   let args = Args::from_args();
   env_logger::init();
 
-  run(args)?;
+  run(args, None)?;
 
   Ok(())
 }
@@ -54,7 +55,7 @@ fn print_help(data: &Moldfile) -> Result<(), Error> {
   Ok(())
 }
 
-fn run(args: Args) -> Result<(), Error> {
+fn run(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
   // read and deserialize the moldfile
   // FIXME this should probably do a "discover"-esque thing and crawl up the tree
   // looking for one
@@ -62,6 +63,17 @@ fn run(args: Args) -> Result<(), Error> {
   let mut contents = String::new();
   file.read_to_string(&mut contents)?;
   let data: Moldfile = toml::de::from_str(&contents)?;
+
+  // merge this moldfile's environment with its parent.
+  // the parent has priority and overrides this moldfile because it's called recursively:
+  //   $ mold foo/bar/baz
+  // will call bar/baz with foo as the parent, which will call baz with bar as
+  // the parent.  we want foo's moldfile to override bar's moldfile to override
+  // baz's moldfile, because baz should be the least specialized.
+  let mut env = data.environment.clone();
+  if let Some(prev_env) = prev_env {
+    env.extend(prev_env.into_iter().map(|(k, v)| (k.clone(), v.clone())));
+  }
 
   // optionally spew the parsed structure
   if args.debug {
@@ -78,6 +90,7 @@ fn run(args: Args) -> Result<(), Error> {
     fs::create_dir(&mold_dir)?;
   }
 
+  // debug dump the moldfile
   if args.debug {
     dbg!(&mold_dir);
   }
@@ -130,18 +143,20 @@ fn run(args: Args) -> Result<(), Error> {
       .get(group_name)
       .ok_or_else(|| failure::err_msg("couldn't locate target group"))?;
 
+    // unwrap the group or quit
     let target = match target {
       Recipe::Script(_) => return Err(failure::err_msg("Can't execute a subrecipe of a script")),
       Recipe::Command(_) => return Err(failure::err_msg("Can't execute a subrecipe of a command")),
       Recipe::Group(target) => target,
     };
 
+    // recurse down the line
     let new_args = Args {
       file: mold_dir.join(group_name).join(&target.file),
       target: Some(recipe_name.to_string()),
       ..args
     };
-    return run(new_args);
+    return run(new_args, Some(&env));
   }
 
   // execute a top-level recipe
@@ -153,7 +168,7 @@ fn run(args: Args) -> Result<(), Error> {
   // unwrap the script or quit
   match target {
     Recipe::Command(target) => {
-      mold::exec(target.command.iter().map(AsRef::as_ref).collect(), &data.environment)?;
+      mold::exec(target.command.iter().map(AsRef::as_ref).collect(), &env)?;
     }
     Recipe::Script(target) => {
       // what the interpreter is for this recipe
@@ -174,7 +189,7 @@ fn run(args: Args) -> Result<(), Error> {
         None => type_.find(&mold_dir, &target_name)?,
       };
 
-      type_.exec(&script.to_str().unwrap(), &data.environment)?;
+      type_.exec(&script.to_str().unwrap(), &env)?;
     }
     Recipe::Group(_) => return Err(failure::err_msg("Can't execute a group")),
   };
