@@ -119,5 +119,7 @@ pub fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
   let name = String::from("refs/remotes/origin/") + ref_;
   repo.set_head(&name)?;
 
+  print_done(&mut state.borrow_mut());
+
   Ok(())
 }
