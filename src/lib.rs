@@ -118,6 +118,13 @@ pub struct Type {
   pub extensions: Vec<String>,
 }
 
+#[derive(Debug)]
+pub struct Task {
+  command: String,
+  args: Vec<String>,
+  env: Option<EnvMap>,
+}
+
 impl Moldfile {
   /// Try to locate a moldfile by walking up the directory tree
   fn discover_file(name: &Path) -> Result<PathBuf, Error> {
@@ -175,18 +182,56 @@ impl Moldfile {
   }
 }
 
+impl Task {
+  /// Execute the task
+  pub fn exec(&self) -> Result<(), Error> {
+    let mut command = process::Command::new(&self.command);
+    command.args(&self.args[..]);
+
+    if let Some(env) = &self.env {
+      command.envs(env);
+    }
+
+    let exit_status = command
+      .spawn()
+      .and_then(|mut handle| handle.wait())?;
+
+    if !exit_status.success() {
+      return Err(failure::err_msg("recipe exited with non-zero code"));
+    }
+
+    Ok(())
+  }
+}
+
 impl Type {
   /// Execute a file using self.command
-  pub fn exec(&self, cmd: &str, env: &EnvMap) -> Result<(), Error> {
+  pub fn exec(&self, script: &str, env: &EnvMap) -> Result<(), Error> {
     let args: Vec<_> = self
       .command
       .iter()
-      .map(|x| if x == "?" { cmd } else { x })
+      .map(|x| if x == "?" { script } else { x })
       .collect();
 
     exec(args, env)?;
 
     Ok(())
+  }
+
+  pub fn task(&self, script: &str, env: &EnvMap) -> Task {
+    let mut args: Vec<_> = self
+      .command
+      .iter()
+      .map(|x| if x == "?" { script.to_string() } else { x.to_string() })
+      .collect();
+    let cmd = args.remove(0);
+
+    Task {
+      command: cmd,
+      args: args,
+      env: Some(env.clone()),
+    }
+
   }
 
   /// Attempt to discover an appropriate script in a recipe directory.

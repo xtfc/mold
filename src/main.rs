@@ -1,3 +1,4 @@
+use mold::Task;
 use exitfailure::ExitFailure;
 use failure::Error;
 use mold::remote;
