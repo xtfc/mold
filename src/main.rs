@@ -25,6 +25,10 @@ pub struct Args {
   #[structopt(long = "debug", short = "d")]
   pub debug: bool,
 
+  /// Don't actually execute any commands
+  #[structopt(long = "dry")]
+  pub dry: bool,
+
   #[structopt(long = "update", short = "u")]
   pub update: bool,
 
@@ -95,7 +99,12 @@ fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
   }
 
   for task in &tasks {
+    if args.dry {
+      task.dry();
+    }
+    else{
     task.exec()?;
+  }
   }
 
   Ok(())

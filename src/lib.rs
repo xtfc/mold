@@ -235,6 +235,11 @@ impl Task {
     Ok(())
   }
 
+  /// Print a dry run of the task
+  pub fn dry(&self) {
+    println!("$ {} {}", self.command, self.args.join(" "));
+  }
+
   pub fn from_args(args: &Vec<String>, env: Option<&EnvMap>) -> Task {
     let mut args = args.clone();
     // FIXME panics if args is empty
