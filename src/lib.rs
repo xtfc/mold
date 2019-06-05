@@ -234,6 +234,7 @@ impl Task {
 
   pub fn from_args(args: &Vec<String>, env: Option<&EnvMap>) -> Task {
     let mut args = args.clone();
+    // FIXME panics if args is empty
     let cmd = args.remove(0);
     Task {
       command: cmd,
@@ -269,6 +270,8 @@ impl Type {
         }
       })
       .collect();
+
+    // FIXME panics if args is empty
     let cmd = args.remove(0);
 
     Task {
@@ -308,6 +311,7 @@ impl Recipe {
 /// Execute an external command
 pub fn exec(cmd: Vec<&str>, env: &EnvMap) -> Result<(), Error> {
   let mut args = cmd.clone();
+  // FIXME panics if args is empty
   let command = args.remove(0);
 
   let exit_status = process::Command::new(&command)

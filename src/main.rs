@@ -109,25 +109,32 @@ fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
   }
 
   // find all recipes to run
-  let mut targets = vec![];
-
-  // FIXME deduplicate
-  for target_name in &args.targets {
-    // FIXME add pre/post hooks
-    targets.extend(find_dependencies(&args.file, &data, target_name)?);
-    targets.push(target_name.to_string());
-  }
-
-  dbg!(&targets);
+  let targets = find_all_dependencies(&args.file, &data, &args.targets)?;
 
   let mut tasks: Vec<Task> = vec![];
 
   // run all targets
   for target_name in &targets {
-    //tasks.push(find_task(&args, &data, &target_name, &env)?);
+    tasks.push(find_task(&args.file, &data, &target_name, &env)?);
+  }
+
+  for task in &tasks {
+    task.exec()?;
   }
 
   Ok(())
+}
+
+fn find_all_dependencies(root: &Path, data: &Moldfile, targets: &Vec<String>) -> Result<Vec<String>, Error> {
+  let mut new_targets = vec![];
+
+  // FIXME deduplicate
+  for target_name in targets {
+    new_targets.extend(find_dependencies(root, data, target_name)?);
+    new_targets.push(target_name.to_string());
+  }
+
+  Ok(new_targets)
 }
 
 fn find_dependencies(root: &Path, data: &Moldfile, target: &str) -> Result<Vec<String>, Error> {
@@ -138,53 +145,36 @@ fn find_dependencies(root: &Path, data: &Moldfile, target: &str) -> Result<Vec<S
 
     let group_file = data.find_group_file(root, group_name)?;
     let group = Moldfile::open(&group_file)?;
+
+    // FIXME this doesn't recurse properly, probably...
+    // .find_recipe(...) doesn't handle subrecipes
     let recipe = group.find_recipe(recipe_name)?;
     let deps = recipe
       .dependencies()
       .iter()
       .map(|x| format!("{}/{}", group_name, x))
       .collect();
-    return Ok(deps);
+
+    return find_all_dependencies(&group_file, &group, &deps);
   }
 
   let recipe = data.find_recipe(target)?;
   let deps = recipe.dependencies();
-
-  Ok(deps)
+  find_all_dependencies(root, data, &deps)
 }
 
-/*
-fn find_task(args: &Args, data: &Moldfile, target_name: &str, env: &EnvMap) -> Result<Task, Error> {
-  let mold_dir = data.mold_dir(&args.file)?;
+fn find_task(root: &Path, data: &Moldfile, target_name: &str, env: &EnvMap) -> Result<Task, Error> {
+  let mold_dir = data.mold_dir(root)?;
 
-  /*
   // check if we're executing a group subrecipe
   if target_name.contains('/') {
     let splits: Vec<_> = target_name.splitn(2, '/').collect();
     let group_name = splits[0];
     let recipe_name = splits[1];
-
-    let target = data
-      .recipes
-      .get(group_name)
-      .ok_or_else(|| failure::err_msg("couldn't locate target group"))?;
-
-    // unwrap the group or quit
-    let target = match target {
-      Recipe::Script(_) => return Err(failure::err_msg("Can't execute a subrecipe of a script")),
-      Recipe::Command(_) => return Err(failure::err_msg("Can't execute a subrecipe of a command")),
-      Recipe::Group(target) => target,
-    };
-
-    // recurse down the line
-    let new_args = Args {
-      file: mold_dir.join(group_name).join(&target.file),
-      targets: vec![recipe_name.to_string()],
-      ..*args
-    };
-    return run_aux(new_args, Some(env));
+    let group_file = data.find_group_file(root, group_name)?;
+    let group = Moldfile::open(&group_file)?;
+    return find_task(&group_file, &group, recipe_name, env);
   }
-  */
 
   // ...not executing subrecipe, so look up the top-level recipe
   let recipe = data.find_recipe(target_name)?;
@@ -214,77 +204,3 @@ fn find_task(args: &Args, data: &Moldfile, target_name: &str, env: &EnvMap) -> R
 
   Ok(task)
 }
-*/
-
-/*
-fn run_target(args: &Args, data: &Moldfile, target_name: &str, env: &EnvMap) -> Result<(), Error> {
-  // print help if our target is an empty string
-  // FIXME this feels wrong
-  if target_name.is_empty() {
-    return data.help();
-  }
-
-  let mold_dir = data.mold_dir(&args.file)?;
-
-  // check if we're executing a group subrecipe
-  if target_name.contains('/') {
-    let splits: Vec<_> = target_name.splitn(2, '/').collect();
-    let group_name = splits[0];
-    let recipe_name = splits[1];
-
-    let target = data
-      .recipes
-      .get(group_name)
-      .ok_or_else(|| failure::err_msg("couldn't locate target group"))?;
-
-    // unwrap the group or quit
-    let target = match target {
-      Recipe::Script(_) => return Err(failure::err_msg("Can't execute a subrecipe of a script")),
-      Recipe::Command(_) => return Err(failure::err_msg("Can't execute a subrecipe of a command")),
-      Recipe::Group(target) => target,
-    };
-
-    // recurse down the line
-    let new_args = Args {
-      file: mold_dir.join(group_name).join(&target.file),
-      targets: vec![recipe_name.to_string()],
-      ..*args
-    };
-    return run_aux(new_args, Some(env));
-  }
-
-  // ...not executing subrecipe, so look up the top-level recipe
-  let recipe = data.find_recipe(target_name)?;
-
-  match recipe {
-    Recipe::Command(target) => {
-      // this is some weird witchcraft to turn a Vec<String> into a Vec<&str>
-      mold::exec(target.command.iter().map(AsRef::as_ref).collect(), env)?;
-    }
-    Recipe::Script(target) => {
-      // what the interpreter is for this recipe
-      let type_ = data
-        .types
-        .get(&target.type_)
-        .ok_or_else(|| failure::err_msg("couldn't locate type"))?;
-
-      // find the script file to execute
-      let script = match &target.script {
-        Some(x) => {
-          let mut path = mold_dir.clone();
-          path.push(x);
-          path
-        }
-
-        // we need to look it up based on our interpreter's known extensions
-        None => type_.find(&mold_dir, &target_name)?,
-      };
-
-      type_.exec(&script.to_str().unwrap(), env)?;
-    }
-    Recipe::Group(_) => return Err(failure::err_msg("Can't execute a group")),
-  };
-
-  Ok(())
-}
-*/
