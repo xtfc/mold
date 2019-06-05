@@ -5,7 +5,6 @@ use mold::EnvMap;
 use mold::Moldfile;
 use mold::Recipe;
 use mold::Task;
-use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -51,14 +50,14 @@ fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
   // load the moldfile
   let data = Moldfile::discover(&args.file)?;
 
+  // early return if we passed a --update
+  if args.update {
+    return update_all(&args.file, &data);
+  }
+
   // optionally spew the parsed structure
   if args.debug {
     dbg!(&data);
-  }
-
-  // early return if we passed a --update
-  if args.update {
-    return Ok(());
   }
 
   // merge this moldfile's environment with its parent.
@@ -97,6 +96,30 @@ fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
 
   for task in &tasks {
     task.exec()?;
+  }
+
+  Ok(())
+}
+
+fn update_all(root: &Path, data: &Moldfile) -> Result<(), Error> {
+  let mold_dir = data.mold_dir(root)?;
+
+  for (name, recipe) in &data.recipes {
+    match recipe {
+      Recipe::Command(_) => {}
+      Recipe::Script(_) => {}
+      Recipe::Group(group) => {
+        let mut path = mold_dir.clone();
+        path.push(name);
+
+        if path.is_dir() {
+          remote::checkout(&path, &group.ref_)?;
+          let group_file = data.find_group_file(root, name)?;
+          let group = Moldfile::open(&group_file)?;
+          update_all(&group_file, &group)?;
+        }
+      }
+    }
   }
 
   Ok(())
