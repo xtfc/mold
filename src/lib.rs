@@ -237,7 +237,16 @@ impl Task {
 
   /// Print a dry run of the task
   pub fn dry(&self) {
-    println!("$ {} {}", self.command, self.args.join(" "));
+    println!("{} {} {}", "$".green(), self.command, self.args.join(" "));
+    if let Some(env) = &self.env {
+      for (name, value) in env {
+        println!(
+          "  {} = \"{}\"",
+          format!("${}", name).bright_magenta(),
+          value
+        );
+      }
+    }
   }
 
   pub fn from_args(args: &Vec<String>, env: Option<&EnvMap>) -> Task {
