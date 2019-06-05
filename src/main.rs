@@ -1,12 +1,13 @@
-use mold::Task;
 use exitfailure::ExitFailure;
 use failure::Error;
 use mold::remote;
 use mold::EnvMap;
 use mold::Moldfile;
 use mold::Recipe;
+use mold::Task;
 use std::fs;
 use std::path::Path;
+use std::path::PathBuf;
 use structopt::StructOpt;
 
 /// A fresh task runner
@@ -15,7 +16,7 @@ use structopt::StructOpt;
 pub struct Args {
   /// Path to the moldfile
   #[structopt(long = "file", short = "f", default_value = "moldfile")]
-  pub file: std::path::PathBuf,
+  pub file: PathBuf,
 
   /// Don't print extraneous information
   #[structopt(long = "quiet", short = "q")]
@@ -107,14 +108,115 @@ fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
     return data.help();
   }
 
-  // run all targets
+  // find all recipes to run
+  let mut targets = vec![];
+
+  // FIXME deduplicate
   for target_name in &args.targets {
-    run_target(&args, &data, &target_name, &env)?;
+    // FIXME add pre/post hooks
+    targets.extend(find_dependencies(&args.file, &data, target_name)?);
+    targets.push(target_name.to_string());
+  }
+
+  dbg!(&targets);
+
+  let mut tasks: Vec<Task> = vec![];
+
+  // run all targets
+  for target_name in &targets {
+    //tasks.push(find_task(&args, &data, &target_name, &env)?);
   }
 
   Ok(())
 }
 
+fn find_dependencies(root: &Path, data: &Moldfile, target: &str) -> Result<Vec<String>, Error> {
+  if target.contains('/') {
+    let splits: Vec<_> = target.splitn(2, '/').collect();
+    let group_name = splits[0];
+    let recipe_name = splits[1];
+
+    let group_file = data.find_group_file(root, group_name)?;
+    let group = Moldfile::open(&group_file)?;
+    let recipe = group.find_recipe(recipe_name)?;
+    let deps = recipe
+      .dependencies()
+      .iter()
+      .map(|x| format!("{}/{}", group_name, x))
+      .collect();
+    return Ok(deps);
+  }
+
+  let recipe = data.find_recipe(target)?;
+  let deps = recipe.dependencies();
+
+  Ok(deps)
+}
+
+/*
+fn find_task(args: &Args, data: &Moldfile, target_name: &str, env: &EnvMap) -> Result<Task, Error> {
+  let mold_dir = data.mold_dir(&args.file)?;
+
+  /*
+  // check if we're executing a group subrecipe
+  if target_name.contains('/') {
+    let splits: Vec<_> = target_name.splitn(2, '/').collect();
+    let group_name = splits[0];
+    let recipe_name = splits[1];
+
+    let target = data
+      .recipes
+      .get(group_name)
+      .ok_or_else(|| failure::err_msg("couldn't locate target group"))?;
+
+    // unwrap the group or quit
+    let target = match target {
+      Recipe::Script(_) => return Err(failure::err_msg("Can't execute a subrecipe of a script")),
+      Recipe::Command(_) => return Err(failure::err_msg("Can't execute a subrecipe of a command")),
+      Recipe::Group(target) => target,
+    };
+
+    // recurse down the line
+    let new_args = Args {
+      file: mold_dir.join(group_name).join(&target.file),
+      targets: vec![recipe_name.to_string()],
+      ..*args
+    };
+    return run_aux(new_args, Some(env));
+  }
+  */
+
+  // ...not executing subrecipe, so look up the top-level recipe
+  let recipe = data.find_recipe(target_name)?;
+
+  let task = match recipe {
+    Recipe::Command(target) => Task::from_args(&target.command, Some(&env)),
+    Recipe::Script(target) => {
+      // what the interpreter is for this recipe
+      let type_ = data.find_type(&target.type_)?;
+
+      // find the script file to execute
+      let script = match &target.script {
+        Some(x) => {
+          let mut path = mold_dir.clone();
+          path.push(x);
+          path
+        }
+
+        // we need to look it up based on our interpreter's known extensions
+        None => type_.find(&mold_dir, &target_name)?,
+      };
+
+      type_.task(&script.to_str().unwrap(), env)
+    }
+    Recipe::Group(_) => return Err(failure::err_msg("Can't execute a group")),
+  };
+
+  Ok(task)
+}
+*/
+
+/*
 fn run_target(args: &Args, data: &Moldfile, target_name: &str, env: &EnvMap) -> Result<(), Error> {
   // print help if our target is an empty string
   // FIXME this feels wrong
@@ -185,3 +287,4 @@ fn run_target(args: &Args, data: &Moldfile, target_name: &str, env: &EnvMap) -> 
 
   Ok(())
 }
+*/

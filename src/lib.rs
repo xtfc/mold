@@ -48,6 +48,10 @@ pub enum Recipe {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Group {
+  /// A short description of the group's contents
+  #[serde(default)]
+  pub help: String,
+
   /// Git URL of a remote repo
   pub url: String,
 
@@ -58,10 +62,6 @@ pub struct Group {
   /// Moldfile to look at
   #[serde(default = "default_moldfile")]
   pub file: String,
-
-  /// A short description of the group's contents
-  #[serde(default)]
-  pub help: String,
 }
 
 fn default_git_ref() -> String {
@@ -74,13 +74,17 @@ fn default_moldfile() -> String {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Script {
-  /// Which interpreter should be used to execute this script.
-  #[serde(alias = "type")]
-  pub type_: String,
-
   /// A short description of the command.
   #[serde(default)]
   pub help: String,
+
+  /// A list of pre-execution dependencies
+  #[serde(default)]
+  pub deps: Vec<String>,
+
+  /// Which interpreter should be used to execute this script.
+  #[serde(alias = "type")]
+  pub type_: String,
 
   /// The script file name.
   ///
@@ -95,6 +99,10 @@ pub struct Command {
   /// A short description of the command.
   #[serde(default)]
   pub help: String,
+
+  /// A list of pre-execution dependencies
+  #[serde(default)]
+  pub deps: Vec<String>,
 
   /// A list of command arguments
   pub command: Vec<String>,
@@ -142,14 +150,19 @@ impl Moldfile {
     }
   }
 
-  /// Try to locate a moldfile and load it
-  pub fn discover(name: &Path) -> Result<Moldfile, Error> {
-    let path = Moldfile::discover_file(name)?;
-    let mut file = fs::File::open(&path)?;
+  /// Try to open a moldfile and load it
+  pub fn open(path: &Path) -> Result<Moldfile, Error> {
+    let mut file = fs::File::open(path)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
     let data: Moldfile = toml::de::from_str(&contents)?;
     Ok(data)
+  }
+
+  /// Try to locate a moldfile and load it
+  pub fn discover(name: &Path) -> Result<Moldfile, Error> {
+    let path = Moldfile::discover_file(name)?;
+    Moldfile::open(&path)
   }
 
   /// Return the directory that contains the mold scripts
@@ -165,6 +178,24 @@ impl Moldfile {
       .recipes
       .get(target_name)
       .ok_or_else(|| failure::err_msg("couldn't locate target"))
+  }
+
+  pub fn find_type(&self, type_name: &str) -> Result<&Type, Error> {
+    self
+      .types
+      .get(type_name)
+      .ok_or_else(|| failure::err_msg("couldn't locate type"))
+  }
+
+  pub fn find_group_file(&self, root: &Path, group_name: &str) -> Result<PathBuf, Error> {
+    // unwrap the group or quit
+    let target = match self.find_recipe(group_name)? {
+      Recipe::Script(_) => return Err(failure::err_msg("Can't find moldfile for a script")),
+      Recipe::Command(_) => return Err(failure::err_msg("Can't find moldfile for a command")),
+      Recipe::Group(target) => target,
+    };
+
+    Moldfile::discover_file(&self.mold_dir(root)?.join(group_name).join(&target.file))
   }
 
   /// Print a description of all recipes in this moldfile
@@ -192,15 +223,23 @@ impl Task {
       command.envs(env);
     }
 
-    let exit_status = command
-      .spawn()
-      .and_then(|mut handle| handle.wait())?;
+    let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
 
     if !exit_status.success() {
       return Err(failure::err_msg("recipe exited with non-zero code"));
     }
 
     Ok(())
+  }
+
+  pub fn from_args(args: &Vec<String>, env: Option<&EnvMap>) -> Task {
+    let mut args = args.clone();
+    let cmd = args.remove(0);
+    Task {
+      command: cmd,
+      args: args,
+      env: env.map(|x| x.clone()),
+    }
   }
 }
 
@@ -222,7 +261,13 @@ impl Type {
     let mut args: Vec<_> = self
       .command
       .iter()
-      .map(|x| if x == "?" { script.to_string() } else { x.to_string() })
+      .map(|x| {
+        if x == "?" {
+          script.to_string()
+        } else {
+          x.to_string()
+        }
+      })
       .collect();
     let cmd = args.remove(0);
 
@@ -231,7 +276,6 @@ impl Type {
       args: args,
       env: Some(env.clone()),
     }
-
   }
 
   /// Attempt to discover an appropriate script in a recipe directory.
@@ -248,6 +292,16 @@ impl Type {
       }
     }
     Err(failure::err_msg("Couldn't find a file"))
+  }
+}
+
+impl Recipe {
+  pub fn dependencies(&self) -> Vec<String> {
+    match self {
+      Recipe::Script(s) => s.deps.clone(),
+      Recipe::Command(c) => c.deps.clone(),
+      _ => vec![],
+    }
   }
 }
 
