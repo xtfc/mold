@@ -9,6 +9,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
+type TaskSet = linked_hash_set::LinkedHashSet<String>;
+
 /// A fresh task runner
 #[derive(StructOpt, Debug)]
 #[structopt(raw(setting = "structopt::clap::AppSettings::ColoredHelp"))]
@@ -64,6 +66,7 @@ fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
     dbg!(&data);
   }
 
+  // FIXME extended environments are totally broken
   // merge this moldfile's environment with its parent.
   // the parent has priority and overrides this moldfile because it's called recursively:
   //   $ mold foo/bar/baz
@@ -81,13 +84,14 @@ fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
   }
 
   // find all recipes to run
-  let targets = find_all_dependencies(&args.file, &data, &args.targets)?;
+  let targets_set: TaskSet = args.targets.iter().map(|x| x.to_string()).collect();
+  let targets = find_all_dependencies(&args.file, &data, &targets_set)?;
 
   if args.debug {
     dbg!(&targets);
   }
 
-  let mut tasks: Vec<Task> = vec![];
+  let mut tasks = vec![];
 
   // run all targets
   for target_name in &targets {
@@ -101,10 +105,9 @@ fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
   for task in &tasks {
     if args.dry {
       task.dry();
+    } else {
+      task.exec()?;
     }
-    else{
-    task.exec()?;
-  }
   }
 
   Ok(())
@@ -164,21 +167,21 @@ fn clone(root: &Path, data: &Moldfile, target: &str, update: bool) -> Result<(),
 fn find_all_dependencies(
   root: &Path,
   data: &Moldfile,
-  targets: &Vec<String>,
-) -> Result<Vec<String>, Error> {
-  let mut new_targets = vec![];
+  targets: &TaskSet,
+) -> Result<TaskSet, Error> {
+  let mut new_targets = TaskSet::new();
 
   // FIXME deduplicate
   for target_name in targets {
     clone(root, data, target_name, false)?;
     new_targets.extend(find_dependencies(root, data, target_name)?);
-    new_targets.push(target_name.to_string());
+    new_targets.insert(target_name.to_string());
   }
 
   Ok(new_targets)
 }
 
-fn find_dependencies(root: &Path, data: &Moldfile, target: &str) -> Result<Vec<String>, Error> {
+fn find_dependencies(root: &Path, data: &Moldfile, target: &str) -> Result<TaskSet, Error> {
   if target.contains('/') {
     let splits: Vec<_> = target.splitn(2, '/').collect();
     let group_name = splits[0];
@@ -191,7 +194,11 @@ fn find_dependencies(root: &Path, data: &Moldfile, target: &str) -> Result<Vec<S
   }
 
   let recipe = data.find_recipe(target)?;
-  let deps = recipe.dependencies();
+  let deps = recipe
+    .dependencies()
+    .iter()
+    .map(|x| x.to_string())
+    .collect();
   find_all_dependencies(root, data, &deps)
 }
 
