@@ -2,6 +2,7 @@ use failure::Error;
 use serde_derive::Deserialize;
 use serde_derive::Serialize;
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;
@@ -113,6 +114,15 @@ pub struct Type {
   /// These should omit the leading dot.
   #[serde(default)]
   pub extensions: Vec<String>,
+}
+
+impl Moldfile {
+  pub fn mold_dir(&self, root: &Path) -> Result<PathBuf, Error> {
+    let mut path = root.to_path_buf();
+    path.pop();
+    path.push(&self.recipe_dir);
+    Ok(fs::canonicalize(path)?)
+  }
 }
 
 impl Type {

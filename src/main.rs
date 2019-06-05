@@ -37,25 +37,17 @@ fn main() -> Result<(), ExitFailure> {
   let args = Args::from_args();
   env_logger::init();
 
-  run(args, None)?;
+  run(args)?;
 
   Ok(())
 }
 
-fn print_help(data: &Moldfile) -> Result<(), Error> {
-  for (name, recipe) in &data.recipes {
-    let (name, help) = match recipe {
-      Recipe::Command(c) => (name.yellow(), &c.help),
-      Recipe::Script(s) => (name.cyan(), &s.help),
-      Recipe::Group(g) => (format!("{}/", name).magenta(), &g.help),
-    };
-    println!("{:>12} {}", name, help);
-  }
-
+fn run(args: Args) -> Result<(), Error> {
+  run_aux(args, None)?;
   Ok(())
 }
 
-fn run(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
+fn prepare(args: &Args) -> Result<Moldfile, Error> {
   // read and deserialize the moldfile
   // FIXME this should probably do a "discover"-esque thing and crawl up the tree
   // looking for one
@@ -64,27 +56,13 @@ fn run(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
   file.read_to_string(&mut contents)?;
   let data: Moldfile = toml::de::from_str(&contents)?;
 
-  // merge this moldfile's environment with its parent.
-  // the parent has priority and overrides this moldfile because it's called recursively:
-  //   $ mold foo/bar/baz
-  // will call bar/baz with foo as the parent, which will call baz with bar as
-  // the parent.  we want foo's moldfile to override bar's moldfile to override
-  // baz's moldfile, because baz should be the least specialized.
-  let mut env = data.environment.clone();
-  if let Some(prev_env) = prev_env {
-    env.extend(prev_env.into_iter().map(|(k, v)| (k.clone(), v.clone())));
-  }
-
   // optionally spew the parsed structure
   if args.debug {
     dbg!(&data);
   }
 
   // find our mold recipe dir and create it if it doesn't exist
-  let mut mold_dir = args.file.clone();
-  mold_dir.pop();
-  mold_dir.push(&data.recipe_dir);
-  let mold_dir = fs::canonicalize(mold_dir)?;
+  let mold_dir = data.mold_dir(&args.file)?;
 
   if !mold_dir.is_dir() {
     fs::create_dir(&mold_dir)?;
@@ -114,9 +92,40 @@ fn run(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
     }
   }
 
+  Ok(data)
+}
+
+fn print_help(data: &Moldfile) -> Result<(), Error> {
+  for (name, recipe) in &data.recipes {
+    let (name, help) = match recipe {
+      Recipe::Command(c) => (name.yellow(), &c.help),
+      Recipe::Script(s) => (name.cyan(), &s.help),
+      Recipe::Group(g) => (format!("{}/", name).magenta(), &g.help),
+    };
+    println!("{:>12} {}", name, help);
+  }
+
+  Ok(())
+}
+
+fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
+  // load the moldfile
+  let data = prepare(&args)?;
+
   // early return if we passed a --update
   if args.update {
     return Ok(());
+  }
+
+  // merge this moldfile's environment with its parent.
+  // the parent has priority and overrides this moldfile because it's called recursively:
+  //   $ mold foo/bar/baz
+  // will call bar/baz with foo as the parent, which will call baz with bar as
+  // the parent.  we want foo's moldfile to override bar's moldfile to override
+  // baz's moldfile, because baz should be the least specialized.
+  let mut env = data.environment.clone();
+  if let Some(prev_env) = prev_env {
+    env.extend(prev_env.into_iter().map(|(k, v)| (k.clone(), v.clone())));
   }
 
   // print help if we didn't pass any targets
@@ -139,11 +148,7 @@ fn run_target(args: &Args, data: &Moldfile, target_name: &str, env: &EnvMap) -> 
     return print_help(&data);
   }
 
-  // FIXME this feels like it shouldn't need to be recomputed, but... meh.
-  let mut mold_dir = args.file.clone();
-  mold_dir.pop();
-  mold_dir.push(&data.recipe_dir);
-  let mold_dir = fs::canonicalize(mold_dir)?;
+  let mold_dir = data.mold_dir(&args.file)?;
 
   // check if we're executing a group subrecipe
   if target_name.contains('/') {
@@ -169,7 +174,7 @@ fn run_target(args: &Args, data: &Moldfile, target_name: &str, env: &EnvMap) -> 
       targets: vec![recipe_name.to_string()],
       ..*args
     };
-    return run(new_args, Some(env));
+    return run_aux(new_args, Some(env));
   }
 
   // ...not executing subrecipe, so look up the top-level recipe
