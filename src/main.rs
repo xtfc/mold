@@ -138,7 +138,7 @@ fn clone(root: &Path, data: &Moldfile, target: &str, update: bool) -> Result<(),
     let group_name = splits[0];
     let recipe_name = splits[1];
 
-    let recipe = data.find_group(root, group_name)?;
+    let recipe = data.find_group(group_name)?;
     let mut path = mold_dir.clone();
     path.push(group_name);
 

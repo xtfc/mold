@@ -187,7 +187,7 @@ impl Moldfile {
       .ok_or_else(|| failure::err_msg("couldn't locate type"))
   }
 
-  pub fn find_group(&self, root: &Path, group_name: &str) -> Result<&Group, Error> {
+  pub fn find_group(&self, group_name: &str) -> Result<&Group, Error> {
     // unwrap the group or quit
     match self.find_recipe(group_name)? {
       Recipe::Script(_) => Err(failure::err_msg("Can't find moldfile for a script")),
@@ -197,7 +197,7 @@ impl Moldfile {
   }
 
   pub fn find_group_file(&self, root: &Path, group_name: &str) -> Result<PathBuf, Error> {
-    let target = self.find_group(root, group_name)?;
+    let target = self.find_group(group_name)?;
     Moldfile::discover_file(&self.mold_dir(root)?.join(group_name).join(&target.file))
   }
 
