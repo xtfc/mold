@@ -182,7 +182,8 @@ fn find_dependencies(root: &Path, data: &Moldfile, target: &str) -> Result<TaskS
     let group_file = data.find_group_file(root, group_name)?;
     let group = Moldfile::open(&group_file)?;
     let deps = find_dependencies(&group_file, &group, recipe_name)?;
-    return find_all_dependencies(&group_file, &group, &deps);
+    let full_deps = find_all_dependencies(&group_file, &group, &deps)?;
+    return Ok(full_deps.iter().map(|x| format!("{}/{}", group_name, x)).collect());
   }
 
   let recipe = data.find_recipe(target)?;
