@@ -15,17 +15,21 @@ pub type RecipeMap = BTreeMap<String, Recipe>;
 pub type TypeMap = BTreeMap<String, Type>;
 pub type EnvMap = BTreeMap<String, String>;
 
+// FIXME there's gotta be a wrapper around Moldfile that actually holds the
+// location of the moldfile and the mold/ directory, because it's stupid to
+// have to keep track of them all over the place manually.
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Moldfile {
   /// The directory that recipe scripts can be found in
   #[serde(default = "default_recipe_dir")]
   pub recipe_dir: String,
 
-  /// A map of recipes.
+  /// A map of recipes
   #[serde(default)]
   pub recipes: RecipeMap,
 
-  /// A map of interpreter types and characteristics.
+  /// A map of interpreter types and characteristics
   #[serde(default)]
   pub types: TypeMap,
 
@@ -45,6 +49,9 @@ pub enum Recipe {
   Script(Script),
   Command(Command),
 }
+
+// FIXME should Group / Script / Command have an optional "environment" override?
+// FIXME should Group / Script / Command be able to document what environment vars they look at?
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Group {
@@ -74,7 +81,7 @@ fn default_moldfile() -> String {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Script {
-  /// A short description of the command.
+  /// A short description of the command
   #[serde(default)]
   pub help: String,
 
@@ -82,11 +89,11 @@ pub struct Script {
   #[serde(default)]
   pub deps: Vec<String>,
 
-  /// Which interpreter should be used to execute this script.
+  /// Which interpreter should be used to execute this script
   #[serde(alias = "type")]
   pub type_: String,
 
-  /// The script file name.
+  /// The script file name
   ///
   /// If left undefined, Mold will attempt to discover the recipe name by
   /// searching the recipe_dir for any files that start with the recipe name and
@@ -96,7 +103,7 @@ pub struct Script {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Command {
-  /// A short description of the command.
+  /// A short description of the command
   #[serde(default)]
   pub help: String,
 
@@ -110,7 +117,7 @@ pub struct Command {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Type {
-  /// A list of arguments used as a shell command.
+  /// A list of arguments used as a shell command
   ///
   /// Any element "?" will be / replaced with the desired script when
   /// executing. eg:
@@ -119,7 +126,7 @@ pub struct Type {
   ///   $ python -m foo
   pub command: Vec<String>,
 
-  /// A list of extensions used to search for the script name.
+  /// A list of extensions used to search for the script name
   ///
   /// These should omit the leading dot.
   #[serde(default)]
@@ -150,7 +157,7 @@ impl Moldfile {
     }
   }
 
-  /// Try to open a moldfile and load it
+  /// Open a moldfile and load it
   pub fn open(path: &Path) -> Result<Moldfile, Error> {
     let mut file = fs::File::open(path)?;
     let mut contents = String::new();
@@ -173,6 +180,7 @@ impl Moldfile {
     Ok(fs::canonicalize(path)?)
   }
 
+  /// Find a Recipe by name
   pub fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
     self
       .recipes
@@ -180,6 +188,7 @@ impl Moldfile {
       .ok_or_else(|| failure::err_msg("couldn't locate target"))
   }
 
+  /// Find a Type by name
   pub fn find_type(&self, type_name: &str) -> Result<&Type, Error> {
     self
       .types
@@ -187,15 +196,17 @@ impl Moldfile {
       .ok_or_else(|| failure::err_msg("couldn't locate type"))
   }
 
+  /// Find a Recipe by name and attempt to unwrap it to a Group
   pub fn find_group(&self, group_name: &str) -> Result<&Group, Error> {
     // unwrap the group or quit
     match self.find_recipe(group_name)? {
-      Recipe::Script(_) => Err(failure::err_msg("Can't find moldfile for a script")),
-      Recipe::Command(_) => Err(failure::err_msg("Can't find moldfile for a command")),
+      Recipe::Script(_) => Err(failure::err_msg("Requested recipe is a script")),
+      Recipe::Command(_) => Err(failure::err_msg("Requested recipe is a command")),
       Recipe::Group(target) => Ok(target),
     }
   }
 
+  /// Find the moldfile for a Group
   pub fn find_group_file(&self, root: &Path, group_name: &str) -> Result<PathBuf, Error> {
     let target = self.find_group(group_name)?;
     Moldfile::discover_file(&self.mold_dir(root)?.join(group_name).join(&target.file))
@@ -203,6 +214,7 @@ impl Moldfile {
 
   /// Print a description of all recipes in this moldfile
   pub fn help(&self) -> Result<(), Error> {
+    // FIXME should this print things like dependencies?
     for (name, recipe) in &self.recipes {
       let (name, help) = match recipe {
         Recipe::Command(c) => (name.yellow(), &c.help),
@@ -235,7 +247,7 @@ impl Task {
     Ok(())
   }
 
-  /// Print a dry run of the task
+  /// Print a dry run of the task and its environment
   pub fn dry(&self) {
     println!("{} {} {}", "$".green(), self.command, self.args.join(" "));
     if let Some(env) = &self.env {
@@ -249,6 +261,7 @@ impl Task {
     }
   }
 
+  /// Create a Task from a Vec of strings
   pub fn from_args(args: &Vec<String>, env: Option<&EnvMap>) -> Task {
     let mut args = args.clone();
     // FIXME panics if args is empty
@@ -262,19 +275,7 @@ impl Task {
 }
 
 impl Type {
-  /// Execute a file using self.command
-  pub fn exec(&self, script: &str, env: &EnvMap) -> Result<(), Error> {
-    let args: Vec<_> = self
-      .command
-      .iter()
-      .map(|x| if x == "?" { script } else { x })
-      .collect();
-
-    exec(args, env)?;
-
-    Ok(())
-  }
-
+  /// Create a Task ready to execute a script
   pub fn task(&self, script: &str, env: &EnvMap) -> Task {
     let mut args: Vec<_> = self
       .command
@@ -298,7 +299,7 @@ impl Type {
     }
   }
 
-  /// Attempt to discover an appropriate script in a recipe directory.
+  /// Attempt to discover an appropriate script in a recipe directory
   pub fn find(&self, dir: &Path, name: &str) -> Result<PathBuf, Error> {
     // set up the pathbuf to look for dir/name
     let mut pb = dir.to_path_buf();
@@ -316,6 +317,7 @@ impl Type {
 }
 
 impl Recipe {
+  /// Return this recipe's dependencies
   pub fn dependencies(&self) -> Vec<String> {
     match self {
       Recipe::Script(s) => s.deps.clone(),
@@ -323,23 +325,4 @@ impl Recipe {
       _ => vec![],
     }
   }
-}
-
-/// Execute an external command
-pub fn exec(cmd: Vec<&str>, env: &EnvMap) -> Result<(), Error> {
-  let mut args = cmd.clone();
-  // FIXME panics if args is empty
-  let command = args.remove(0);
-
-  let exit_status = process::Command::new(&command)
-    .args(&args[..])
-    .envs(env)
-    .spawn()
-    .and_then(|mut handle| handle.wait())?;
-
-  if !exit_status.success() {
-    return Err(failure::err_msg("recipe exited with non-zero code"));
-  }
-
-  Ok(())
 }
