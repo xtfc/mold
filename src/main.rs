@@ -111,11 +111,19 @@ fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
   // find all recipes to run
   let targets = find_all_dependencies(&args.file, &data, &args.targets)?;
 
+  if args.debug {
+    dbg!(&targets);
+  }
+
   let mut tasks: Vec<Task> = vec![];
 
   // run all targets
   for target_name in &targets {
     tasks.push(find_task(&args.file, &data, &target_name, &env)?);
+  }
+
+  if args.debug {
+    dbg!(&tasks);
   }
 
   for task in &tasks {
@@ -125,7 +133,11 @@ fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
   Ok(())
 }
 
-fn find_all_dependencies(root: &Path, data: &Moldfile, targets: &Vec<String>) -> Result<Vec<String>, Error> {
+fn find_all_dependencies(
+  root: &Path,
+  data: &Moldfile,
+  targets: &Vec<String>,
+) -> Result<Vec<String>, Error> {
   let mut new_targets = vec![];
 
   // FIXME deduplicate
@@ -145,16 +157,7 @@ fn find_dependencies(root: &Path, data: &Moldfile, target: &str) -> Result<Vec<S
 
     let group_file = data.find_group_file(root, group_name)?;
     let group = Moldfile::open(&group_file)?;
-
-    // FIXME this doesn't recurse properly, probably...
-    // .find_recipe(...) doesn't handle subrecipes
-    let recipe = group.find_recipe(recipe_name)?;
-    let deps = recipe
-      .dependencies()
-      .iter()
-      .map(|x| format!("{}/{}", group_name, x))
-      .collect();
-
+    let deps = find_dependencies(&group_file, &group, recipe_name)?;
     return find_all_dependencies(&group_file, &group, &deps);
   }
 
