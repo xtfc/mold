@@ -9,6 +9,11 @@ use std::path::Path;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
+// FIXME this preserves order... weirdly?
+// a -> b -> c = a b c
+// a -> b -> c -> a = b c a
+// I would've expected this to preserve it as `a b c`... and it needs to or dep
+// chains are broken
 type TaskSet = linked_hash_set::LinkedHashSet<String>;
 
 /// A fresh task runner
