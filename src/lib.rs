@@ -1,3 +1,4 @@
+use colored::*;
 use failure::Error;
 use serde_derive::Deserialize;
 use serde_derive::Serialize;
@@ -150,6 +151,19 @@ impl Moldfile {
     path.pop();
     path.push(&self.recipe_dir);
     Ok(fs::canonicalize(path)?)
+  }
+
+  pub fn help(&self) -> Result<(), Error> {
+    for (name, recipe) in &self.recipes {
+      let (name, help) = match recipe {
+        Recipe::Command(c) => (name.yellow(), &c.help),
+        Recipe::Script(s) => (name.cyan(), &s.help),
+        Recipe::Group(g) => (format!("{}/", name).magenta(), &g.help),
+      };
+      println!("{:>12} {}", name, help);
+    }
+
+    Ok(())
   }
 }
 

@@ -1,4 +1,3 @@
-use colored::*;
 use exitfailure::ExitFailure;
 use failure::Error;
 use mold::remote;
@@ -124,7 +123,7 @@ fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
 
   // print help if we didn't pass any targets
   if args.targets.is_empty() {
-    return print_help(&data);
+    return data.help();
   }
 
   // run all targets
@@ -139,7 +138,7 @@ fn run_target(args: &Args, data: &Moldfile, target_name: &str, env: &EnvMap) -> 
   // print help if our target is an empty string
   // FIXME this feels wrong
   if target_name.is_empty() {
-    return print_help(&data);
+    return data.help();
   }
 
   let mold_dir = data.mold_dir(&args.file)?;
