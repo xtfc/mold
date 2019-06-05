@@ -48,13 +48,7 @@ fn run(args: Args) -> Result<(), Error> {
 }
 
 fn prepare(args: &Args) -> Result<Moldfile, Error> {
-  // read and deserialize the moldfile
-  // FIXME this should probably do a "discover"-esque thing and crawl up the tree
-  // looking for one
-  let mut file = File::open(&args.file)?;
-  let mut contents = String::new();
-  file.read_to_string(&mut contents)?;
-  let data: Moldfile = toml::de::from_str(&contents)?;
+  let data = Moldfile::discover(&args.file)?;
 
   // optionally spew the parsed structure
   if args.debug {

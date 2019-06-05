@@ -3,6 +3,7 @@ use serde_derive::Deserialize;
 use serde_derive::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::prelude::*;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;
@@ -117,6 +118,33 @@ pub struct Type {
 }
 
 impl Moldfile {
+  /// Try to locate a moldfile by walking up the directory tree
+  fn discover_file(name: &Path) -> Result<PathBuf, Error> {
+    let mut path = std::env::current_dir()?;
+    while !path.join(name).is_file() {
+      path.pop();
+    }
+
+    path.push(name);
+
+    if path.is_file() {
+      Ok(path)
+    } else {
+      Err(failure::err_msg("Unable to discover a moldfile"))
+    }
+  }
+
+  /// Try to locate a moldfile and load it
+  pub fn discover(name: &Path) -> Result<Moldfile, Error> {
+    let path = Moldfile::discover_file(name)?;
+    let mut file = fs::File::open(&path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    let data: Moldfile = toml::de::from_str(&contents)?;
+    Ok(data)
+  }
+
+  /// Return the directory that contains the mold scripts
   pub fn mold_dir(&self, root: &Path) -> Result<PathBuf, Error> {
     let mut path = root.to_path_buf();
     path.pop();
