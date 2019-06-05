@@ -47,40 +47,9 @@ fn run(args: Args) -> Result<(), Error> {
   Ok(())
 }
 
-fn prepare(file: &Path, update: bool) -> Result<Moldfile, Error> {
-  let data = Moldfile::discover(&file)?;
-
-  // find our mold recipe dir and create it if it doesn't exist
-  let mold_dir = data.mold_dir(&file)?;
-  if !mold_dir.is_dir() {
-    fs::create_dir(&mold_dir)?;
-  }
-
-  // clone or update all of our remotes if we haven't already
-  for (name, recipe) in &data.recipes {
-    match recipe {
-      Recipe::Command(_) => {}
-      Recipe::Script(_) => {}
-      Recipe::Group(group) => {
-        let mut path = mold_dir.clone();
-        path.push(name);
-
-        if !path.is_dir() {
-          remote::clone(&group.url, &path)?;
-          remote::checkout(&path, &group.ref_)?;
-        } else if update {
-          remote::checkout(&path, &group.ref_)?;
-        }
-      }
-    }
-  }
-
-  Ok(data)
-}
-
 fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
   // load the moldfile
-  let data = prepare(&args.file, args.update)?;
+  let data = Moldfile::discover(&args.file)?;
 
   // optionally spew the parsed structure
   if args.debug {
@@ -133,6 +102,33 @@ fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
   Ok(())
 }
 
+fn clone(root: &Path, data: &Moldfile, target: &str, update: bool) -> Result<(), Error> {
+  let mold_dir = data.mold_dir(root)?;
+
+  if target.contains('/') {
+    let splits: Vec<_> = target.splitn(2, '/').collect();
+    let group_name = splits[0];
+    let recipe_name = splits[1];
+
+    let recipe = data.find_group(root, group_name)?;
+    let mut path = mold_dir.clone();
+    path.push(group_name);
+
+    if !path.is_dir() {
+      remote::clone(&recipe.url, &path)?;
+      remote::checkout(&path, &recipe.ref_)?;
+    } else if update {
+      remote::checkout(&path, &recipe.ref_)?;
+    }
+
+    let group_file = data.find_group_file(root, group_name)?;
+    let group = Moldfile::open(&group_file)?;
+    return clone(&group_file, &group, recipe_name, update);
+  }
+
+  Ok(())
+}
+
 fn find_all_dependencies(
   root: &Path,
   data: &Moldfile,
@@ -142,6 +138,7 @@ fn find_all_dependencies(
 
   // FIXME deduplicate
   for target_name in targets {
+    clone(root, data, target_name, false)?;
     new_targets.extend(find_dependencies(root, data, target_name)?);
     new_targets.push(target_name.to_string());
   }
