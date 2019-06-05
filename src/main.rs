@@ -5,8 +5,7 @@ use mold::EnvMap;
 use mold::Moldfile;
 use mold::Recipe;
 use std::fs;
-use std::fs::File;
-use std::io::prelude::*;
+use std::path::Path;
 use structopt::StructOpt;
 
 /// A fresh task runner
@@ -46,24 +45,13 @@ fn run(args: Args) -> Result<(), Error> {
   Ok(())
 }
 
-fn prepare(args: &Args) -> Result<Moldfile, Error> {
-  let data = Moldfile::discover(&args.file)?;
-
-  // optionally spew the parsed structure
-  if args.debug {
-    dbg!(&data);
-  }
+fn prepare(file: &Path, update: bool) -> Result<Moldfile, Error> {
+  let data = Moldfile::discover(&file)?;
 
   // find our mold recipe dir and create it if it doesn't exist
-  let mold_dir = data.mold_dir(&args.file)?;
-
+  let mold_dir = data.mold_dir(&file)?;
   if !mold_dir.is_dir() {
     fs::create_dir(&mold_dir)?;
-  }
-
-  // debug dump the moldfile
-  if args.debug {
-    dbg!(&mold_dir);
   }
 
   // clone or update all of our remotes if we haven't already
@@ -78,7 +66,7 @@ fn prepare(args: &Args) -> Result<Moldfile, Error> {
         if !path.is_dir() {
           remote::clone(&group.url, &path)?;
           remote::checkout(&path, &group.ref_)?;
-        } else if args.update {
+        } else if update {
           remote::checkout(&path, &group.ref_)?;
         }
       }
@@ -88,22 +76,14 @@ fn prepare(args: &Args) -> Result<Moldfile, Error> {
   Ok(data)
 }
 
-fn print_help(data: &Moldfile) -> Result<(), Error> {
-  for (name, recipe) in &data.recipes {
-    let (name, help) = match recipe {
-      Recipe::Command(c) => (name.yellow(), &c.help),
-      Recipe::Script(s) => (name.cyan(), &s.help),
-      Recipe::Group(g) => (format!("{}/", name).magenta(), &g.help),
-    };
-    println!("{:>12} {}", name, help);
-  }
-
-  Ok(())
-}
-
 fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
   // load the moldfile
-  let data = prepare(&args)?;
+  let data = prepare(&args.file, args.update)?;
+
+  // optionally spew the parsed structure
+  if args.debug {
+    dbg!(&data);
+  }
 
   // early return if we passed a --update
   if args.update {
