@@ -29,8 +29,8 @@ pub struct Args {
   #[structopt(long = "update", short = "u")]
   pub update: bool,
 
-  /// Which recipe to run
-  pub target: Option<String>,
+  /// Which recipe(s) to run
+  pub targets: Vec<String>,
 }
 
 fn main() -> Result<(), ExitFailure> {
@@ -119,20 +119,33 @@ fn run(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
     return Ok(());
   }
 
-  // print help if we didn't pass a target
-  if args.target.is_none() {
+  // print help if we didn't pass any targets
+  if args.targets.is_empty() {
     return print_help(&data);
   }
 
-  // this is safe because of the is_none() check right above
-  let target_name = args.target.unwrap();
+  // run all targets
+  for target_name in &args.targets {
+    run_target(&args, &data, &target_name, &env)?;
+  }
 
+  Ok(())
+}
+
+fn run_target(args: &Args, data: &Moldfile, target_name: &str, env: &EnvMap) -> Result<(), Error> {
   // print help if our target is an empty string
+  // FIXME this feels wrong
   if target_name.is_empty() {
     return print_help(&data);
   }
 
-  // execute a group subrecipe
+  // FIXME this feels like it shouldn't need to be recomputed, but... meh.
+  let mut mold_dir = args.file.clone();
+  mold_dir.pop();
+  mold_dir.push(&data.recipe_dir);
+  let mold_dir = fs::canonicalize(mold_dir)?;
+
+  // check if we're executing a group subrecipe
   if target_name.contains('/') {
     let splits: Vec<_> = target_name.splitn(2, '/').collect();
     let group_name = splits[0];
@@ -153,22 +166,22 @@ fn run(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
     // recurse down the line
     let new_args = Args {
       file: mold_dir.join(group_name).join(&target.file),
-      target: Some(recipe_name.to_string()),
-      ..args
+      targets: vec![recipe_name.to_string()],
+      ..*args
     };
-    return run(new_args, Some(&env));
+    return run(new_args, Some(env));
   }
 
-  // execute a top-level recipe
+  // ...not executing subrecipe, so look up the top-level recipe
   let target = data
     .recipes
-    .get(&target_name)
+    .get(target_name)
     .ok_or_else(|| failure::err_msg("couldn't locate target"))?;
 
-  // unwrap the script or quit
   match target {
     Recipe::Command(target) => {
-      mold::exec(target.command.iter().map(AsRef::as_ref).collect(), &env)?;
+      // this is some weird witchcraft to turn a Vec<String> into a Vec<&str>
+      mold::exec(target.command.iter().map(AsRef::as_ref).collect(), env)?;
     }
     Recipe::Script(target) => {
       // what the interpreter is for this recipe
@@ -189,7 +202,7 @@ fn run(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
         None => type_.find(&mold_dir, &target_name)?,
       };
 
-      type_.exec(&script.to_str().unwrap(), &env)?;
+      type_.exec(&script.to_str().unwrap(), env)?;
     }
     Recipe::Group(_) => return Err(failure::err_msg("Can't execute a group")),
   };
