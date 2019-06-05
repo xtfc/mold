@@ -53,11 +53,6 @@ fn main() -> Result<(), ExitFailure> {
 }
 
 fn run(args: Args) -> Result<(), Error> {
-  run_aux(args, None)?;
-  Ok(())
-}
-
-fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
   // load the moldfile
   let data = Moldfile::discover(&args.file)?;
 
@@ -69,18 +64,6 @@ fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
   // optionally spew the parsed structure
   if args.debug {
     dbg!(&data);
-  }
-
-  // FIXME extended environments are totally broken
-  // merge this moldfile's environment with its parent.
-  // the parent has priority and overrides this moldfile because it's called recursively:
-  //   $ mold foo/bar/baz
-  // will call bar/baz with foo as the parent, which will call baz with bar as
-  // the parent.  we want foo's moldfile to override bar's moldfile to override
-  // baz's moldfile, because baz should be the least specialized.
-  let mut env = data.environment.clone();
-  if let Some(prev_env) = prev_env {
-    env.extend(prev_env.into_iter().map(|(k, v)| (k.clone(), v.clone())));
   }
 
   // print help if we didn't pass any targets
@@ -100,7 +83,12 @@ fn run_aux(args: Args, prev_env: Option<&EnvMap>) -> Result<(), Error> {
 
   // run all targets
   for target_name in &targets {
-    tasks.push(find_task(&args.file, &data, &target_name, &env)?);
+    tasks.push(find_task(
+      &args.file,
+      &data,
+      &target_name,
+      &data.environment,
+    )?);
   }
 
   if args.debug {
@@ -176,7 +164,6 @@ fn find_all_dependencies(
 ) -> Result<TaskSet, Error> {
   let mut new_targets = TaskSet::new();
 
-  // FIXME deduplicate
   for target_name in targets {
     clone(root, data, target_name, false)?;
     new_targets.extend(find_dependencies(root, data, target_name)?);
@@ -207,7 +194,12 @@ fn find_dependencies(root: &Path, data: &Moldfile, target: &str) -> Result<TaskS
   find_all_dependencies(root, data, &deps)
 }
 
-fn find_task(root: &Path, data: &Moldfile, target_name: &str, env: &EnvMap) -> Result<Task, Error> {
+fn find_task(
+  root: &Path,
+  data: &Moldfile,
+  target_name: &str,
+  prev_env: &EnvMap,
+) -> Result<Task, Error> {
   let mold_dir = data.mold_dir(root)?;
 
   // check if we're executing a group subrecipe
@@ -217,14 +209,25 @@ fn find_task(root: &Path, data: &Moldfile, target_name: &str, env: &EnvMap) -> R
     let recipe_name = splits[1];
     let group_file = data.find_group_file(root, group_name)?;
     let group = Moldfile::open(&group_file)?;
-    return find_task(&group_file, &group, recipe_name, env);
+
+    // merge this moldfile's environment with its parent.
+    // the parent has priority and overrides this moldfile because it's called recursively:
+    //   $ mold foo/bar/baz
+    // will call bar/baz with foo as the parent, which will call baz with bar as
+    // the parent.  we want foo's moldfile to override bar's moldfile to override
+    // baz's moldfile, because baz should be the least specialized.
+
+    let mut env = group.environment.clone();
+    env.extend(prev_env.into_iter().map(|(k, v)| (k.clone(), v.clone())));
+
+    return find_task(&group_file, &group, recipe_name, &env);
   }
 
   // ...not executing subrecipe, so look up the top-level recipe
   let recipe = data.find_recipe(target_name)?;
 
   let task = match recipe {
-    Recipe::Command(target) => Task::from_args(&target.command, Some(&env)),
+    Recipe::Command(target) => Task::from_args(&target.command, Some(&prev_env)),
     Recipe::Script(target) => {
       // what the interpreter is for this recipe
       let type_ = data.find_type(&target.type_)?;
@@ -241,7 +244,7 @@ fn find_task(root: &Path, data: &Moldfile, target_name: &str, env: &EnvMap) -> R
         None => type_.find(&mold_dir, &target_name)?,
       };
 
-      type_.task(&script.to_str().unwrap(), env)
+      type_.task(&script.to_str().unwrap(), prev_env)
     }
     Recipe::Group(_) => return Err(failure::err_msg("Can't execute a group")),
   };
