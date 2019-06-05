@@ -153,6 +153,14 @@ impl Moldfile {
     Ok(fs::canonicalize(path)?)
   }
 
+  pub fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
+    self
+      .recipes
+      .get(target_name)
+      .ok_or_else(|| failure::err_msg("couldn't locate target"))
+  }
+
+  /// Print a description of all recipes in this moldfile
   pub fn help(&self) -> Result<(), Error> {
     for (name, recipe) in &self.recipes {
       let (name, help) = match recipe {

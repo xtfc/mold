@@ -151,12 +151,9 @@ fn run_target(args: &Args, data: &Moldfile, target_name: &str, env: &EnvMap) -> 
   }
 
   // ...not executing subrecipe, so look up the top-level recipe
-  let target = data
-    .recipes
-    .get(target_name)
-    .ok_or_else(|| failure::err_msg("couldn't locate target"))?;
+  let recipe = data.find_recipe(target_name)?;
 
-  match target {
+  match recipe {
     Recipe::Command(target) => {
       // this is some weird witchcraft to turn a Vec<String> into a Vec<&str>
       mold::exec(target.command.iter().map(AsRef::as_ref).collect(), env)?;
