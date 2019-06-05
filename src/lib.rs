@@ -242,7 +242,7 @@ impl Task {
       for (name, value) in env {
         println!(
           "  {} = \"{}\"",
-          format!("${}", name).bright_magenta(),
+          format!("${}", name).bright_cyan(),
           value
         );
       }
