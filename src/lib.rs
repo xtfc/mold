@@ -14,6 +14,7 @@ pub mod remote;
 pub type RecipeMap = BTreeMap<String, Recipe>;
 pub type TypeMap = BTreeMap<String, Type>;
 pub type EnvMap = BTreeMap<String, String>;
+pub type TaskSet = indexmap::IndexSet<String>;
 
 #[derive(Debug)]
 pub struct Mold {
@@ -159,7 +160,7 @@ impl Mold {
     Ok(Mold {
       file: fs::canonicalize(path)?,
       dir: fs::canonicalize(dir)?,
-      data: data,
+      data,
     })
   }
 
@@ -201,10 +202,10 @@ impl Mold {
     &self.data.environment
   }
 
-
   /// Find a Recipe by name
   pub fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
-    self.data
+    self
+      .data
       .recipes
       .get(target_name)
       .ok_or_else(|| failure::err_msg("couldn't locate target"))
@@ -212,7 +213,8 @@ impl Mold {
 
   /// Find a Type by name
   pub fn find_type(&self, type_name: &str) -> Result<&Type, Error> {
-    self.data
+    self
+      .data
       .types
       .get(type_name)
       .ok_or_else(|| failure::err_msg("couldn't locate type"))
@@ -231,6 +233,147 @@ impl Mold {
   pub fn open_group(&self, group_name: &str) -> Result<Mold, Error> {
     let target = self.find_group(group_name)?;
     Self::discover(&self.dir.join(group_name).join(&target.file))
+  }
+
+  /// Recursively fetch/checkout for all groups that have already been cloned
+  pub fn update_all(&self) -> Result<(), Error> {
+    // find all groups that have already been cloned and update them.
+    for (name, recipe) in &self.data.recipes {
+      if let Recipe::Group(group) = recipe {
+        let mut path = self.dir.clone();
+        path.push(name);
+
+        // only update groups that have already been cloned
+        if path.is_dir() {
+          remote::checkout(&path, &group.ref_)?;
+
+          // recursively update subgroups
+          let group = self.open_group(name)?;
+          group.update_all()?;
+        }
+      }
+    }
+
+    Ok(())
+  }
+
+  /// Lazily clone groups for a given target
+  pub fn clone(&self, target: &str) -> Result<(), Error> {
+    // if this isn't a nested subrecipe, we don't need to worry about cloning anything
+    if !target.contains('/') {
+      return Ok(());
+    }
+
+    let splits: Vec<_> = target.splitn(2, '/').collect();
+    let group_name = splits[0];
+    let recipe_name = splits[1];
+
+    let recipe = self.find_group(group_name)?;
+    let mut path = self.dir.clone();
+    path.push(group_name);
+
+    // if the directory doesn't exist, we need to clone it
+    if !path.is_dir() {
+      remote::clone(&recipe.url, &path)?;
+      remote::checkout(&path, &recipe.ref_)?;
+    }
+
+    let group = self.open_group(group_name)?;
+    group.clone(recipe_name)
+  }
+
+  /// Find all dependencies for a given set of tasks
+  pub fn find_all_dependencies(&self, targets: &TaskSet) -> Result<TaskSet, Error> {
+    let mut new_targets = TaskSet::new();
+
+    for target_name in targets {
+      // insure we have it cloned already
+      self.clone(target_name)?;
+
+      new_targets.extend(self.find_dependencies(target_name)?);
+      new_targets.insert(target_name.to_string());
+    }
+
+    Ok(new_targets)
+  }
+
+  /// Find all dependencies for a given task
+  fn find_dependencies(&self, target: &str) -> Result<TaskSet, Error> {
+    // check if this is a nested subrecipe that we'll have to recurse into
+    if target.contains('/') {
+      let splits: Vec<_> = target.splitn(2, '/').collect();
+      let group_name = splits[0];
+      let recipe_name = splits[1];
+
+      let group = self.open_group(group_name)?;
+      let deps = group.find_dependencies(recipe_name)?;
+      let full_deps = group.find_all_dependencies(&deps)?;
+      return Ok(
+        full_deps
+          .iter()
+          .map(|x| format!("{}/{}", group_name, x))
+          .collect(),
+      );
+    }
+
+    // ...not a subrecipe
+    let recipe = self.find_recipe(target)?;
+    let deps = recipe
+      .dependencies()
+      .iter()
+      .map(|x| x.to_string())
+      .collect();
+    self.find_all_dependencies(&deps)
+  }
+
+  /// Find a Task object for a given recipe name
+  pub fn find_task(&self, target_name: &str, prev_env: &EnvMap) -> Result<Task, Error> {
+    // check if we're executing a nested subrecipe that we'll have to recurse into
+    if target_name.contains('/') {
+      let splits: Vec<_> = target_name.splitn(2, '/').collect();
+      let group_name = splits[0];
+      let recipe_name = splits[1];
+      let group = self.open_group(group_name)?;
+
+      // merge this moldfile's environment with its parent.
+      // the parent has priority and overrides this moldfile because it's called recursively:
+      //   $ mold foo/bar/baz
+      // will call bar/baz with foo as the parent, which will call baz with bar as
+      // the parent.  we want foo's moldfile to override bar's moldfile to override
+      // baz's moldfile, because baz should be the least specialized.
+      let mut env = group.data().environment.clone();
+      env.extend(prev_env.into_iter().map(|(k, v)| (k.clone(), v.clone())));
+
+      return self.find_task(recipe_name, &env);
+    }
+
+    // ...not executing subrecipe, so look up the top-level recipe
+    let recipe = self.find_recipe(target_name)?;
+
+    let task = match recipe {
+      Recipe::Command(target) => Task::from_args(&target.command, Some(&prev_env)),
+      Recipe::Script(target) => {
+        // what the interpreter is for this recipe
+        let type_ = self.find_type(&target.type_)?;
+
+        // find the script file to execute
+        let script = match &target.script {
+          Some(x) => {
+            let mut path = self.dir.clone();
+            path.push(x);
+            path
+          }
+
+          // we need to look it up based on our interpreter's known extensions
+          None => type_.find(&self.dir, &target_name)?,
+        };
+
+        type_.task(&script.to_str().unwrap(), prev_env)
+      }
+      Recipe::Group(_) => return Err(failure::err_msg("Can't execute a group")),
+    };
+
+    Ok(task)
   }
 
   /// Print a description of all recipes in this moldfile
@@ -268,16 +411,16 @@ impl Task {
     Ok(())
   }
 
-  /// Print a dry run of the task and its environment
-  pub fn dry(&self) {
+  /// Print the command to be executed
+  pub fn print_cmd(&self) {
     println!("{} {} {}", "$".green(), self.command, self.args.join(" "));
+  }
+
+  /// Print the environment that will be used
+  pub fn print_env(&self) {
     if let Some(env) = &self.env {
       for (name, value) in env {
-        println!(
-          "  {} = \"{}\"",
-          format!("${}", name).bright_cyan(),
-          value
-        );
+        println!("  {} = \"{}\"", format!("${}", name).bright_cyan(), value);
       }
     }
   }
@@ -286,10 +429,10 @@ impl Task {
   pub fn from_args(args: &Vec<String>, env: Option<&EnvMap>) -> Task {
     let mut args = args.clone();
     // FIXME panics if args is empty
-    let cmd = args.remove(0);
+    let command = args.remove(0);
     Task {
-      command: cmd,
-      args: args,
+      command,
+      args,
       env: env.map(|x| x.clone()),
     }
   }
@@ -311,11 +454,11 @@ impl Type {
       .collect();
 
     // FIXME panics if args is empty
-    let cmd = args.remove(0);
+    let command = args.remove(0);
 
     Task {
-      command: cmd,
-      args: args,
+      command,
+      args,
       env: Some(env.clone()),
     }
   }
