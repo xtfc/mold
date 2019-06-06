@@ -12,10 +12,17 @@ extensions = ["sh"]
 [recipes.this]
 url = "https://github.com/scizzorz/mold.git"
 help = "Recursive remote include"
+environment = {NAME = "Group"}
 
 [recipes.shell]
 help = "Test sh script"
 type = "sh"
+
+[recipes.subshell]
+environment = {NAME = "Test"}
+help = "Test sh script"
+type = "sh"
+script = "shell.sh"
 
 [recipes.python]
 help = "Test Python script"

@@ -54,7 +54,6 @@ pub enum Recipe {
   Command(Command),
 }
 
-// FIXME Group / Script / Command should have optional "environment" overrides
 // FIXME Group / Script / Command should be able to document what environment vars they depend on
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -62,6 +61,10 @@ pub struct Group {
   /// A short description of the group's contents
   #[serde(default)]
   pub help: String,
+
+  /// A list of environment variables that overrides the base environment
+  #[serde(default)]
+  pub environment: EnvMap,
 
   /// Git URL of a remote repo
   pub url: String,
@@ -93,6 +96,10 @@ pub struct Script {
   #[serde(default)]
   pub deps: Vec<String>,
 
+  /// A list of environment variables that overrides the base environment
+  #[serde(default)]
+  pub environment: EnvMap,
+
   /// Which interpreter should be used to execute this script
   #[serde(alias = "type")]
   pub type_: String,
@@ -114,6 +121,10 @@ pub struct Command {
   /// A list of pre-execution dependencies
   #[serde(default)]
   pub deps: Vec<String>,
+
+  /// A list of environment variables that overrides the base environment
+  #[serde(default)]
+  pub environment: EnvMap,
 
   /// A list of command arguments
   #[serde(default)]
@@ -321,6 +332,7 @@ impl Mold {
       let splits: Vec<_> = target_name.splitn(2, '/').collect();
       let group_name = splits[0];
       let recipe_name = splits[1];
+      let recipe = self.find_recipe(group_name)?;
       let group = self.open_group(group_name)?;
 
       // merge this moldfile's environment with its parent.
@@ -332,14 +344,27 @@ impl Mold {
       let mut env = group.env().clone();
       env.extend(prev_env.iter().map(|(k, v)| (k.clone(), v.clone())));
 
-      return self.find_task(recipe_name, &env);
+      let mut task = self.find_task(recipe_name, &env)?;
+
+      // not sure if this is the right ordering to update environments in, but
+      // it's done here so that parent group's configuration can override one
+      // of the subrecipes in the group
+      if let Some(env) = &mut task.env {
+        env.extend(recipe.env().iter().map(|(k, v)| (k.clone(), v.clone())));
+      }
+
+      return Ok(task);
     }
 
     // ...not executing subrecipe, so look up the top-level recipe
     let recipe = self.find_recipe(target_name)?;
 
+    // extend the environment with the recipe's environment settings
+    let mut env = prev_env.clone();
+    env.extend(recipe.env().iter().map(|(k, v)| (k.clone(), v.clone())));
+
     let task = match recipe {
-      Recipe::Command(target) => Task::from_args(&target.command, Some(&prev_env)),
+      Recipe::Command(target) => Task::from_args(&target.command, Some(&env)),
       Recipe::Script(target) => {
         // what the interpreter is for this recipe
         let type_ = self.find_type(&target.type_)?;
@@ -356,7 +381,7 @@ impl Mold {
           None => type_.find(&self.dir, &target_name)?,
         };
 
-        type_.task(&script.to_str().unwrap(), prev_env)
+        type_.task(&script.to_str().unwrap(), &env)
       }
       Recipe::Group(_) => return Err(failure::err_msg("Can't execute a group")),
     };
@@ -479,6 +504,15 @@ impl Recipe {
       Recipe::Script(s) => s.deps.clone(),
       Recipe::Command(c) => c.deps.clone(),
       _ => vec![],
+    }
+  }
+
+  /// Return this recipe's environment
+  pub fn env(&self) -> &EnvMap {
+    match self {
+      Recipe::Script(s) => &s.environment,
+      Recipe::Command(c) => &c.environment,
+      Recipe::Group(g) => &g.environment,
     }
   }
 }
