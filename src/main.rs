@@ -28,6 +28,12 @@ pub struct Args {
   #[structopt(long = "update", short = "u")]
   pub update: bool,
 
+  #[structopt(long = "clean")]
+  pub clean: bool,
+
+  #[structopt(long = "clone")]
+  pub clone: bool,
+
   /// Which recipe(s) to run
   pub targets: Vec<String>,
 }
@@ -44,6 +50,16 @@ fn main() -> Result<(), ExitFailure> {
 fn run(args: Args) -> Result<(), Error> {
   // load the moldfile
   let mold = Mold::discover(&args.file)?;
+
+  // early return if we passed a --clean
+  if args.clean {
+    return mold.clean_all();
+  }
+
+  // early return if we passed a --clone
+  if args.clone {
+    return mold.clone_all();
+  }
 
   // early return if we passed a --update
   if args.update {

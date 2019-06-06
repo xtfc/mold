@@ -256,6 +256,40 @@ impl Mold {
     Ok(())
   }
 
+  /// Clone all top-level targets
+  pub fn clone_all(&self) -> Result<(), Error> {
+    for (name, recipe) in &self.data.recipes {
+      if let Recipe::Group(group) = recipe {
+        let mut path = self.dir.clone();
+        path.push(name);
+
+        if !path.is_dir() {
+          remote::clone(&group.url, &path)?;
+          remote::checkout(&path, &group.ref_)?;
+        }
+      }
+    }
+
+    Ok(())
+  }
+
+  /// Delete all cloned top-level targets
+  pub fn clean_all(&self) -> Result<(), Error> {
+    for (name, recipe) in &self.data.recipes {
+      if let Recipe::Group(_) = recipe {
+        let mut path = self.dir.clone();
+        path.push(name);
+
+        if path.is_dir() {
+          fs::remove_dir_all(&path)?;
+          println!("{:>12} {}     ", "Deleted".red(), path.display());
+        }
+      }
+    }
+
+    Ok(())
+  }
+
   /// Lazily clone groups for a given target
   pub fn clone(&self, target: &str) -> Result<(), Error> {
     // if this isn't a nested subrecipe, we don't need to worry about cloning anything
