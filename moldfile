@@ -29,6 +29,11 @@ command = ["cargo", "fmt"]
 help = "Build using cargo"
 command = ["cargo", "build"]
 
+[recipes.clean]
+help = "Clean build artifacts using cargo"
+command = ["cargo", "clean"]
+
 [recipes.lint]
 help = "Lint using clippy"
-type = "sh"
+command = ["cargo", "clippy", "--", "-D", "warnings"]
+deps = ["clean"]
