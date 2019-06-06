@@ -25,12 +25,15 @@ pub struct Args {
   #[structopt(long = "dry")]
   pub dry: bool,
 
+  /// Fetch new updates for all downloaded groups
   #[structopt(long = "update", short = "u")]
   pub update: bool,
 
+  /// Remove all downloaded groups
   #[structopt(long = "clean")]
   pub clean: bool,
 
+  /// Download all top-level groups
   #[structopt(long = "clone")]
   pub clone: bool,
 
