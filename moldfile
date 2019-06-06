@@ -21,6 +21,9 @@ type = "sh"
 help = "Test Python script"
 type = "python"
 
+[recipes.nop]
+help = "Test no-op"
+
 [recipes.fmt]
 help = "Format using rustfmt"
 command = ["cargo", "fmt"]

@@ -54,8 +54,8 @@ pub enum Recipe {
   Command(Command),
 }
 
-// FIXME should Group / Script / Command have an optional "environment" override?
-// FIXME should Group / Script / Command be able to document what environment vars they look at?
+// FIXME Group / Script / Command should have optional "environment" overrides
+// FIXME Group / Script / Command should be able to document what environment vars they depend on
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Group {
@@ -116,6 +116,7 @@ pub struct Command {
   pub deps: Vec<String>,
 
   /// A list of command arguments
+  #[serde(default)]
   pub command: Vec<String>,
 }
 
@@ -139,7 +140,6 @@ pub struct Type {
 
 #[derive(Debug)]
 pub struct Task {
-  command: String,
   args: Vec<String>,
   env: Option<EnvMap>,
 }
@@ -395,8 +395,12 @@ impl Mold {
 impl Task {
   /// Execute the task
   pub fn exec(&self) -> Result<(), Error> {
-    let mut command = process::Command::new(&self.command);
-    command.args(&self.args[..]);
+    if self.args.is_empty() {
+      return Ok(());
+    }
+
+    let mut command = process::Command::new(&self.args[0]);
+    command.args(&self.args[1..]);
 
     if let Some(env) = &self.env {
       command.envs(env);
@@ -413,7 +417,9 @@ impl Task {
 
   /// Print the command to be executed
   pub fn print_cmd(&self) {
-    println!("{} {} {}", "$".green(), self.command, self.args.join(" "));
+    if !self.args.is_empty() {
+      println!("{} {}", "$".green(), self.args.join(" "));
+    }
   }
 
   /// Print the environment that will be used
@@ -427,12 +433,8 @@ impl Task {
 
   /// Create a Task from a Vec of strings
   pub fn from_args(args: &[String], env: Option<&EnvMap>) -> Task {
-    let mut args = args.to_owned();
-    // FIXME panics if args is empty
-    let command = args.remove(0);
     Task {
-      command,
-      args,
+      args: args.to_owned(),
       env: env.map(std::clone::Clone::clone),
     }
   }
@@ -441,7 +443,7 @@ impl Task {
 impl Type {
   /// Create a Task ready to execute a script
   pub fn task(&self, script: &str, env: &EnvMap) -> Task {
-    let mut args: Vec<_> = self
+    let args: Vec<_> = self
       .command
       .iter()
       .map(|x| {
@@ -453,11 +455,7 @@ impl Type {
       })
       .collect();
 
-    // FIXME panics if args is empty
-    let command = args.remove(0);
-
     Task {
-      command,
       args,
       env: Some(env.clone()),
     }
