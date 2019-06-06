@@ -15,9 +15,12 @@ pub type RecipeMap = BTreeMap<String, Recipe>;
 pub type TypeMap = BTreeMap<String, Type>;
 pub type EnvMap = BTreeMap<String, String>;
 
-// FIXME there's gotta be a wrapper around Moldfile that actually holds the
-// location of the moldfile and the mold/ directory, because it's stupid to
-// have to keep track of them all over the place manually.
+#[derive(Debug)]
+pub struct Mold {
+  file: PathBuf,
+  dir: PathBuf,
+  data: Moldfile,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Moldfile {
@@ -140,7 +143,26 @@ pub struct Task {
   env: Option<EnvMap>,
 }
 
-impl Moldfile {
+impl Mold {
+  /// Open a moldfile and load it
+  pub fn open(path: &Path) -> Result<Mold, Error> {
+    let mut file = fs::File::open(path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+
+    let data: Moldfile = toml::de::from_str(&contents)?;
+
+    let mut dir = path.to_path_buf();
+    dir.pop();
+    dir.push(&data.recipe_dir);
+
+    Ok(Mold {
+      file: fs::canonicalize(path)?,
+      dir: fs::canonicalize(dir)?,
+      data: data,
+    })
+  }
+
   /// Try to locate a moldfile by walking up the directory tree
   fn discover_file(name: &Path) -> Result<PathBuf, Error> {
     let mut path = std::env::current_dir()?;
@@ -157,32 +179,32 @@ impl Moldfile {
     }
   }
 
-  /// Open a moldfile and load it
-  pub fn open(path: &Path) -> Result<Moldfile, Error> {
-    let mut file = fs::File::open(path)?;
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
-    let data: Moldfile = toml::de::from_str(&contents)?;
-    Ok(data)
-  }
-
   /// Try to locate a moldfile and load it
-  pub fn discover(name: &Path) -> Result<Moldfile, Error> {
-    let path = Moldfile::discover_file(name)?;
-    Moldfile::open(&path)
+  pub fn discover(name: &Path) -> Result<Mold, Error> {
+    let path = Self::discover_file(name)?;
+    Self::open(&path)
   }
 
-  /// Return the directory that contains the mold scripts
-  pub fn mold_dir(&self, root: &Path) -> Result<PathBuf, Error> {
-    let mut path = root.to_path_buf();
-    path.pop();
-    path.push(&self.recipe_dir);
-    Ok(fs::canonicalize(path)?)
+  pub fn file(&self) -> &PathBuf {
+    &self.file
   }
+
+  pub fn dir(&self) -> &PathBuf {
+    &self.dir
+  }
+
+  pub fn data(&self) -> &Moldfile {
+    &self.data
+  }
+
+  pub fn env(&self) -> &EnvMap {
+    &self.data.environment
+  }
+
 
   /// Find a Recipe by name
   pub fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
-    self
+    self.data
       .recipes
       .get(target_name)
       .ok_or_else(|| failure::err_msg("couldn't locate target"))
@@ -190,7 +212,7 @@ impl Moldfile {
 
   /// Find a Type by name
   pub fn find_type(&self, type_name: &str) -> Result<&Type, Error> {
-    self
+    self.data
       .types
       .get(type_name)
       .ok_or_else(|| failure::err_msg("couldn't locate type"))
@@ -206,16 +228,15 @@ impl Moldfile {
     }
   }
 
-  /// Find the moldfile for a Group
-  pub fn find_group_file(&self, root: &Path, group_name: &str) -> Result<PathBuf, Error> {
+  pub fn open_group(&self, group_name: &str) -> Result<Mold, Error> {
     let target = self.find_group(group_name)?;
-    Moldfile::discover_file(&self.mold_dir(root)?.join(group_name).join(&target.file))
+    Self::discover(&self.dir.join(group_name).join(&target.file))
   }
 
   /// Print a description of all recipes in this moldfile
   pub fn help(&self) -> Result<(), Error> {
     // FIXME should this print things like dependencies?
-    for (name, recipe) in &self.recipes {
+    for (name, recipe) in &self.data.recipes {
       let (name, help) = match recipe {
         Recipe::Command(c) => (name.yellow(), &c.help),
         Recipe::Script(s) => (name.cyan(), &s.help),
