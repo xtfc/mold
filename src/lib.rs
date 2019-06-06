@@ -186,18 +186,6 @@ impl Mold {
     Self::open(&path)
   }
 
-  pub fn file(&self) -> &PathBuf {
-    &self.file
-  }
-
-  pub fn dir(&self) -> &PathBuf {
-    &self.dir
-  }
-
-  pub fn data(&self) -> &Moldfile {
-    &self.data
-  }
-
   pub fn env(&self) -> &EnvMap {
     &self.data.environment
   }
@@ -341,7 +329,7 @@ impl Mold {
       // will call bar/baz with foo as the parent, which will call baz with bar as
       // the parent.  we want foo's moldfile to override bar's moldfile to override
       // baz's moldfile, because baz should be the least specialized.
-      let mut env = group.data().environment.clone();
+      let mut env = group.env().clone();
       env.extend(prev_env.iter().map(|(k, v)| (k.clone(), v.clone())));
 
       return self.find_task(recipe_name, &env);
