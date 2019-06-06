@@ -448,7 +448,14 @@ impl Mold {
       // print dependencies
       let deps = recipe.deps();
       if !deps.is_empty() {
-        println!("             ⮡ {}", deps.iter().map(|x| format!("{}{}", prefix, x)).collect::<Vec<_>>().join(", "));
+        println!(
+          "             ⮡ {}",
+          deps
+            .iter()
+            .map(|x| format!("{}{}", prefix, x))
+            .collect::<Vec<_>>()
+            .join(", ")
+        );
       }
 
       if let Recipe::Group(_) = recipe {
