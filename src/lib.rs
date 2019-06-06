@@ -207,7 +207,7 @@ impl Mold {
       .data
       .recipes
       .get(target_name)
-      .ok_or_else(|| failure::err_msg("couldn't locate target"))
+      .ok_or_else(|| failure::format_err!("couldn't locate target '{}'", target_name.red()))
   }
 
   /// Find a Type by name
@@ -216,7 +216,7 @@ impl Mold {
       .data
       .types
       .get(type_name)
-      .ok_or_else(|| failure::err_msg("couldn't locate type"))
+      .ok_or_else(|| failure::format_err!("couldn't locate type '{}'", type_name.red()))
   }
 
   /// Find a Recipe by name and attempt to unwrap it to a Group
@@ -344,7 +344,7 @@ impl Mold {
       let mut env = group.env().clone();
       env.extend(prev_env.iter().map(|(k, v)| (k.clone(), v.clone())));
 
-      let mut task = self.find_task(recipe_name, &env)?;
+      let mut task = group.find_task(recipe_name, &env)?;
 
       // not sure if this is the right ordering to update environments in, but
       // it's done here so that parent group's configuration can override one
