@@ -396,12 +396,11 @@ impl Mold {
 
   /// Print a description of all recipes in this moldfile
   pub fn help_prefixed(&self, prefix: &str) -> Result<(), Error> {
-    // FIXME should this print things like dependencies?
     for (name, recipe) in &self.data.recipes {
-      let (colored_name, help) = match recipe {
-        Recipe::Command(c) => (name.yellow(), &c.help),
-        Recipe::Script(s) => (name.cyan(), &s.help),
-        Recipe::Group(g) => (format!("{}/", name).magenta(), &g.help),
+      let colored_name = match recipe {
+        Recipe::Command(_) => name.yellow(),
+        Recipe::Script(_) => name.cyan(),
+        Recipe::Group(_) => format!("{}/", name).magenta(),
       };
 
       // this is supposed to be 12 character padded, but after all the
@@ -410,7 +409,13 @@ impl Mold {
       // pretty sure that all the color formatting just adds 18 non-display
       // characters, so padding to 30 works out?
       let display_name: String = format!("{}{}", prefix.magenta(), colored_name);
-      println!("{:>30} {}", display_name, help);
+      println!("{:>30} {}", display_name, recipe.help());
+
+      // print dependencies
+      let deps = recipe.deps();
+      if !deps.is_empty() {
+        println!("             ⮡ {}", deps.iter().map(|x| format!("{}{}", prefix, x)).collect::<Vec<_>>().join(", "));
+      }
 
       if let Recipe::Group(_) = recipe {
         let mut path = self.dir.clone();
@@ -418,9 +423,9 @@ impl Mold {
 
         // only update groups that have already been cloned
         if path.is_dir() {
+          let clear_name = format!("{}{}", prefix, colored_name.clear());
           let group = self.open_group(name)?;
-          let cleared_prefix = format!("{}{}", prefix, colored_name.clear());
-          group.help_prefixed(&cleared_prefix)?;
+          group.help_prefixed(&clear_name)?;
         }
       }
     }
@@ -528,6 +533,15 @@ impl Recipe {
       Recipe::Script(s) => s.deps.clone(),
       Recipe::Command(c) => c.deps.clone(),
       _ => vec![],
+    }
+  }
+
+  /// Return this recipe's help string
+  pub fn help(&self) -> &str {
+    match self {
+      Recipe::Script(s) => &s.help,
+      Recipe::Command(c) => &c.help,
+      Recipe::Group(g) => &g.help,
     }
   }
 
