@@ -319,9 +319,9 @@ impl Mold {
     // ...not a subrecipe
     let recipe = self.find_recipe(target)?;
     let deps = recipe
-      .dependencies()
+      .deps()
       .iter()
-      .map(|x| x.to_string())
+      .map(std::string::ToString::to_string)
       .collect();
     self.find_all_dependencies(&deps)
   }
@@ -342,7 +342,7 @@ impl Mold {
       // the parent.  we want foo's moldfile to override bar's moldfile to override
       // baz's moldfile, because baz should be the least specialized.
       let mut env = group.data().environment.clone();
-      env.extend(prev_env.into_iter().map(|(k, v)| (k.clone(), v.clone())));
+      env.extend(prev_env.iter().map(|(k, v)| (k.clone(), v.clone())));
 
       return self.find_task(recipe_name, &env);
     }
@@ -426,14 +426,14 @@ impl Task {
   }
 
   /// Create a Task from a Vec of strings
-  pub fn from_args(args: &Vec<String>, env: Option<&EnvMap>) -> Task {
-    let mut args = args.clone();
+  pub fn from_args(args: &[String], env: Option<&EnvMap>) -> Task {
+    let mut args = args.to_owned();
     // FIXME panics if args is empty
     let command = args.remove(0);
     Task {
       command,
       args,
-      env: env.map(|x| x.clone()),
+      env: env.map(std::clone::Clone::clone),
     }
   }
 }
@@ -482,7 +482,7 @@ impl Type {
 
 impl Recipe {
   /// Return this recipe's dependencies
-  pub fn dependencies(&self) -> Vec<String> {
+  pub fn deps(&self) -> Vec<String> {
     match self {
       Recipe::Script(s) => s.deps.clone(),
       Recipe::Command(c) => c.deps.clone(),

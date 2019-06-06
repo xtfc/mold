@@ -61,7 +61,11 @@ fn run(args: Args) -> Result<(), Error> {
   }
 
   // find all recipes to run, including all dependencies
-  let targets_set: TaskSet = args.targets.iter().map(|x| x.to_string()).collect();
+  let targets_set: TaskSet = args
+    .targets
+    .iter()
+    .map(std::string::ToString::to_string)
+    .collect();
   let targets = mold.find_all_dependencies(&targets_set)?;
 
   if args.debug {
