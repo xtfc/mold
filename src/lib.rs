@@ -417,13 +417,19 @@ impl Task {
 
   /// Print the command to be executed
   pub fn print_cmd(&self) {
-    if !self.args.is_empty() {
-      println!("{} {}", "$".green(), self.args.join(" "));
+    if self.args.is_empty() {
+      return;
     }
+
+    println!("{} {}", "$".green(), self.args.join(" "));
   }
 
   /// Print the environment that will be used
   pub fn print_env(&self) {
+    if self.args.is_empty() {
+      return;
+    }
+
     if let Some(env) = &self.env {
       for (name, value) in env {
         println!("  {} = \"{}\"", format!("${}", name).bright_cyan(), value);
