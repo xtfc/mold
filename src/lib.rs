@@ -391,14 +391,38 @@ impl Mold {
 
   /// Print a description of all recipes in this moldfile
   pub fn help(&self) -> Result<(), Error> {
+    self.help_prefixed("")
+  }
+
+  /// Print a description of all recipes in this moldfile
+  pub fn help_prefixed(&self, prefix: &str) -> Result<(), Error> {
     // FIXME should this print things like dependencies?
     for (name, recipe) in &self.data.recipes {
-      let (name, help) = match recipe {
+      let (colored_name, help) = match recipe {
         Recipe::Command(c) => (name.yellow(), &c.help),
         Recipe::Script(s) => (name.cyan(), &s.help),
         Recipe::Group(g) => (format!("{}/", name).magenta(), &g.help),
       };
-      println!("{:>12} {}", name, help);
+
+      // this is supposed to be 12 character padded, but after all the
+      // formatting, we end up with a String instead of a
+      // colored::ColoredString, so we can't get the padding correct.  but I'm
+      // pretty sure that all the color formatting just adds 18 non-display
+      // characters, so padding to 30 works out?
+      let display_name: String = format!("{}{}", prefix.magenta(), colored_name);
+      println!("{:>30} {}", display_name, help);
+
+      if let Recipe::Group(_) = recipe {
+        let mut path = self.dir.clone();
+        path.push(name);
+
+        // only update groups that have already been cloned
+        if path.is_dir() {
+          let group = self.open_group(name)?;
+          let cleared_prefix = format!("{}{}", prefix, colored_name.clear());
+          group.help_prefixed(&cleared_prefix)?;
+        }
+      }
     }
 
     Ok(())
