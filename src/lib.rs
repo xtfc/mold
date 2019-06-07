@@ -380,7 +380,7 @@ impl Mold {
   }
 
   /// Find a Task object for a given recipe name
-  pub fn find_task(&self, target_name: &str, prev_env: &EnvMap) -> Result<Task, Error> {
+  pub fn find_task(&self, target_name: &str, prev_env: &EnvMap) -> Result<Option<Task>, Error> {
     // check if we're executing a nested subrecipe that we'll have to recurse into
     if target_name.contains('/') {
       let splits: Vec<_> = target_name.splitn(2, '/').collect();
@@ -399,12 +399,13 @@ impl Mold {
       env.extend(prev_env.iter().map(|(k, v)| (k.clone(), v.clone())));
 
       let mut task = group.find_task(recipe_name, &env)?;
-
-      // not sure if this is the right ordering to update environments in, but
-      // it's done here so that parent group's configuration can override one
-      // of the subrecipes in the group
-      if let Some(env) = &mut task.env {
-        env.extend(recipe.env().iter().map(|(k, v)| (k.clone(), v.clone())));
+      if let Some(task) = &mut task {
+        // not sure if this is the right ordering to update environments in, but
+        // it's done here so that parent group's configuration can override one
+        // of the subrecipes in the group
+        if let Some(env) = &mut task.env {
+          env.extend(recipe.env().iter().map(|(k, v)| (k.clone(), v.clone())));
+        }
       }
 
       return Ok(task);
@@ -418,7 +419,7 @@ impl Mold {
     env.extend(recipe.env().iter().map(|(k, v)| (k.clone(), v.clone())));
 
     let task = match recipe {
-      Recipe::Command(target) => Task::from_args(&target.command, Some(&env)),
+      Recipe::Command(target) => Some(Task::from_args(&target.command, Some(&env))),
       Recipe::Script(target) => {
         // what the interpreter is for this recipe
         let type_ = self.find_type(&target.type_)?;
@@ -431,9 +432,16 @@ impl Mold {
           None => type_.find(&self.dir, &target_name)?,
         };
 
-        type_.task(&script.to_str().unwrap(), &env)
+        Some(type_.task(&script.to_str().unwrap(), &env))
       }
-      Recipe::Group(_) => return Err(failure::err_msg("Can't execute a group")),
+      Recipe::Group(_) => {
+        // this is kinda hacky, but... whatever.
+        let group_name = format!("{}/", target_name);
+        self.clone(&group_name)?;
+        let group = self.open_group(target_name)?;
+        group.help_prefixed(&group_name)?;
+        None
+      }
     };
 
     Ok(task)
