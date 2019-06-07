@@ -76,6 +76,7 @@ fn run(args: Args) -> Result<(), Error> {
   // optionally spew the parsed structure
   if args.debug {
     dbg!(&mold);
+    return Ok(());
   }
 
   // print help if we didn't pass any targets
@@ -91,18 +92,10 @@ fn run(args: Args) -> Result<(), Error> {
     .collect();
   let targets = mold.find_all_dependencies(&targets_set)?;
 
-  if args.debug {
-    dbg!(&targets);
-  }
-
   // generate a Task for each target
   let mut tasks = vec![];
   for target_name in &targets {
     tasks.push(mold.find_task(&target_name, mold.env())?);
-  }
-
-  if args.debug {
-    dbg!(&tasks);
   }
 
   // execute the collected Tasks

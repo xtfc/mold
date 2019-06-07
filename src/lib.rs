@@ -158,10 +158,7 @@ impl Mold {
     file.read_to_string(&mut contents)?;
 
     let data: Moldfile = toml::de::from_str(&contents)?;
-
-    let mut dir = path.to_path_buf();
-    dir.pop();
-    dir.push(&data.recipe_dir);
+    let dir = path.with_file_name(&data.recipe_dir);
 
     Ok(Mold {
       file: fs::canonicalize(path)?,
@@ -268,8 +265,7 @@ impl Mold {
     // find all groups that have already been cloned and update them.
     for (name, recipe) in &self.data.recipes {
       if let Recipe::Group(group) = recipe {
-        let mut path = self.dir.clone();
-        path.push(name);
+        let path = self.dir.join(name);
 
         // only update groups that have already been cloned
         if path.is_dir() {
@@ -289,9 +285,7 @@ impl Mold {
   pub fn clone_all(&self) -> Result<(), Error> {
     for (name, recipe) in &self.data.recipes {
       if let Recipe::Group(group) = recipe {
-        let mut path = self.dir.clone();
-        path.push(name);
-
+        let path = self.dir.join(name);
         if !path.is_dir() {
           remote::clone(&group.url, &path)?;
           remote::checkout(&path, &group.ref_)?;
@@ -306,9 +300,7 @@ impl Mold {
   pub fn clean_all(&self) -> Result<(), Error> {
     for (name, recipe) in &self.data.recipes {
       if let Recipe::Group(_) = recipe {
-        let mut path = self.dir.clone();
-        path.push(name);
-
+        let path = self.dir.join(name);
         if path.is_dir() {
           fs::remove_dir_all(&path)?;
           println!("{:>12} {}     ", "Deleted".red(), path.display());
@@ -331,8 +323,7 @@ impl Mold {
     let recipe_name = splits[1];
 
     let recipe = self.find_group(group_name)?;
-    let mut path = self.dir.clone();
-    path.push(group_name);
+    let path = self.dir.join(group_name);
 
     // if the directory doesn't exist, we need to clone it
     if !path.is_dir() {
@@ -434,11 +425,7 @@ impl Mold {
 
         // find the script file to execute
         let script = match &target.script {
-          Some(x) => {
-            let mut path = self.dir.clone();
-            path.push(x);
-            path
-          }
+          Some(x) => self.dir.join(x),
 
           // we need to look it up based on our interpreter's known extensions
           None => type_.find(&self.dir, &target_name)?,
@@ -488,8 +475,7 @@ impl Mold {
       }
 
       if let Recipe::Group(_) = recipe {
-        let mut path = self.dir.clone();
-        path.push(name);
+        let path = self.dir.join(name);
 
         // only update groups that have already been cloned
         if path.is_dir() {
@@ -582,14 +568,13 @@ impl Type {
   /// Attempt to discover an appropriate script in a recipe directory
   pub fn find(&self, dir: &Path, name: &str) -> Result<PathBuf, Error> {
     // set up the pathbuf to look for dir/name
-    let mut pb = dir.to_path_buf();
-    pb.push(name);
+    let mut path = dir.join(name);
 
     // try all of our known extensions, early returning on the first match
     for ext in &self.extensions {
-      pb.set_extension(ext);
-      if pb.is_file() {
-        return Ok(pb);
+      path.set_extension(ext);
+      if path.is_file() {
+        return Ok(path);
       }
     }
     Err(failure::err_msg("Couldn't find a file"))
