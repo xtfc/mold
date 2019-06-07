@@ -230,7 +230,7 @@ impl Mold {
       .data
       .recipes
       .get(target_name)
-      .ok_or_else(|| failure::format_err!("couldn't locate target '{}'", target_name.red()))
+      .ok_or_else(|| failure::format_err!("Couldn't locate target '{}'", target_name.red()))
   }
 
   /// Find a Type by name
@@ -239,7 +239,7 @@ impl Mold {
       .data
       .types
       .get(type_name)
-      .ok_or_else(|| failure::format_err!("couldn't locate type '{}'", type_name.red()))
+      .ok_or_else(|| failure::format_err!("Couldn't locate type '{}'", type_name.red()))
   }
 
   /// Find a Recipe by name and attempt to unwrap it to a Group
@@ -435,7 +435,8 @@ impl Mold {
         Some(type_.task(&script.to_str().unwrap(), &env))
       }
       Recipe::Group(_) => {
-        // this is kinda hacky, but... whatever.
+        // this is kinda hacky, but... whatever. it should probably
+        // somehow map into a Task instead, but this is good enough.
         let group_name = format!("{}/", target_name);
         self.clone(&group_name)?;
         let group = self.open_group(target_name)?;
@@ -458,7 +459,7 @@ impl Mold {
       let colored_name = match recipe {
         Recipe::Command(_) => name.yellow(),
         Recipe::Script(_) => name.cyan(),
-        Recipe::Group(_) => format!("{}/", name).magenta(),
+        Recipe::Group(_) => name.magenta(),
       };
 
       // this is supposed to be 12 character padded, but after all the
@@ -487,7 +488,11 @@ impl Mold {
 
         // only update groups that have already been cloned
         if path.is_dir() {
-          let clear_name = format!("{}{}", prefix, colored_name.clear());
+          let clear_name = match recipe {
+            Recipe::Group(_) => format!("{}{}/", prefix, name),
+            _ => format!("{}{}", prefix, name),
+          };
+
           let group = self.open_group(name)?;
           group.help_prefixed(&clear_name)?;
         }
