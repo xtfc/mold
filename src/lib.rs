@@ -74,16 +74,11 @@ pub struct Group {
   pub ref_: String,
 
   /// Moldfile to look at
-  #[serde(default = "default_moldfile")]
-  pub file: String,
+  pub file: Option<String>,
 }
 
 fn default_git_ref() -> String {
   "master".to_string()
-}
-
-fn default_moldfile() -> String {
-  "moldfile".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -204,6 +199,24 @@ impl Mold {
     }
   }
 
+  /// Try to locate a moldfile from a directory
+  ///
+  /// First checks for mold.toml, then moldfile, then Moldfile
+  pub fn discover_dir(name: &Path) -> Result<Mold, Error> {
+    let path = Self::discover_file(&name.join("mold.toml"))
+      .or_else(|_| Self::discover_file(&name.join("moldfile")))
+      .or_else(|_| Self::discover_file(&name.join("Moldfile")))
+      .map_err(|_| {
+        failure::format_err!(
+          "Unable to discover '{}', '{}', or '{}'",
+          "mold.toml".red(),
+          "moldfile".red(),
+          "Moldfile".red()
+        )
+      })?;
+    Self::open(&path)
+  }
+
   /// Try to locate a moldfile and load it
   pub fn discover(name: &Path) -> Result<Mold, Error> {
     let path = Self::discover_file(name)?;
@@ -244,7 +257,10 @@ impl Mold {
 
   pub fn open_group(&self, group_name: &str) -> Result<Mold, Error> {
     let target = self.find_group(group_name)?;
-    Self::discover(&self.dir.join(group_name).join(&target.file))
+    match &target.file {
+      Some(file) => Self::discover(&Path::new(file)),
+      None => Self::discover_dir(&self.dir.join(group_name)),
+    }
   }
 
   /// Recursively fetch/checkout for all groups that have already been cloned

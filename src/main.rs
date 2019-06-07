@@ -2,6 +2,7 @@ use exitfailure::ExitFailure;
 use failure::Error;
 use mold::Mold;
 use mold::TaskSet;
+use std::path::Path;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
@@ -10,8 +11,8 @@ use structopt::StructOpt;
 #[structopt(raw(setting = "structopt::clap::AppSettings::ColoredHelp"))]
 pub struct Args {
   /// Path to the moldfile
-  #[structopt(long = "file", short = "f", default_value = "moldfile")]
-  pub file: PathBuf,
+  #[structopt(long = "file", short = "f")]
+  pub file: Option<PathBuf>,
 
   /// Don't print extraneous information
   #[structopt(long = "quiet", short = "q")]
@@ -52,7 +53,10 @@ fn main() -> Result<(), ExitFailure> {
 
 fn run(args: Args) -> Result<(), Error> {
   // load the moldfile
-  let mold = Mold::discover(&args.file)?;
+  let mold = match &args.file {
+    Some(file) => Mold::discover(file),
+    None => Mold::discover_dir(&Path::new(".")),
+  }?;
 
   // early return if we passed a --clean
   if args.clean {
