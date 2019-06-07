@@ -177,9 +177,21 @@ impl Mold {
 
   /// Try to locate a moldfile by walking up the directory tree
   fn discover_file(name: &Path) -> Result<PathBuf, Error> {
+    if name.is_absolute() {
+      if name.is_file() {
+        return Ok(name.to_path_buf());
+      } else {
+        let name = format!("{}", name.display());
+        return Err(failure::format_err!("File '{}' does not exist", name.red()));
+      }
+    }
+
     let mut path = std::env::current_dir()?;
     while !path.join(name).is_file() {
       path.pop();
+      if path.parent().is_none() {
+        break;
+      }
     }
 
     path.push(name);
@@ -187,7 +199,8 @@ impl Mold {
     if path.is_file() {
       Ok(path)
     } else {
-      Err(failure::err_msg("Unable to discover a moldfile"))
+      let name = format!("{}", name.display());
+      Err(failure::format_err!("Unable to discover '{}'", name.red()))
     }
   }
 
