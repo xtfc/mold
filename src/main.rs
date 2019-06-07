@@ -14,11 +14,7 @@ pub struct Args {
   #[structopt(long = "file", short = "f")]
   pub file: Option<PathBuf>,
 
-  /// Don't print extraneous information
-  #[structopt(long = "quiet", short = "q")]
-  pub quiet: bool,
-
-  /// dbg! the parsed moldfile
+  /// Print the parsed moldfile before processing it
   #[structopt(long = "debug", short = "d")]
   pub debug: bool,
 
@@ -73,13 +69,13 @@ fn run(args: Args) -> Result<(), Error> {
     return mold.update_all();
   }
 
-  // optionally spew the parsed structure
+  // early return if we passed a --debug
   if args.debug {
     dbg!(&mold);
     return Ok(());
   }
 
-  // print help if we didn't pass any targets
+  // early return and print help if we didn't pass any targets
   if args.targets.is_empty() {
     return mold.help();
   }
