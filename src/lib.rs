@@ -8,6 +8,7 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;
+use std::ffi::OsStr;
 
 pub mod remote;
 
@@ -157,7 +158,10 @@ impl Mold {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
 
-    let data: Moldfile = toml::de::from_str(&contents)?;
+    let data: Moldfile = match path.extension().and_then(OsStr::to_str) {
+      Some("yaml") => serde_yaml::from_str(&contents)?,
+      _ => toml::de::from_str(&contents)?,
+    };
     let dir = path.with_file_name(&data.recipe_dir);
 
     Ok(Mold {
