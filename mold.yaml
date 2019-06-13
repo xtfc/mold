@@ -1,0 +1,53 @@
+environment:
+  NAME: "John"
+
+types:
+  python:
+    command: ["python", "?"]
+    extensions: ["py"]
+
+  sh:
+    command: ["sh", "?"]
+    extensions: ["sh"]
+
+recipes:
+  this:
+    url: "https://github.com/scizzorz/mold.git"
+    help: "Recursive remote include"
+    environment:
+      NAME: "Group"
+
+  shell:
+    help: "Test sh script"
+    type: "sh"
+
+  subshell:
+    help: "Test with different env"
+    type: "sh"
+    script: "shell.sh"
+    environment:
+      NAME: "Test"
+
+  python:
+    help: "Test Python script"
+    type: "python"
+
+  nop:
+    help: "Test no-op"
+
+  fmt:
+    help: "Format using rustfmt"
+    command: ["cargo", "fmt"]
+
+  build:
+    help: "Build using cargo"
+    command: ["cargo", "build"]
+
+  clean:
+    help: "Clean build artifacts using cargo"
+    command: ["cargo", "clean"]
+
+  lint:
+    help: "Lint using clippy"
+    command: ["cargo", "clippy", "--", "-D", "warnings"]
+    deps: ["clean"]
