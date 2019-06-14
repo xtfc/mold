@@ -164,6 +164,10 @@ impl Mold {
     };
     let dir = path.with_file_name(&data.recipe_dir);
 
+    if !dir.is_dir() {
+      fs::create_dir(&dir)?;
+    }
+
     Ok(Mold {
       file: fs::canonicalize(path)?,
       dir: fs::canonicalize(dir)?,
