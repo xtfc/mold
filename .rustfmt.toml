@@ -1,4 +1,7 @@
+edition = "2018"
 tab_spaces = 2
 
-# this isn't stable yet, qq
-# control_brace_style = "ClosingNextLine"
+# none of this is stable yet, qq
+#control_brace_style = "ClosingNextLine"
+#match_block_trailing_comma = true
+#use_field_init_shorthand = true
