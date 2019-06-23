@@ -209,12 +209,14 @@ impl Mold {
   /// First checks for mold.toml, then moldfile, then Moldfile
   pub fn discover_dir(name: &Path) -> Result<Mold, Error> {
     let path = Self::discover_file(&name.join("mold.toml"))
+      .or_else(|_| Self::discover_file(&name.join("mold.yaml")))
       .or_else(|_| Self::discover_file(&name.join("moldfile")))
       .or_else(|_| Self::discover_file(&name.join("Moldfile")))
       .map_err(|_| {
         failure::format_err!(
-          "Unable to discover '{}', '{}', or '{}'",
+          "Unable to discover '{}', '{}', '{}', or '{}'",
           "mold.toml".red(),
+          "mold.yaml".red(),
           "moldfile".red(),
           "Moldfile".red()
         )
