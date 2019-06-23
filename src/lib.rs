@@ -21,6 +21,7 @@ pub type TaskSet = indexmap::IndexSet<String>;
 pub struct Mold {
   file: PathBuf,
   dir: PathBuf,
+  builtin_types: TypeMap,
   data: Moldfile,
 }
 
@@ -168,9 +169,18 @@ impl Mold {
       fs::create_dir(&dir)?;
     }
 
+    let builtin_types: TypeMap = serde_yaml::from_str(
+      r#"
+      sh:
+        command: ["sh", "?"]
+        extensions: ["sh"]
+    "#,
+    )?;
+
     Ok(Mold {
       file: fs::canonicalize(path)?,
       dir: fs::canonicalize(dir)?,
+      builtin_types,
       data,
     })
   }
@@ -247,6 +257,7 @@ impl Mold {
       .data
       .types
       .get(type_name)
+      .or_else(|| self.builtin_types.get(type_name))
       .ok_or_else(|| failure::format_err!("Couldn't locate type '{}'", type_name.red()))
   }
 
