@@ -159,10 +159,14 @@ impl Mold {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
 
-    let data: Moldfile = match path.extension().and_then(OsStr::to_str) {
+    let mut data: Moldfile = match path.extension().and_then(OsStr::to_str) {
       Some("yaml") | Some("yml") => serde_yaml::from_str(&contents)?,
       _ => toml::de::from_str(&contents)?,
     };
+    if let Some(global_moldfile) = Self::discover_global_moldfile() {
+      data.merge_absent(global_moldfile);
+    }
+
     let dir = path.with_file_name(&data.recipe_dir);
     let clone_dir = dir.join(".clones");
 
@@ -228,6 +232,20 @@ impl Mold {
         )
       })?;
     Self::open(&path)
+  }
+
+  /// Open any global moldfile
+  ///
+  /// Looks for $HOME/.mold.yaml
+  pub fn discover_global_moldfile() -> Option<Moldfile> {
+    let path = dirs::home_dir()?.join(".mold.yaml");
+    match path.exists() {
+      false => None,
+      true => {
+        let contents = fs::read_to_string(path).ok()?;
+        serde_yaml::from_str(&contents).ok()
+      }
+    }
   }
 
   /// Try to locate a moldfile and load it
@@ -635,6 +653,17 @@ impl Recipe {
       Recipe::Script(s) => &s.environment,
       Recipe::Command(c) => &c.environment,
       Recipe::Group(g) => &g.environment,
+    }
+  }
+}
+
+impl Moldfile {
+  /// Merges any types in other missing in self
+  pub fn merge_absent(&mut self, other: Moldfile) {
+    for (type_name, type_) in other.types {
+      if !self.types.contains_key(&type_name) {
+        self.types.insert(type_name, type_);
+      }
     }
   }
 }

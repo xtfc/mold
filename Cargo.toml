@@ -7,6 +7,7 @@ edition = "2018"
 [dependencies]
 clap = "2.33.0"
 colored = "1.8"
+dirs = "2.0.1"
 env_logger = "0.6.1"
 exitcode = "1.1.2"
 exitfailure = "0.5.1"
