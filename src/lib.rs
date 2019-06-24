@@ -48,6 +48,8 @@ fn default_recipe_dir() -> String {
   "./mold".to_string()
 }
 
+const MOLD_FILES: &'static [&'static str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Recipe {
@@ -236,15 +238,22 @@ impl Mold {
 
   /// Open any global moldfile
   ///
-  /// Looks for $HOME/.mold.yaml
+  /// Looks for $HOME/.{MOLD_FILES}
   pub fn discover_global_moldfile() -> Option<Moldfile> {
-    let path = dirs::home_dir()?.join(".mold.yaml");
-    match path.exists() {
-      false => None,
-      true => {
-        let contents = fs::read_to_string(path).ok()?;
-        serde_yaml::from_str(&contents).ok()
+    let found_path = MOLD_FILES.iter().find_map(|file| {
+      let full_path = dirs::home_dir()?.join(format!(".{}", file));
+      if full_path.exists() {
+        Some(full_path)
+      } else {
+        None
       }
+    });
+    match found_path {
+      Some(path) => {
+        let contents = fs::read_to_string(path).ok()?;
+        return serde_yaml::from_str(&contents).ok();
+      }
+      _ => None,
     }
   }
 
