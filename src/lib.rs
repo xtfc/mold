@@ -17,6 +17,7 @@ use std::process;
 pub mod remote;
 
 pub type RecipeMap = BTreeMap<String, Recipe>;
+pub type IncludeVec = Vec<Include>;
 pub type TypeMap = BTreeMap<String, Type>;
 pub type EnvMap = BTreeMap<String, String>;
 pub type TaskSet = indexmap::IndexSet<String>;
@@ -34,6 +35,10 @@ pub struct Moldfile {
   /// The directory that recipe scripts can be found in
   #[serde(default = "default_recipe_dir")]
   pub recipe_dir: String,
+
+  /// A map of includes
+  #[serde(default)]
+  pub includes: IncludeVec,
 
   /// A map of recipes
   #[serde(default)]
@@ -60,6 +65,16 @@ pub enum Recipe {
   Group(Group),
   Script(Script),
   Command(Command),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Include {
+  /// Git URL of a remote repo
+  pub url: String,
+
+  /// Git ref to keep up with
+  #[serde(alias = "ref", default = "default_git_ref")]
+  pub ref_: String
 }
 
 // FIXME Group / Script / Command should be able to document what environment vars they depend on
@@ -169,6 +184,7 @@ impl Mold {
       Some("yaml") | Some("yml") => serde_yaml::from_str(&contents)?,
       _ => toml::de::from_str(&contents)?,
     };
+
     let dir = path.with_file_name(&data.recipe_dir);
     let clone_dir = dir.join(".clones");
 
@@ -309,6 +325,16 @@ impl Mold {
         }
       }
     }
+    for include in &self.data.includes {
+      let path = self.clone_dir.join(include.folder_name());
+
+      // only update includes that have already been cloned
+      if path.is_dir() {
+        remote::checkout(&path, &include.ref_)?;
+
+        // TODO recursively update subincludes
+      }
+    }
 
     Ok(())
   }
@@ -324,6 +350,14 @@ impl Mold {
         }
       }
     }
+    for include in &self.data.includes {
+      let path = self.clone_dir.join(include.folder_name());
+      if !path.is_dir() {
+        remote::clone(&include.url, &path)?;
+        remote::checkout(&path, &include.ref_)?;
+        // TODO recursively clone?
+      }
+    }
 
     Ok(())
   }
@@ -337,6 +371,13 @@ impl Mold {
           fs::remove_dir_all(&path)?;
           println!("{:>12} {}     ", "Deleted".red(), path.display());
         }
+      }
+    }
+    for include in &self.data.includes {
+      let path = self.clone_dir.join(include.folder_name());
+      if path.is_dir() {
+        fs::remove_dir_all(&path)?;
+        println!("{:>12} {}     ", "Deleted".red(), path.display());
       }
     }
 
@@ -543,6 +584,17 @@ impl Mold {
 
     Ok(())
   }
+
+  pub fn process_includes(&mut self) -> Result<(), Error> {
+    let to_include: Vec<String> = self.data.includes.iter().map(|include| include.folder_name()).collect();
+    for name in to_include {
+      let path = self.clone_dir.join(name);
+      let include = Mold::discover_dir(&path)?;
+      self.data.merge_absent(include.data);
+    }
+
+    Ok(())
+  }
 }
 
 impl Task {
@@ -665,11 +717,31 @@ impl Recipe {
   }
 }
 
+fn hash_url_ref(url: &str, ref_: &str) -> String {
+  let mut hasher = DefaultHasher::new();
+  format!("{}@{}", url, ref_).hash(&mut hasher);
+  format!("{:16x}", hasher.finish())
+}
+
 impl Group {
   /// Return this group's folder name in the format hash(url@ref)
   pub fn folder_name(&self) -> String {
-    let mut hasher = DefaultHasher::new();
-    format!("{}@{}", self.url, self.ref_).hash(&mut hasher);
-    format!("{:16x}", hasher.finish())
+    hash_url_ref(&self.url, &self.ref_)
+  }
+}
+
+impl Include {
+  /// Return this group's folder name in the format hash(url@ref)
+  pub fn folder_name(&self) -> String {
+    hash_url_ref(&self.url, &self.ref_)
+  }
+}
+
+impl Moldfile {
+  /// Merges any types in other missing in self
+  pub fn merge_absent(&mut self, other: Moldfile) {
+    for (type_name, type_) in other.types {
+      self.types.entry(type_name).or_insert(type_);
+    }
   }
 }

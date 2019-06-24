@@ -49,7 +49,7 @@ fn main() -> Result<(), ExitFailure> {
 
 fn run(args: Args) -> Result<(), Error> {
   // load the moldfile
-  let mold = match &args.file {
+  let mut mold = match &args.file {
     Some(file) => Mold::discover(file),
     None => Mold::discover_dir(&Path::new(".")),
   }?;
@@ -79,6 +79,9 @@ fn run(args: Args) -> Result<(), Error> {
   if args.targets.is_empty() {
     return mold.help();
   }
+
+  // process all includes
+  mold.process_includes()?;
 
   // find all recipes to run, including all dependencies
   let targets_set: TaskSet = args
