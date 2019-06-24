@@ -48,6 +48,8 @@ fn default_recipe_dir() -> String {
   "./mold".to_string()
 }
 
+const MOLD_FILES: &'static [&'static str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Recipe {
@@ -212,19 +214,15 @@ impl Mold {
 
   /// Try to locate a moldfile from a directory
   ///
-  /// First checks for mold.toml, then moldfile, then Moldfile
+  /// Checks for MOLD_FILES
   pub fn discover_dir(name: &Path) -> Result<Mold, Error> {
-    let path = Self::discover_file(&name.join("mold.toml"))
-      .or_else(|_| Self::discover_file(&name.join("mold.yaml")))
-      .or_else(|_| Self::discover_file(&name.join("moldfile")))
-      .or_else(|_| Self::discover_file(&name.join("Moldfile")))
-      .map_err(|_| {
+    let path = MOLD_FILES
+      .iter()
+      .find_map(|file| Self::discover_file(&name.join(file)).ok())
+      .ok_or_else(|| {
         failure::format_err!(
-          "Unable to discover '{}', '{}', '{}', or '{}'",
-          "mold.toml".red(),
-          "mold.yaml".red(),
-          "moldfile".red(),
-          "Moldfile".red()
+          "Cannot locate moldfile, tried the following:\n{}",
+          MOLD_FILES.join(" ").red()
         )
       })?;
     Self::open(&path)
