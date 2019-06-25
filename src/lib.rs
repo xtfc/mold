@@ -21,7 +21,7 @@ pub type TaskSet = indexmap::IndexSet<String>;
 pub struct Mold {
   file: PathBuf,
   dir: PathBuf,
-  group_dir: PathBuf,
+  clone_dir: PathBuf,
   data: Moldfile,
 }
 
@@ -164,19 +164,19 @@ impl Mold {
       _ => toml::de::from_str(&contents)?,
     };
     let dir = path.with_file_name(&data.recipe_dir);
-    let group_dir = dir.join(".clones");
+    let clone_dir = dir.join(".clones");
 
     if !dir.is_dir() {
       fs::create_dir(&dir)?;
     }
-    if !group_dir.is_dir() {
-      fs::create_dir(&group_dir)?;
+    if !clone_dir.is_dir() {
+      fs::create_dir(&clone_dir)?;
     }
 
     Ok(Mold {
       file: fs::canonicalize(path)?,
       dir: fs::canonicalize(dir)?,
-      group_dir: fs::canonicalize(group_dir)?,
+      clone_dir: fs::canonicalize(clone_dir)?,
       data,
     })
   }
@@ -272,7 +272,7 @@ impl Mold {
     let target = self.find_group(group_name)?;
     match &target.file {
       Some(file) => Self::discover(&Path::new(file)),
-      None => Self::discover_dir(&self.group_dir.join(group_name)),
+      None => Self::discover_dir(&self.clone_dir.join(group_name)),
     }
   }
 
@@ -281,7 +281,7 @@ impl Mold {
     // find all groups that have already been cloned and update them.
     for (name, recipe) in &self.data.recipes {
       if let Recipe::Group(group) = recipe {
-        let path = self.group_dir.join(name);
+        let path = self.clone_dir.join(name);
 
         // only update groups that have already been cloned
         if path.is_dir() {
@@ -301,7 +301,7 @@ impl Mold {
   pub fn clone_all(&self) -> Result<(), Error> {
     for (name, recipe) in &self.data.recipes {
       if let Recipe::Group(group) = recipe {
-        let path = self.group_dir.join(name);
+        let path = self.clone_dir.join(name);
         if !path.is_dir() {
           remote::clone(&group.url, &path)?;
           remote::checkout(&path, &group.ref_)?;
@@ -316,7 +316,7 @@ impl Mold {
   pub fn clean_all(&self) -> Result<(), Error> {
     for (name, recipe) in &self.data.recipes {
       if let Recipe::Group(_) = recipe {
-        let path = self.group_dir.join(name);
+        let path = self.clone_dir.join(name);
         if path.is_dir() {
           fs::remove_dir_all(&path)?;
           println!("{:>12} {}     ", "Deleted".red(), path.display());
@@ -339,7 +339,7 @@ impl Mold {
     let recipe_name = splits[1];
 
     let recipe = self.find_group(group_name)?;
-    let path = self.group_dir.join(group_name);
+    let path = self.clone_dir.join(group_name);
 
     // if the directory doesn't exist, we need to clone it
     if !path.is_dir() {
@@ -500,7 +500,7 @@ impl Mold {
       }
 
       if let Recipe::Group(_) = recipe {
-        let path = self.group_dir.join(name);
+        let path = self.clone_dir.join(name);
 
         // only update groups that have already been cloned
         if path.is_dir() {
