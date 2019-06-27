@@ -668,17 +668,6 @@ impl Group {
   pub fn folder_name(&self) -> String {
     let mut hasher = DefaultHasher::new();
     format!("{}@{}", self.url, self.ref_).hash(&mut hasher);
-    let uint = hasher.finish();
-    let bytes = [
-      ((uint >> 56) & 0xff) as u8,
-      ((uint >> 48) & 0xff) as u8,
-      ((uint >> 40) & 0xff) as u8,
-      ((uint >> 32) & 0xff) as u8,
-      ((uint >> 24) & 0xff) as u8,
-      ((uint >> 16) & 0xff) as u8,
-      ((uint >> 8) & 0xff) as u8,
-      (uint & 0xff) as u8,
-    ];
-    base64::encode(&bytes)
+    format!("{:16x}", hasher.finish())
   }
 }
