@@ -2,9 +2,13 @@ use colored::*;
 use failure::Error;
 use serde_derive::Deserialize;
 use serde_derive::Serialize;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs;
+use std::hash::Hash;
+use std::hash::Hasher;
 use std::io::prelude::*;
 use std::path::Path;
 use std::path::PathBuf;
@@ -268,26 +272,40 @@ impl Mold {
 
   pub fn open_group(&self, group_name: &str) -> Result<Mold, Error> {
     let target = self.find_group(group_name)?;
-    match &target.file {
+    let mut mold = match &target.file {
       Some(file) => Self::discover(&Path::new(file)),
-      None => Self::discover_dir(&self.clone_dir.join(group_name)),
-    }
+      None => Self::discover_dir(&self.clone_dir.join(target.folder_name())),
+    }?;
+
+    // point new clone directory at self's clone directory
+    mold.clone_dir = self.clone_dir.clone();
+    Ok(mold)
   }
 
   /// Recursively fetch/checkout for all groups that have already been cloned
   pub fn update_all(&self) -> Result<(), Error> {
+    self.update_all_track(&mut HashSet::new())
+  }
+
+  /// Recursively fetch/checkout for all groups that have already been cloned,
+  /// but with extra checks to avoid infinite recursion cycles
+  fn update_all_track(&self, updated: &mut HashSet<PathBuf>) -> Result<(), Error> {
     // find all groups that have already been cloned and update them.
     for (name, recipe) in &self.data.recipes {
       if let Recipe::Group(group) = recipe {
-        let path = self.clone_dir.join(name);
+        let path = self.clone_dir.join(group.folder_name());
 
-        // only update groups that have already been cloned
-        if path.is_dir() {
+        // only update groups that have already been cloned and have not been
+        // visited before
+        if path.is_dir() && !updated.contains(&path) {
+          // track that we've considered this path so we don't infinitely
+          // recurse into dependency cycles
+          updated.insert(path.clone());
+
           remote::checkout(&path, &group.ref_)?;
 
           // recursively update subgroups
-          let group = self.open_group(name)?;
-          group.update_all()?;
+          self.open_group(name)?.update_all_track(updated)?;
         }
       }
     }
@@ -297,9 +315,9 @@ impl Mold {
 
   /// Clone all top-level targets
   pub fn clone_all(&self) -> Result<(), Error> {
-    for (name, recipe) in &self.data.recipes {
+    for (_name, recipe) in &self.data.recipes {
       if let Recipe::Group(group) = recipe {
-        let path = self.clone_dir.join(name);
+        let path = self.clone_dir.join(group.folder_name());
         if !path.is_dir() {
           remote::clone(&group.url, &path)?;
           remote::checkout(&path, &group.ref_)?;
@@ -312,9 +330,9 @@ impl Mold {
 
   /// Delete all cloned top-level targets
   pub fn clean_all(&self) -> Result<(), Error> {
-    for (name, recipe) in &self.data.recipes {
-      if let Recipe::Group(_) = recipe {
-        let path = self.clone_dir.join(name);
+    for (_name, recipe) in &self.data.recipes {
+      if let Recipe::Group(group) = recipe {
+        let path = self.clone_dir.join(group.folder_name());
         if path.is_dir() {
           fs::remove_dir_all(&path)?;
           println!("{:>12} {}     ", "Deleted".red(), path.display());
@@ -337,7 +355,7 @@ impl Mold {
     let recipe_name = splits[1];
 
     let recipe = self.find_group(group_name)?;
-    let path = self.clone_dir.join(group_name);
+    let path = self.clone_dir.join(recipe.folder_name());
 
     // if the directory doesn't exist, we need to clone it
     if !path.is_dir() {
@@ -467,8 +485,13 @@ impl Mold {
     self.help_prefixed("")
   }
 
-  /// Print a description of all recipes in this moldfile
   pub fn help_prefixed(&self, prefix: &str) -> Result<(), Error> {
+    self.help_prefixed_track(prefix, &mut HashSet::new())
+  }
+
+  /// Print a description of all recipes in this moldfile, but with extra
+  /// checks to avoid / duplicating work
+  fn help_prefixed_track(&self, prefix: &str, printed: &mut HashSet<PathBuf>) -> Result<(), Error> {
     for (name, recipe) in &self.data.recipes {
       let colored_name = match recipe {
         Recipe::Command(_) => name.yellow(),
@@ -497,18 +520,23 @@ impl Mold {
         );
       }
 
-      if let Recipe::Group(_) = recipe {
-        let path = self.clone_dir.join(name);
+      if let Recipe::Group(group) = recipe {
+        let path = self.clone_dir.join(group.folder_name());
 
-        // only update groups that have already been cloned
-        if path.is_dir() {
+        // only print groups that have already been cloned and have not been
+        // printed before
+        if path.is_dir() && !printed.contains(&path) {
+          // track that we've considered this path so we don't infinitely
+          // recurse into dependency cycles
+          printed.insert(path.clone());
+
           let clear_name = match recipe {
             Recipe::Group(_) => format!("{}{}/", prefix, name),
             _ => format!("{}{}", prefix, name),
           };
 
           let group = self.open_group(name)?;
-          group.help_prefixed(&clear_name)?;
+          group.help_prefixed_track(&clear_name, printed)?;
         }
       }
     }
@@ -634,5 +662,14 @@ impl Recipe {
       Recipe::Command(c) => &c.environment,
       Recipe::Group(g) => &g.environment,
     }
+  }
+}
+
+impl Group {
+  /// Return this group's folder name in the format hash(url@ref)
+  pub fn folder_name(&self) -> String {
+    let mut hasher = DefaultHasher::new();
+    format!("{}@{}", self.url, self.ref_).hash(&mut hasher);
+    format!("{:16x}", hasher.finish())
   }
 }
