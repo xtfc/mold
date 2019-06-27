@@ -1,0 +1,21 @@
+language: rust
+
+rust:
+  - stable
+  - beta
+  - nightly
+
+matrix:
+  allow_failures:
+    - rust: nightly
+    - rust: beta
+  fast_finish: true
+
+
+before_script:
+  - rustup component add clippy rustfmt
+
+script:
+  - cargo build --verbose
+  - 'cargo fmt && [ $(git status -s | wc -l) -eq 0 ]'
+  - cargo clippy -- -D warnings
