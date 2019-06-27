@@ -52,7 +52,7 @@ fn default_recipe_dir() -> String {
   "./mold".to_string()
 }
 
-const MOLD_FILES: &'static [&'static str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
+const MOLD_FILES: &[&str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -315,7 +315,7 @@ impl Mold {
 
   /// Clone all top-level targets
   pub fn clone_all(&self) -> Result<(), Error> {
-    for (_name, recipe) in &self.data.recipes {
+    for recipe in self.data.recipes.values() {
       if let Recipe::Group(group) = recipe {
         let path = self.clone_dir.join(group.folder_name());
         if !path.is_dir() {
@@ -330,7 +330,7 @@ impl Mold {
 
   /// Delete all cloned top-level targets
   pub fn clean_all(&self) -> Result<(), Error> {
-    for (_name, recipe) in &self.data.recipes {
+    for recipe in self.data.recipes.values() {
       if let Recipe::Group(group) = recipe {
         let path = self.clone_dir.join(group.folder_name());
         if path.is_dir() {
