@@ -287,18 +287,19 @@ impl Mold {
     self.update_all_track(&mut HashSet::new())
   }
 
+  /// Recursively fetch/checkout for all groups that have already been cloned,
+  /// but with extra checks to avoid infinite recursion cycles
   fn update_all_track(&self, updated: &mut HashSet<PathBuf>) -> Result<(), Error> {
     // find all groups that have already been cloned and update them.
     for (name, recipe) in &self.data.recipes {
       if let Recipe::Group(group) = recipe {
         let path = self.clone_dir.join(group.folder_name());
 
-        // only update groups that have already been cloned
-        // and have not been visited before
+        // only update groups that have already been cloned and have not been
+        // visited before
         if path.is_dir() && !updated.contains(&path) {
-          // Track that we've considered this path
-          // so we don't infinitely recurse into
-          // dependency cycles
+          // track that we've considered this path so we don't infinitely
+          // recurse into dependency cycles
           updated.insert(path.clone());
 
           remote::checkout(&path, &group.ref_)?;
@@ -484,11 +485,12 @@ impl Mold {
     self.help_prefixed("")
   }
 
-  /// Print a description of all recipes in this moldfile
   pub fn help_prefixed(&self, prefix: &str) -> Result<(), Error> {
     self.help_prefixed_track(prefix, &mut HashSet::new())
   }
 
+  /// Print a description of all recipes in this moldfile, but with extra
+  /// checks to avoid / duplicating work
   fn help_prefixed_track(&self, prefix: &str, printed: &mut HashSet<PathBuf>) -> Result<(), Error> {
     for (name, recipe) in &self.data.recipes {
       let colored_name = match recipe {
@@ -521,12 +523,11 @@ impl Mold {
       if let Recipe::Group(group) = recipe {
         let path = self.clone_dir.join(group.folder_name());
 
-        // only print groups that have already been cloned
-        // and have not been printed before
+        // only print groups that have already been cloned and have not been
+        // printed before
         if path.is_dir() && !printed.contains(&path) {
-          // Track that we've considered this path
-          // so we don't infinitely recurse into
-          // dependency cycles
+          // track that we've considered this path so we don't infinitely
+          // recurse into dependency cycles
           printed.insert(path.clone());
 
           let clear_name = match recipe {
@@ -665,8 +666,7 @@ impl Recipe {
 }
 
 impl Group {
-  /// Return this group's folder name
-  /// in the format hash(url@ref)
+  /// Return this group's folder name in the format hash(url@ref)
   pub fn folder_name(&self) -> String {
     let mut hasher = DefaultHasher::new();
     format!("{}@{}", self.url, self.ref_).hash(&mut hasher);
