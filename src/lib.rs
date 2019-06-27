@@ -7,7 +7,8 @@ use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
+use std::hash::Hasher;
 use std::io::prelude::*;
 use std::path::Path;
 use std::path::PathBuf;
@@ -271,13 +272,14 @@ impl Mold {
 
   pub fn open_group(&self, group_name: &str) -> Result<Mold, Error> {
     let target = self.find_group(group_name)?;
-    match &target.file {
+    let mut mold = match &target.file {
       Some(file) => Self::discover(&Path::new(file)),
       None => Self::discover_dir(&self.clone_dir.join(target.folder_name())),
-    }.map(|mut mold| {
-      mold.clone_dir = self.clone_dir.clone();
-      mold
-    })
+    }?;
+
+    // point new clone directory at self's clone directory
+    mold.clone_dir = self.clone_dir.clone();
+    Ok(mold)
   }
 
   /// Recursively fetch/checkout for all groups that have already been cloned
