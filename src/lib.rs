@@ -2,9 +2,11 @@ use colored::*;
 use failure::Error;
 use serde_derive::Deserialize;
 use serde_derive::Serialize;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::io::prelude::*;
 use std::path::Path;
 use std::path::PathBuf;
@@ -270,7 +272,7 @@ impl Mold {
     let target = self.find_group(group_name)?;
     match &target.file {
       Some(file) => Self::discover(&Path::new(file)),
-      None => Self::discover_dir(&self.clone_dir.join(group_name)),
+      None => Self::discover_dir(&self.clone_dir.join(target.folder_name())),
     }
   }
 
@@ -279,15 +281,14 @@ impl Mold {
     // find all groups that have already been cloned and update them.
     for (name, recipe) in &self.data.recipes {
       if let Recipe::Group(group) = recipe {
-        let path = self.clone_dir.join(name);
+        let path = self.clone_dir.join(group.folder_name());
 
         // only update groups that have already been cloned
         if path.is_dir() {
           remote::checkout(&path, &group.ref_)?;
 
           // recursively update subgroups
-          let group = self.open_group(name)?;
-          group.update_all()?;
+          self.open_group(name)?.update_all()?;
         }
       }
     }
@@ -297,9 +298,9 @@ impl Mold {
 
   /// Clone all top-level targets
   pub fn clone_all(&self) -> Result<(), Error> {
-    for (name, recipe) in &self.data.recipes {
+    for (_name, recipe) in &self.data.recipes {
       if let Recipe::Group(group) = recipe {
-        let path = self.clone_dir.join(name);
+        let path = self.clone_dir.join(group.folder_name());
         if !path.is_dir() {
           remote::clone(&group.url, &path)?;
           remote::checkout(&path, &group.ref_)?;
@@ -312,9 +313,9 @@ impl Mold {
 
   /// Delete all cloned top-level targets
   pub fn clean_all(&self) -> Result<(), Error> {
-    for (name, recipe) in &self.data.recipes {
-      if let Recipe::Group(_) = recipe {
-        let path = self.clone_dir.join(name);
+    for (_name, recipe) in &self.data.recipes {
+      if let Recipe::Group(group) = recipe {
+        let path = self.clone_dir.join(group.folder_name());
         if path.is_dir() {
           fs::remove_dir_all(&path)?;
           println!("{:>12} {}     ", "Deleted".red(), path.display());
@@ -337,7 +338,7 @@ impl Mold {
     let recipe_name = splits[1];
 
     let recipe = self.find_group(group_name)?;
-    let path = self.clone_dir.join(group_name);
+    let path = self.clone_dir.join(recipe.folder_name());
 
     // if the directory doesn't exist, we need to clone it
     if !path.is_dir() {
@@ -497,8 +498,8 @@ impl Mold {
         );
       }
 
-      if let Recipe::Group(_) = recipe {
-        let path = self.clone_dir.join(name);
+      if let Recipe::Group(group) = recipe {
+        let path = self.clone_dir.join(group.folder_name());
 
         // only update groups that have already been cloned
         if path.is_dir() {
@@ -634,5 +635,26 @@ impl Recipe {
       Recipe::Command(c) => &c.environment,
       Recipe::Group(g) => &g.environment,
     }
+  }
+}
+
+impl Group {
+  /// Return this group's folder name
+  /// in the format hash(url@ref)
+  pub fn folder_name(&self) -> String {
+    let mut hasher = DefaultHasher::new();
+    format!("{}@{}", self.url, self.ref_).hash(&mut hasher);
+    let uint = hasher.finish();
+    let bytes = [
+      ((uint >> 56) & 0xff) as u8,
+      ((uint >> 48) & 0xff) as u8,
+      ((uint >> 40) & 0xff) as u8,
+      ((uint >> 32) & 0xff) as u8,
+      ((uint >> 24) & 0xff) as u8,
+      ((uint >> 16) & 0xff) as u8,
+      ((uint >> 8) & 0xff) as u8,
+      (uint & 0xff) as u8,
+    ];
+    base64::encode(&bytes)
   }
 }
