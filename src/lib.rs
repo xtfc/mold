@@ -325,6 +325,10 @@ impl Mold {
         }
       }
     }
+
+    // TODO not sure if includes should be updated here,
+    // since they're always automatically cloned (which
+    // means they're updated?)
     for include in &self.data.includes {
       let path = self.clone_dir.join(include.folder_name());
 
@@ -348,14 +352,6 @@ impl Mold {
           remote::clone(&group.url, &path)?;
           remote::checkout(&path, &group.ref_)?;
         }
-      }
-    }
-    for include in &self.data.includes {
-      let path = self.clone_dir.join(include.folder_name());
-      if !path.is_dir() {
-        remote::clone(&include.url, &path)?;
-        remote::checkout(&path, &include.ref_)?;
-        // TODO recursively clone?
       }
     }
 
@@ -587,7 +583,6 @@ impl Mold {
 
   pub fn process_includes(&mut self) -> Result<(), Error> {
     // Includes should always be automatically cloned
-    // TODO shoud they be cloned even when printing out help text?
     for include in &self.data.includes {
       let path = self.clone_dir.join(include.folder_name());
       if !path.is_dir() {
@@ -608,6 +603,12 @@ impl Mold {
       let path = self.clone_dir.join(name);
       let include = Mold::discover_dir(&path)?;
       self.data.merge_absent(include.data);
+      // TODO recursively merge?
+      // the recursive merging should probably happen
+      // 'bottom-up', e.g., if "std" includes
+      // "std.core" and "std.types" then "std.core"
+      // and "std.types" should merge into "std"
+      // before "std" is merged into self
     }
 
     Ok(())

@@ -59,6 +59,10 @@ fn run(args: Args) -> Result<(), Error> {
     return mold.clean_all();
   }
 
+  // process (clone and merge) all includes
+  // after we check for --clean
+  mold.process_includes()?;
+
   // early return if we passed a --clone
   if args.clone {
     return mold.clone_all();
@@ -79,9 +83,6 @@ fn run(args: Args) -> Result<(), Error> {
   if args.targets.is_empty() {
     return mold.help();
   }
-
-  // process all includes
-  mold.process_includes()?;
 
   // find all recipes to run, including all dependencies
   let targets_set: TaskSet = args
