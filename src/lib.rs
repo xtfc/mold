@@ -360,23 +360,9 @@ impl Mold {
 
   /// Delete all cloned top-level targets
   pub fn clean_all(&self) -> Result<(), Error> {
-    for recipe in self.data.recipes.values() {
-      if let Recipe::Group(group) = recipe {
-        let path = self.clone_dir.join(group.folder_name());
-        if path.is_dir() {
-          fs::remove_dir_all(&path)?;
-          println!("{:>12} {}     ", "Deleted".red(), path.display());
-        }
-      }
-    }
-    for include in &self.data.includes {
-      let path = self.clone_dir.join(include.folder_name());
-      if path.is_dir() {
-        fs::remove_dir_all(&path)?;
-        println!("{:>12} {}     ", "Deleted".red(), path.display());
-      }
-    }
-
+    // no point in checking if it exists, because Mold::open creates it
+    fs::remove_dir_all(&self.clone_dir)?;
+    println!("{:>12} {}", "Deleted".red(), self.clone_dir.display());
     Ok(())
   }
 
