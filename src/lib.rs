@@ -74,7 +74,7 @@ pub struct Include {
 
   /// Git ref to keep up with
   #[serde(alias = "ref", default = "default_git_ref")]
-  pub ref_: String
+  pub ref_: String,
 }
 
 // FIXME Group / Script / Command should be able to document what environment vars they depend on
@@ -586,7 +586,24 @@ impl Mold {
   }
 
   pub fn process_includes(&mut self) -> Result<(), Error> {
-    let to_include: Vec<String> = self.data.includes.iter().map(|include| include.folder_name()).collect();
+    // Includes should always be automatically cloned
+    // TODO shoud they be cloned even when printing out help text?
+    for include in &self.data.includes {
+      let path = self.clone_dir.join(include.folder_name());
+      if !path.is_dir() {
+        remote::clone(&include.url, &path)?;
+        remote::checkout(&path, &include.ref_)?;
+        // TODO recursively clone?
+      }
+    }
+
+    // Merge all includes into the current mold
+    let to_include: Vec<String> = self
+      .data
+      .includes
+      .iter()
+      .map(|include| include.folder_name())
+      .collect();
     for name in to_include {
       let path = self.clone_dir.join(name);
       let include = Mold::discover_dir(&path)?;
