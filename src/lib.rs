@@ -521,18 +521,13 @@ impl Mold {
     self.help_prefixed("")
   }
 
+  /// Print a description of all recipes in this moldfile
   pub fn help_prefixed(&self, prefix: &str) -> Result<(), Error> {
-    self.help_prefixed_track(prefix, &mut HashSet::new())
-  }
-
-  /// Print a description of all recipes in this moldfile, but with extra
-  /// checks to avoid / duplicating work
-  fn help_prefixed_track(&self, prefix: &str, printed: &mut HashSet<PathBuf>) -> Result<(), Error> {
     for (name, recipe) in &self.data.recipes {
       let colored_name = match recipe {
         Recipe::Command(_) => name.yellow(),
         Recipe::Script(_) => name.cyan(),
-        Recipe::Group(_) => name.magenta(),
+        Recipe::Group(_) => format!("{}/", name).magenta(),
       };
 
       // this is supposed to be 12 character padded, but after all the
@@ -554,26 +549,6 @@ impl Mold {
             .collect::<Vec<_>>()
             .join(", ")
         );
-      }
-
-      if let Recipe::Group(group) = recipe {
-        let path = self.clone_dir.join(group.folder_name());
-
-        // only print groups that have already been cloned and have not been
-        // printed before
-        if path.is_dir() && !printed.contains(&path) {
-          // track that we've considered this path so we don't infinitely
-          // recurse into dependency cycles
-          printed.insert(path.clone());
-
-          let clear_name = match recipe {
-            Recipe::Group(_) => format!("{}{}/", prefix, name),
-            _ => format!("{}{}", prefix, name),
-          };
-
-          let group = self.open_group(name)?;
-          group.help_prefixed_track(&clear_name, printed)?;
-        }
       }
     }
 
