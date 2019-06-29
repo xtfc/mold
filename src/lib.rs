@@ -354,6 +354,16 @@ impl Mold {
         if !path.is_dir() {
           remote::clone(&group.url, &path)?;
           remote::checkout(&path, &group.ref_)?;
+
+          // now that we've cloned it, open it up!
+          let mut subgroup = match &group.file {
+            Some(file) => Self::discover(&path.join(file)),
+            None => Self::discover_dir(&path),
+          }?;
+          subgroup.clone_dir = self.clone_dir.clone();
+
+          // recursively clone + merge
+          subgroup.clone_all()?;
         }
       }
     }
