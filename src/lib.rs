@@ -75,6 +75,9 @@ pub struct Include {
   /// Git ref to keep up with
   #[serde(alias = "ref", default = "default_git_ref")]
   pub ref_: String,
+
+  /// Moldfile to look at
+  pub file: Option<String>,
 }
 
 // FIXME Group / Script / Command should be able to document what environment vars they depend on
@@ -578,23 +581,28 @@ impl Mold {
       }
     }
 
-    // Merge all includes into the current mold
-    let to_include: Vec<String> = self
-      .data
-      .includes
-      .iter()
-      .map(|include| include.folder_name())
-      .collect();
-    for name in to_include {
-      let path = self.clone_dir.join(name);
-      let include = Mold::discover_dir(&path)?;
-      self.data.merge_absent(include.data);
-      // TODO recursively merge?
-      // the recursive merging should probably happen
-      // 'bottom-up', e.g., if "std" includes
-      // "std.core" and "std.types" then "std.core"
-      // and "std.types" should merge into "std"
-      // before "std" is merged into self
+    // merge all includes into the current mold. everything needs to be stuffed
+    // into a vector because merging is a mutating action and self can't be
+    // mutated while iterating.
+    let mut merges = vec![];
+    for include in &self.data.includes {
+      let path = self.clone_dir.join(include.folder_name());
+      let merge = match &include.file {
+        Some(file) => Self::discover(&path.join(file)),
+        None => Self::discover_dir(&path),
+      }?;
+      merges.push(merge);
+    }
+
+    // TODO recursively merge?
+    // the recursive merging should probably happen
+    // 'bottom-up', e.g., if "std" includes
+    // "std.core" and "std.types" then "std.core"
+    // and "std.types" should merge into "std"
+    // before "std" is merged into self
+
+    for merge in merges {
+      self.data.merge_absent(merge.data);
     }
 
     Ok(())

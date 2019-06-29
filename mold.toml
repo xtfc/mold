@@ -1,13 +1,12 @@
 [environment]
 NAME = "John"
 
+[[includes]]
+url = "https://github.com/philipdexter/std.mold"
+
 [types.python]
 command = ["python", "?"]
 extensions = ["py"]
-
-[types.sh]
-command = ["sh", "?"]
-extensions = ["sh"]
 
 [recipes.this]
 url = "https://github.com/scizzorz/mold.git"
