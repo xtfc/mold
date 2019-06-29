@@ -360,9 +360,9 @@ impl Mold {
             Some(file) => Self::discover(&path.join(file)),
             None => Self::discover_dir(&path),
           }?;
-          subgroup.clone_dir = self.clone_dir.clone();
 
           // recursively clone + merge
+          subgroup.clone_dir = self.clone_dir.clone();
           subgroup.clone_all()?;
         }
       }
@@ -581,13 +581,12 @@ impl Mold {
   }
 
   pub fn process_includes(&mut self) -> Result<(), Error> {
-    // Includes should always be automatically cloned
+    // includes should always be automatically cloned
     for include in &self.data.includes {
       let path = self.clone_dir.join(include.folder_name());
       if !path.is_dir() {
         remote::clone(&include.url, &path)?;
         remote::checkout(&path, &include.ref_)?;
-        // TODO recursively clone?
       }
     }
 
@@ -597,19 +596,16 @@ impl Mold {
     let mut merges = vec![];
     for include in &self.data.includes {
       let path = self.clone_dir.join(include.folder_name());
-      let merge = match &include.file {
+      let mut merge = match &include.file {
         Some(file) => Self::discover(&path.join(file)),
         None => Self::discover_dir(&path),
       }?;
+
+      // recursively clone + merge
+      merge.clone_dir = self.clone_dir.clone();
+      merge.process_includes()?;
       merges.push(merge);
     }
-
-    // TODO recursively merge?
-    // the recursive merging should probably happen
-    // 'bottom-up', e.g., if "std" includes
-    // "std.core" and "std.types" then "std.core"
-    // and "std.types" should merge into "std"
-    // before "std" is merged into self
 
     for merge in merges {
       self.data.merge_absent(merge.data);
