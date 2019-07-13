@@ -379,47 +379,20 @@ impl Mold {
     Ok(())
   }
 
-  /// Lazily clone groups for a given target
-  pub fn clone(&self, target: &str) -> Result<(), Error> {
-    // if this isn't a nested subrecipe, we don't need to worry about cloning anything
-    if !target.contains('/') {
-      return Ok(());
-    }
-
-    let splits: Vec<_> = target.splitn(2, '/').collect();
-    let group_name = splits[0];
-    let recipe_name = splits[1];
-
-    let recipe = self.find_group(group_name)?;
-    let path = self.clone_dir.join(recipe.folder_name());
-
-    // if the directory doesn't exist, we need to clone it
-    if !path.is_dir() {
-      remote::clone(&recipe.url, &path)?;
-      remote::checkout(&path, &recipe.ref_)?;
-    }
-
-    let group = self.open_group(group_name)?;
-    group.clone(recipe_name)
-  }
-
-  /// Find all dependencies for a given set of tasks
+  /// Find all dependencies for a given *set* of tasks
   pub fn find_all_dependencies(&self, targets: &TaskSet) -> Result<TaskSet, Error> {
     let mut new_targets = TaskSet::new();
 
     for target_name in targets {
-      // insure we have it cloned already
-      self.clone(target_name)?;
-
-      new_targets.extend(self.find_dependencies(target_name)?);
+      new_targets.extend(self.find_task_dependencies(target_name)?);
       new_targets.insert(target_name.to_string());
     }
 
     Ok(new_targets)
   }
 
-  /// Find all dependencies for a given task
-  fn find_dependencies(&self, target: &str) -> Result<TaskSet, Error> {
+  /// Find all dependencies for a *single* task
+  fn find_task_dependencies(&self, target: &str) -> Result<TaskSet, Error> {
     // check if this is a nested subrecipe that we'll have to recurse into
     if target.contains('/') {
       let splits: Vec<_> = target.splitn(2, '/').collect();
@@ -427,7 +400,7 @@ impl Mold {
       let recipe_name = splits[1];
 
       let group = self.open_group(group_name)?;
-      let deps = group.find_dependencies(recipe_name)?;
+      let deps = group.find_task_dependencies(recipe_name)?;
       let full_deps = group.find_all_dependencies(&deps)?;
       return Ok(
         full_deps
@@ -506,7 +479,6 @@ impl Mold {
         // this is kinda hacky, but... whatever. it should probably
         // somehow map into a Task instead, but this is good enough.
         let group_name = format!("{}/", target_name);
-        self.clone(&group_name)?;
         let group = self.open_group(target_name)?;
         group.help_prefixed(&group_name)?;
         None
@@ -555,19 +527,11 @@ impl Mold {
     Ok(())
   }
 
+  /// Merge every Include'd Mold into `self`
   pub fn process_includes(&mut self) -> Result<(), Error> {
-    // includes should always be automatically cloned
-    for include in &self.data.includes {
-      let path = self.clone_dir.join(include.folder_name());
-      if !path.is_dir() {
-        remote::clone(&include.url, &path)?;
-        remote::checkout(&path, &include.ref_)?;
-      }
-    }
-
-    // merge all includes into the current mold. everything needs to be stuffed
-    // into a vector because merging is a mutating action and self can't be
-    // mutated while iterating.
+    // merge all Includes into the current Mold. everything needs to be stuffed
+    // into a vector because merging is a mutating action and `self` can't be
+    // mutated while iterating through one of its fields.
     let mut merges = vec![];
     for include in &self.data.includes {
       let path = self.clone_dir.join(include.folder_name());
@@ -576,7 +540,7 @@ impl Mold {
         None => Self::discover_dir(&path),
       }?;
 
-      // recursively clone + merge
+      // recursively merge
       merge.clone_dir = self.clone_dir.clone();
       merge.process_includes()?;
       merges.push(merge);
@@ -736,5 +700,7 @@ impl Moldfile {
     for (type_name, type_) in other.types {
       self.types.entry(type_name).or_insert(type_);
     }
+
+    // TODO merge recipes too!
   }
 }

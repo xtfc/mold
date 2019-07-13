@@ -59,24 +59,27 @@ fn run(args: Args) -> Result<(), Error> {
     return mold.clean_all();
   }
 
-  // process (clone and merge) all includes
-  // after we check for --clean
+  // early return if we passed a --debug
+  if args.debug {
+    dbg!(&mold);
+    return Ok(());
+  }
+
+  // we'll actually be doing something if we get this far, so we want to make
+  // sure we have all of the groups and includes cloned before proceeding
+  mold.clone_all()?;
+
+  // merge all Includes
   mold.process_includes()?;
 
   // early return if we passed a --clone
   if args.clone {
-    return mold.clone_all();
+    return Ok(());
   }
 
   // early return if we passed a --update
   if args.update {
     return mold.update_all();
-  }
-
-  // early return if we passed a --debug
-  if args.debug {
-    dbg!(&mold);
-    return Ok(());
   }
 
   // early return and print help if we didn't pass any targets
