@@ -34,7 +34,7 @@ pub struct Mold {
 pub struct Moldfile {
   /// The directory that recipe scripts can be found in
   #[serde(default = "default_recipe_dir")]
-  pub recipe_dir: String,
+  pub recipe_dir: PathBuf,
 
   /// A map of includes
   #[serde(default)]
@@ -53,8 +53,8 @@ pub struct Moldfile {
   pub environment: EnvMap,
 }
 
-fn default_recipe_dir() -> String {
-  "./mold".to_string()
+fn default_recipe_dir() -> PathBuf {
+  PathBuf::from("./mold")
 }
 
 const MOLD_FILES: &[&str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
@@ -77,7 +77,7 @@ pub struct Include {
   pub ref_: String,
 
   /// Moldfile to look at
-  pub file: Option<String>,
+  pub file: Option<PathBuf>,
 }
 
 // FIXME Group / Script / Command should be able to document what environment vars they depend on
@@ -100,7 +100,7 @@ pub struct Group {
   pub ref_: String,
 
   /// Moldfile to look at
-  pub file: Option<String>,
+  pub file: Option<PathBuf>,
 }
 
 fn default_git_ref() -> String {
