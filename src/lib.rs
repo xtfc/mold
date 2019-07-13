@@ -92,6 +92,13 @@ pub struct Group {
   #[serde(default)]
   pub environment: EnvMap,
 
+  /// The actual root of this script
+  ///
+  /// This is used for Includes, where the command may be lifted up to the
+  /// top-level, but the root is located in a different location
+  #[serde(skip)]
+  pub root: Option<PathBuf>,
+
   /// Git URL of a remote repo
   pub url: String,
 
@@ -121,6 +128,10 @@ pub struct Script {
   #[serde(default)]
   pub environment: EnvMap,
 
+  /// The actual root of this script (see Group.root)
+  #[serde(skip)]
+  pub root: Option<PathBuf>,
+
   /// Which interpreter should be used to execute this script
   #[serde(alias = "type")]
   pub type_: String,
@@ -146,6 +157,10 @@ pub struct Command {
   /// A list of environment variables that overrides the base environment
   #[serde(default)]
   pub environment: EnvMap,
+
+  /// The actual root of this script (see Group.root)
+  #[serde(skip)]
+  pub root: Option<PathBuf>,
 
   /// A list of command arguments
   #[serde(default)]
@@ -500,12 +515,16 @@ impl Mold {
         // what the interpreter is for this recipe
         let type_ = self.find_type(&target.type_)?;
 
+        // use the target's root, but fall back to our own
+        // (feels like I shouldn't have to clone these, though...)
+        let search_dir = target.root.clone().unwrap_or_else(|| self.dir.clone());
+
         // find the script file to execute
         let script = match &target.script {
-          Some(x) => self.dir.join(x),
+          Some(x) => search_dir.join(x),
 
           // we need to look it up based on our interpreter's known extensions
-          None => type_.find(&self.dir, &target_name)?,
+          None => type_.find(&search_dir, &target_name)?,
         };
 
         Some(type_.task(&script.to_str().unwrap(), &env))
@@ -578,7 +597,7 @@ impl Mold {
     }
 
     for merge in merges {
-      self.data.merge_absent(merge.data);
+      self.data.merge_absent(merge);
     }
 
     Ok(())
@@ -709,6 +728,24 @@ impl Recipe {
       Recipe::Group(g) => &g.environment,
     }
   }
+
+  /// Return this recipe's root
+  pub fn root(&self) -> &Option<PathBuf> {
+    match self {
+      Recipe::Script(s) => &s.root,
+      Recipe::Command(c) => &c.root,
+      Recipe::Group(g) => &g.root,
+    }
+  }
+
+  /// Set this recipe's root
+  pub fn set_root(&mut self, to: Option<PathBuf>) {
+    match self {
+      Recipe::Script(s) => s.root = to,
+      Recipe::Command(c) => c.root = to,
+      Recipe::Group(g) => g.root = to,
+    }
+  }
 }
 
 fn hash_url_ref(url: &str, ref_: &str) -> String {
@@ -733,11 +770,14 @@ impl Include {
 
 impl Moldfile {
   /// Merges any types in other missing in self
-  pub fn merge_absent(&mut self, other: Moldfile) {
-    for (type_name, type_) in other.types {
+  pub fn merge_absent(&mut self, other: Mold) {
+    for (type_name, type_) in other.data.types {
       self.types.entry(type_name).or_insert(type_);
     }
 
-    // TODO merge recipes too!
+    for (recipe_name, mut recipe) in other.data.recipes {
+      recipe.set_root(Some(other.dir.clone()));
+      self.recipes.entry(recipe_name).or_insert(recipe);
+    }
   }
 }

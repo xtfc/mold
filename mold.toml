@@ -4,6 +4,9 @@ NAME = "John"
 [[includes]]
 url = "https://github.com/philipdexter/std.mold"
 
+[[includes]]
+url = "https://github.com/scizzorz/cargo.mold"
+
 [types.python]
 command = ["python", "?"]
 extensions = ["py"]
@@ -29,20 +32,3 @@ type = "python"
 
 [recipes.nop]
 help = "Test no-op"
-
-[recipes.fmt]
-help = "Format using rustfmt"
-command = ["cargo", "fmt"]
-
-[recipes.build]
-help = "Build using cargo"
-command = ["cargo", "build"]
-
-[recipes.clean]
-help = "Clean build artifacts using cargo"
-command = ["cargo", "clean"]
-
-[recipes.lint]
-help = "Lint using clippy"
-command = ["cargo", "clippy", "--", "-D", "warnings"]
-deps = ["clean"]
