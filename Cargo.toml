@@ -1,24 +1,27 @@
 [package]
 name = "mold"
 version = "0.1.0"
-authors = ["John Weachock <jweachock@gmail.com>"]
+authors = [
+  "John Weachock <jweachock@gmail.com>",
+  "Philip Dexter <philip.dexter@gmail.com>",
+]
 edition = "2018"
 
 [dependencies]
-clap = "2.33.0"
+clap = "2.33"
 colored = "1.8"
-env_logger = "0.6.1"
-exitcode = "1.1.2"
-exitfailure = "0.5.1"
-failure = "0.1.5"
-git2 = "0.8.0"
-indexmap = "1.0.2"
-log = "0.4.6"
-serde = "1.0.92"
-serde_derive = "1.0.92"
-structopt = "0.2.16"
-toml = "0.5.1"
-serde_yaml = "0.8.9"
+env_logger = "0.6"
+exitcode = "1.1"
+exitfailure = "0.5"
+failure = "0.1"
+git2 = "0.8"
+indexmap = "1.0"
+log = "0.4"
+serde = "1.0"
+serde_derive = "1.0"
+serde_yaml = "0.8"
+structopt = "0.2"
+toml = "0.5"
 
 [[bin]]
 name = "mold"
