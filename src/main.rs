@@ -22,15 +22,15 @@ pub struct Args {
   #[structopt(long = "dry")]
   pub dry: bool,
 
-  /// Fetch new updates for all downloaded groups
+  /// Fetch new updates for all downloaded remote data
   #[structopt(long = "update", short = "u")]
   pub update: bool,
 
-  /// Remove all downloaded groups
+  /// Remove all downloaded remote data
   #[structopt(long = "clean")]
   pub clean: bool,
 
-  /// Download all top-level groups
+  /// Download all remote data
   #[structopt(long = "clone")]
   pub clone: bool,
 
@@ -63,7 +63,7 @@ fn run(args: Args) -> Result<(), Error> {
   }
 
   // we'll actually be doing something if we get this far, so we want to make
-  // sure we have all of the groups and includes cloned before proceeding
+  // sure we have all of the Groups and Includes cloned before proceeding
   mold.clone_all()?;
 
   // merge all Includes

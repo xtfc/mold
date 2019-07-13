@@ -92,13 +92,6 @@ pub struct Group {
   #[serde(default)]
   pub environment: EnvMap,
 
-  /// The actual root of this script
-  ///
-  /// This is used for Includes, where the command may be lifted up to the
-  /// top-level, but the root is located in a different location
-  #[serde(skip)]
-  pub root: Option<PathBuf>,
-
   /// Git URL of a remote repo
   pub url: String,
 
@@ -128,7 +121,10 @@ pub struct Script {
   #[serde(default)]
   pub environment: EnvMap,
 
-  /// The actual root of this script (see Group.root)
+  /// The actual root of this script
+  ///
+  /// This is used for Includes, where the command may be lifted up to the
+  /// top-level, but the root is located in a different location
   #[serde(skip)]
   pub root: Option<PathBuf>,
 
@@ -157,10 +153,6 @@ pub struct Command {
   /// A list of environment variables that overrides the base environment
   #[serde(default)]
   pub environment: EnvMap,
-
-  /// The actual root of this script (see Group.root)
-  #[serde(skip)]
-  pub root: Option<PathBuf>,
 
   /// A list of command arguments
   #[serde(default)]
@@ -729,21 +721,11 @@ impl Recipe {
     }
   }
 
-  /// Return this recipe's root
-  pub fn root(&self) -> &Option<PathBuf> {
-    match self {
-      Recipe::Script(s) => &s.root,
-      Recipe::Command(c) => &c.root,
-      Recipe::Group(g) => &g.root,
-    }
-  }
-
   /// Set this recipe's root
   pub fn set_root(&mut self, to: Option<PathBuf>) {
     match self {
       Recipe::Script(s) => s.root = to,
-      Recipe::Command(c) => c.root = to,
-      Recipe::Group(g) => g.root = to,
+      _ => (),
     }
   }
 }
