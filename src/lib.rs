@@ -300,16 +300,16 @@ impl Mold {
     }
   }
 
-  pub fn open_group(&self, group_name: &str) -> Result<Mold, Error> {
+  fn open_group(&self, group_name: &str) -> Result<Mold, Error> {
     let target = self.find_group(group_name)?;
-    // FIXME this doesn't look right after the clone_dir change
-    let mold = match &target.file {
-      Some(file) => Self::discover_file(&Path::new(file)),
-      None => Self::discover_dir(&self.clone_dir.join(target.folder_name())),
-    }?
-    .adopt(self);
+    let path = self.clone_dir.join(&target.folder_name());
+    let mold = Self::discover(&path, target.file.clone())?.adopt(self);
+    Ok(mold)
+  }
 
-    // point new clone directory at self's clone directory
+  fn open_include(&self, target: &Include) -> Result<Mold, Error> {
+    let path = self.clone_dir.join(&target.folder_name());
+    let mold = Self::discover(&path, target.file.clone())?.adopt(self);
     Ok(mold)
   }
 
@@ -321,21 +321,23 @@ impl Mold {
   /// Recursively fetch/checkout for all groups that have already been cloned,
   /// but with extra checks to avoid infinite recursion cycles
   fn update_all_track(&self, updated: &mut HashSet<PathBuf>) -> Result<(), Error> {
+    // `updated` contains all of the directories that have been, well, updated.
+    // it *needs* to be passed to recursive calls.
+
+    // both loops iterate through their respective items:
+    // * find the expected path
+    // * make sure it exists (ie, is cloned) and hasn't been visited
+    // * track it as visited
+    // * fetch / checkout
+    // * recurse into it
+
     // find all groups that have already been cloned and update them
     for (name, recipe) in &self.data.recipes {
       if let Recipe::Group(group) = recipe {
         let path = self.clone_dir.join(group.folder_name());
-
-        // only update groups that have already been cloned and have not been
-        // visited before
         if path.is_dir() && !updated.contains(&path) {
-          // track that we've considered this path so we don't infinitely
-          // recurse into dependency cycles
           updated.insert(path.clone());
-
           remote::checkout(&path, &group.ref_)?;
-
-          // recursively update subgroups
           self.open_group(name)?.update_all_track(updated)?;
         }
       }
@@ -344,12 +346,10 @@ impl Mold {
     // find all Includes that have already been cloned and update them
     for include in &self.data.includes {
       let path = self.clone_dir.join(include.folder_name());
-
-      // only update includes that have already been cloned
-      if path.is_dir() {
+      if path.is_dir() && !updated.contains(&path) {
+        updated.insert(path.clone());
         remote::checkout(&path, &include.ref_)?;
-
-        // TODO recursively update subincludes
+        self.open_include(&include)?.update_all_track(updated)?;
       }
     }
 
