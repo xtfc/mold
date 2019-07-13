@@ -723,9 +723,8 @@ impl Recipe {
 
   /// Set this recipe's root
   pub fn set_root(&mut self, to: Option<PathBuf>) {
-    match self {
-      Recipe::Script(s) => s.root = to,
-      _ => (),
+    if let Recipe::Script(s) = self {
+      s.root = to;
     }
   }
 }
