@@ -17,6 +17,7 @@ use std::process;
 pub mod remote;
 
 pub type RecipeMap = BTreeMap<String, Recipe>;
+pub type IncludeVec = Vec<Include>;
 pub type TypeMap = BTreeMap<String, Type>;
 pub type EnvMap = BTreeMap<String, String>;
 pub type TaskSet = indexmap::IndexSet<String>;
@@ -33,7 +34,11 @@ pub struct Mold {
 pub struct Moldfile {
   /// The directory that recipe scripts can be found in
   #[serde(default = "default_recipe_dir")]
-  pub recipe_dir: String,
+  pub recipe_dir: PathBuf,
+
+  /// A map of includes
+  #[serde(default)]
+  pub includes: IncludeVec,
 
   /// A map of recipes
   #[serde(default)]
@@ -48,8 +53,8 @@ pub struct Moldfile {
   pub environment: EnvMap,
 }
 
-fn default_recipe_dir() -> String {
-  "./mold".to_string()
+fn default_recipe_dir() -> PathBuf {
+  PathBuf::from("./mold")
 }
 
 const MOLD_FILES: &[&str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
@@ -60,6 +65,19 @@ pub enum Recipe {
   Group(Group),
   Script(Script),
   Command(Command),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Include {
+  /// Git URL of a remote repo
+  pub url: String,
+
+  /// Git ref to keep up with
+  #[serde(alias = "ref", default = "default_git_ref")]
+  pub ref_: String,
+
+  /// Moldfile to look at
+  pub file: Option<PathBuf>,
 }
 
 // FIXME Group / Script / Command should be able to document what environment vars they depend on
@@ -82,7 +100,7 @@ pub struct Group {
   pub ref_: String,
 
   /// Moldfile to look at
-  pub file: Option<String>,
+  pub file: Option<PathBuf>,
 }
 
 fn default_git_ref() -> String {
@@ -102,6 +120,13 @@ pub struct Script {
   /// A list of environment variables that overrides the base environment
   #[serde(default)]
   pub environment: EnvMap,
+
+  /// The actual root of this script
+  ///
+  /// This is used for Includes, where the command may be lifted up to the
+  /// top-level, but the root is located in a different location
+  #[serde(skip)]
+  pub root: Option<PathBuf>,
 
   /// Which interpreter should be used to execute this script
   #[serde(alias = "type")]
@@ -169,6 +194,7 @@ impl Mold {
       Some("yaml") | Some("yml") => serde_yaml::from_str(&contents)?,
       _ => toml::de::from_str(&contents)?,
     };
+
     let dir = path.with_file_name(&data.recipe_dir);
     let clone_dir = dir.join(".clones");
 
@@ -188,7 +214,7 @@ impl Mold {
   }
 
   /// Try to locate a moldfile by walking up the directory tree
-  fn discover_file(name: &Path) -> Result<PathBuf, Error> {
+  fn locate_file(name: &Path) -> Result<PathBuf, Error> {
     if name.is_absolute() {
       if name.is_file() {
         return Ok(name.to_path_buf());
@@ -216,13 +242,13 @@ impl Mold {
     }
   }
 
-  /// Try to locate a moldfile from a directory
+  /// Try to locate and open a moldfile by directory
   ///
   /// Checks for MOLD_FILES
-  pub fn discover_dir(name: &Path) -> Result<Mold, Error> {
+  fn discover_dir(name: &Path) -> Result<Mold, Error> {
     let path = MOLD_FILES
       .iter()
-      .find_map(|file| Self::discover_file(&name.join(file)).ok())
+      .find_map(|file| Self::locate_file(&name.join(file)).ok())
       .ok_or_else(|| {
         failure::format_err!(
           "Cannot locate moldfile, tried the following:\n{}",
@@ -232,10 +258,21 @@ impl Mold {
     Self::open(&path)
   }
 
-  /// Try to locate a moldfile and load it
-  pub fn discover(name: &Path) -> Result<Mold, Error> {
-    let path = Self::discover_file(name)?;
+  /// Try to locate and open a moldfile by name
+  fn discover_file(name: &Path) -> Result<Mold, Error> {
+    let path = Self::locate_file(name)?;
     Self::open(&path)
+  }
+
+  /// Try to locate a file or a directory
+  pub fn discover(dir: &Path, file: Option<PathBuf>) -> Result<Mold, Error> {
+    // I think this should take Option<&Path> but I couldn't figure out how to
+    // please the compiler when I have an existing Option<PathBuf>, so...  I'm
+    // just using .clone() on it.
+    match file {
+      Some(file) => Self::discover_file(&dir.join(file)),
+      None => Self::discover_dir(dir),
+    }
   }
 
   pub fn env(&self) -> &EnvMap {
@@ -270,15 +307,16 @@ impl Mold {
     }
   }
 
-  pub fn open_group(&self, group_name: &str) -> Result<Mold, Error> {
+  fn open_group(&self, group_name: &str) -> Result<Mold, Error> {
     let target = self.find_group(group_name)?;
-    let mut mold = match &target.file {
-      Some(file) => Self::discover(&Path::new(file)),
-      None => Self::discover_dir(&self.clone_dir.join(target.folder_name())),
-    }?;
+    let path = self.clone_dir.join(&target.folder_name());
+    let mold = Self::discover(&path, target.file.clone())?.adopt(self);
+    Ok(mold)
+  }
 
-    // point new clone directory at self's clone directory
-    mold.clone_dir = self.clone_dir.clone();
+  fn open_include(&self, target: &Include) -> Result<Mold, Error> {
+    let path = self.clone_dir.join(&target.folder_name());
+    let mold = Self::discover(&path, target.file.clone())?.adopt(self);
     Ok(mold)
   }
 
@@ -290,39 +328,83 @@ impl Mold {
   /// Recursively fetch/checkout for all groups that have already been cloned,
   /// but with extra checks to avoid infinite recursion cycles
   fn update_all_track(&self, updated: &mut HashSet<PathBuf>) -> Result<(), Error> {
-    // find all groups that have already been cloned and update them.
+    // `updated` contains all of the directories that have been, well, updated.
+    // it *needs* to be passed to recursive calls.
+
+    // both loops iterate through their respective items:
+    // * find the expected path
+    // * make sure it exists (ie, is cloned) and hasn't been visited
+    // * track it as visited
+    // * fetch / checkout
+    // * recurse into it
+
+    // find all groups that have already been cloned and update them
     for (name, recipe) in &self.data.recipes {
       if let Recipe::Group(group) = recipe {
         let path = self.clone_dir.join(group.folder_name());
-
-        // only update groups that have already been cloned and have not been
-        // visited before
         if path.is_dir() && !updated.contains(&path) {
-          // track that we've considered this path so we don't infinitely
-          // recurse into dependency cycles
           updated.insert(path.clone());
-
           remote::checkout(&path, &group.ref_)?;
-
-          // recursively update subgroups
           self.open_group(name)?.update_all_track(updated)?;
         }
+      }
+    }
+
+    // find all Includes that have already been cloned and update them
+    for include in &self.data.includes {
+      let path = self.clone_dir.join(include.folder_name());
+      if path.is_dir() && !updated.contains(&path) {
+        updated.insert(path.clone());
+        remote::checkout(&path, &include.ref_)?;
+        self.open_include(&include)?.update_all_track(updated)?;
       }
     }
 
     Ok(())
   }
 
-  /// Clone all top-level targets
+  /// Recursively all Includes and Groups
   pub fn clone_all(&self) -> Result<(), Error> {
     for recipe in self.data.recipes.values() {
       if let Recipe::Group(group) = recipe {
-        let path = self.clone_dir.join(group.folder_name());
-        if !path.is_dir() {
-          remote::clone(&group.url, &path)?;
-          remote::checkout(&path, &group.ref_)?;
-        }
+        self.clone(
+          &group.folder_name(),
+          &group.url,
+          &group.ref_,
+          group.file.clone(),
+        )?;
       }
+    }
+
+    for include in &self.data.includes {
+      self.clone(
+        &include.folder_name(),
+        &include.url,
+        &include.ref_,
+        include.file.clone(),
+      )?;
+    }
+
+    Ok(())
+  }
+
+  /// Clone a single remote reference and then recursively clone subremotes
+  fn clone(
+    &self,
+    folder_name: &str,
+    url: &str,
+    ref_: &str,
+    file: Option<PathBuf>,
+  ) -> Result<(), Error> {
+    let path = self.clone_dir.join(folder_name);
+    if !path.is_dir() {
+      remote::clone(url, &path)?;
+      remote::checkout(&path, ref_)?;
+
+      // open it and recursively clone + merge
+      Self::discover(&path, file.clone())?
+        .adopt(self)
+        .clone_all()?;
     }
 
     Ok(())
@@ -330,60 +412,26 @@ impl Mold {
 
   /// Delete all cloned top-level targets
   pub fn clean_all(&self) -> Result<(), Error> {
-    for recipe in self.data.recipes.values() {
-      if let Recipe::Group(group) = recipe {
-        let path = self.clone_dir.join(group.folder_name());
-        if path.is_dir() {
-          fs::remove_dir_all(&path)?;
-          println!("{:>12} {}     ", "Deleted".red(), path.display());
-        }
-      }
-    }
-
+    // no point in checking if it exists, because Mold::open creates it
+    fs::remove_dir_all(&self.clone_dir)?;
+    println!("{:>12} {}", "Deleted".red(), self.clone_dir.display());
     Ok(())
   }
 
-  /// Lazily clone groups for a given target
-  pub fn clone(&self, target: &str) -> Result<(), Error> {
-    // if this isn't a nested subrecipe, we don't need to worry about cloning anything
-    if !target.contains('/') {
-      return Ok(());
-    }
-
-    let splits: Vec<_> = target.splitn(2, '/').collect();
-    let group_name = splits[0];
-    let recipe_name = splits[1];
-
-    let recipe = self.find_group(group_name)?;
-    let path = self.clone_dir.join(recipe.folder_name());
-
-    // if the directory doesn't exist, we need to clone it
-    if !path.is_dir() {
-      remote::clone(&recipe.url, &path)?;
-      remote::checkout(&path, &recipe.ref_)?;
-    }
-
-    let group = self.open_group(group_name)?;
-    group.clone(recipe_name)
-  }
-
-  /// Find all dependencies for a given set of tasks
+  /// Find all dependencies for a given *set* of tasks
   pub fn find_all_dependencies(&self, targets: &TaskSet) -> Result<TaskSet, Error> {
     let mut new_targets = TaskSet::new();
 
     for target_name in targets {
-      // insure we have it cloned already
-      self.clone(target_name)?;
-
-      new_targets.extend(self.find_dependencies(target_name)?);
+      new_targets.extend(self.find_task_dependencies(target_name)?);
       new_targets.insert(target_name.to_string());
     }
 
     Ok(new_targets)
   }
 
-  /// Find all dependencies for a given task
-  fn find_dependencies(&self, target: &str) -> Result<TaskSet, Error> {
+  /// Find all dependencies for a *single* task
+  fn find_task_dependencies(&self, target: &str) -> Result<TaskSet, Error> {
     // check if this is a nested subrecipe that we'll have to recurse into
     if target.contains('/') {
       let splits: Vec<_> = target.splitn(2, '/').collect();
@@ -391,7 +439,7 @@ impl Mold {
       let recipe_name = splits[1];
 
       let group = self.open_group(group_name)?;
-      let deps = group.find_dependencies(recipe_name)?;
+      let deps = group.find_task_dependencies(recipe_name)?;
       let full_deps = group.find_all_dependencies(&deps)?;
       return Ok(
         full_deps
@@ -412,6 +460,9 @@ impl Mold {
   }
 
   /// Find a Task object for a given recipe name
+  ///
+  /// This entails recursing through various groups to find the the appropriate
+  /// Task.
   pub fn find_task(&self, target_name: &str, prev_env: &EnvMap) -> Result<Option<Task>, Error> {
     // check if we're executing a nested subrecipe that we'll have to recurse into
     if target_name.contains('/') {
@@ -456,12 +507,16 @@ impl Mold {
         // what the interpreter is for this recipe
         let type_ = self.find_type(&target.type_)?;
 
+        // use the target's root, but fall back to our own
+        // (feels like I shouldn't have to clone these, though...)
+        let search_dir = target.root.clone().unwrap_or_else(|| self.dir.clone());
+
         // find the script file to execute
         let script = match &target.script {
-          Some(x) => self.dir.join(x),
+          Some(x) => search_dir.join(x),
 
           // we need to look it up based on our interpreter's known extensions
-          None => type_.find(&self.dir, &target_name)?,
+          None => type_.find(&search_dir, &target_name)?,
         };
 
         Some(type_.task(&script.to_str().unwrap(), &env))
@@ -470,7 +525,6 @@ impl Mold {
         // this is kinda hacky, but... whatever. it should probably
         // somehow map into a Task instead, but this is good enough.
         let group_name = format!("{}/", target_name);
-        self.clone(&group_name)?;
         let group = self.open_group(target_name)?;
         group.help_prefixed(&group_name)?;
         None
@@ -485,18 +539,13 @@ impl Mold {
     self.help_prefixed("")
   }
 
+  /// Print a description of all recipes in this moldfile
   pub fn help_prefixed(&self, prefix: &str) -> Result<(), Error> {
-    self.help_prefixed_track(prefix, &mut HashSet::new())
-  }
-
-  /// Print a description of all recipes in this moldfile, but with extra
-  /// checks to avoid / duplicating work
-  fn help_prefixed_track(&self, prefix: &str, printed: &mut HashSet<PathBuf>) -> Result<(), Error> {
     for (name, recipe) in &self.data.recipes {
       let colored_name = match recipe {
         Recipe::Command(_) => name.yellow(),
         Recipe::Script(_) => name.cyan(),
-        Recipe::Group(_) => name.magenta(),
+        Recipe::Group(_) => format!("{}/", name).magenta(),
       };
 
       // this is supposed to be 12 character padded, but after all the
@@ -519,29 +568,37 @@ impl Mold {
             .join(", ")
         );
       }
-
-      if let Recipe::Group(group) = recipe {
-        let path = self.clone_dir.join(group.folder_name());
-
-        // only print groups that have already been cloned and have not been
-        // printed before
-        if path.is_dir() && !printed.contains(&path) {
-          // track that we've considered this path so we don't infinitely
-          // recurse into dependency cycles
-          printed.insert(path.clone());
-
-          let clear_name = match recipe {
-            Recipe::Group(_) => format!("{}{}/", prefix, name),
-            _ => format!("{}{}", prefix, name),
-          };
-
-          let group = self.open_group(name)?;
-          group.help_prefixed_track(&clear_name, printed)?;
-        }
-      }
     }
 
     Ok(())
+  }
+
+  /// Merge every Include'd Mold into `self`
+  pub fn process_includes(&mut self) -> Result<(), Error> {
+    // merge all Includes into the current Mold. everything needs to be stuffed
+    // into a vector because merging is a mutating action and `self` can't be
+    // mutated while iterating through one of its fields.
+    let mut merges = vec![];
+    for include in &self.data.includes {
+      let path = self.clone_dir.join(include.folder_name());
+      let mut merge = Self::discover(&path, include.file.clone())?.adopt(self);
+
+      // recursively merge
+      merge.process_includes()?;
+      merges.push(merge);
+    }
+
+    for merge in merges {
+      self.data.merge_absent(merge);
+    }
+
+    Ok(())
+  }
+
+  /// Adopt the same clone dir of a parent
+  pub fn adopt(mut self, parent: &Self) -> Self {
+    self.clone_dir = parent.clone_dir.clone();
+    self
   }
 }
 
@@ -663,13 +720,45 @@ impl Recipe {
       Recipe::Group(g) => &g.environment,
     }
   }
+
+  /// Set this recipe's root
+  pub fn set_root(&mut self, to: Option<PathBuf>) {
+    if let Recipe::Script(s) = self {
+      s.root = to;
+    }
+  }
+}
+
+fn hash_url_ref(url: &str, ref_: &str) -> String {
+  let mut hasher = DefaultHasher::new();
+  format!("{}@{}", url, ref_).hash(&mut hasher);
+  format!("{:16x}", hasher.finish())
 }
 
 impl Group {
   /// Return this group's folder name in the format hash(url@ref)
   pub fn folder_name(&self) -> String {
-    let mut hasher = DefaultHasher::new();
-    format!("{}@{}", self.url, self.ref_).hash(&mut hasher);
-    format!("{:16x}", hasher.finish())
+    hash_url_ref(&self.url, &self.ref_)
+  }
+}
+
+impl Include {
+  /// Return this group's folder name in the format hash(url@ref)
+  pub fn folder_name(&self) -> String {
+    hash_url_ref(&self.url, &self.ref_)
+  }
+}
+
+impl Moldfile {
+  /// Merges any types in other missing in self
+  pub fn merge_absent(&mut self, other: Mold) {
+    for (type_name, type_) in other.data.types {
+      self.types.entry(type_name).or_insert(type_);
+    }
+
+    for (recipe_name, mut recipe) in other.data.recipes {
+      recipe.set_root(Some(other.dir.clone()));
+      self.recipes.entry(recipe_name).or_insert(recipe);
+    }
   }
 }

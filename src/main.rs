@@ -22,15 +22,15 @@ pub struct Args {
   #[structopt(long = "dry")]
   pub dry: bool,
 
-  /// Fetch new updates for all downloaded groups
+  /// Fetch new updates for all downloaded remote data
   #[structopt(long = "update", short = "u")]
   pub update: bool,
 
-  /// Remove all downloaded groups
+  /// Remove all downloaded remote data
   #[structopt(long = "clean")]
   pub clean: bool,
 
-  /// Download all top-level groups
+  /// Download all remote data
   #[structopt(long = "clone")]
   pub clone: bool,
 
@@ -49,30 +49,34 @@ fn main() -> Result<(), ExitFailure> {
 
 fn run(args: Args) -> Result<(), Error> {
   // load the moldfile
-  let mold = match &args.file {
-    Some(file) => Mold::discover(file),
-    None => Mold::discover_dir(&Path::new(".")),
-  }?;
+  let mut mold = Mold::discover(&Path::new("."), args.file.clone())?;
 
   // early return if we passed a --clean
   if args.clean {
     return mold.clean_all();
   }
 
+  // early return if we passed a --debug
+  if args.debug {
+    dbg!(&mold);
+    return Ok(());
+  }
+
+  // we'll actually be doing something if we get this far, so we want to make
+  // sure we have all of the Groups and Includes cloned before proceeding
+  mold.clone_all()?;
+
+  // merge all Includes
+  mold.process_includes()?;
+
   // early return if we passed a --clone
   if args.clone {
-    return mold.clone_all();
+    return Ok(());
   }
 
   // early return if we passed a --update
   if args.update {
     return mold.update_all();
-  }
-
-  // early return if we passed a --debug
-  if args.debug {
-    dbg!(&mold);
-    return Ok(());
   }
 
   // early return and print help if we didn't pass any targets
