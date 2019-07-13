@@ -238,7 +238,7 @@ impl Mold {
   /// Try to locate and open a moldfile by directory
   ///
   /// Checks for MOLD_FILES
-  pub fn discover_dir(name: &Path) -> Result<Mold, Error> {
+  fn discover_dir(name: &Path) -> Result<Mold, Error> {
     let path = MOLD_FILES
       .iter()
       .find_map(|file| Self::locate_file(&name.join(file)).ok())
@@ -252,9 +252,20 @@ impl Mold {
   }
 
   /// Try to locate and open a moldfile by name
-  pub fn discover_file(name: &Path) -> Result<Mold, Error> {
+  fn discover_file(name: &Path) -> Result<Mold, Error> {
     let path = Self::locate_file(name)?;
     Self::open(&path)
+  }
+
+  /// Try to locate a file or a directory
+  pub fn discover(dir: &Path, file: Option<PathBuf>) -> Result<Mold, Error> {
+    // I think this should take Option<&Path> but I couldn't figure out how to
+    // please the compiler when I have an existing Option<PathBuf>, so...  I'm
+    // just using .clone() on it.
+    match file {
+      Some(file) => Self::discover_file(&dir.join(file)),
+      None => Self::discover_dir(dir),
+    }
   }
 
   pub fn env(&self) -> &EnvMap {
@@ -291,13 +302,14 @@ impl Mold {
 
   pub fn open_group(&self, group_name: &str) -> Result<Mold, Error> {
     let target = self.find_group(group_name)?;
-    let mut mold = match &target.file {
+    // FIXME this doesn't look right after the clone_dir change
+    let mold = match &target.file {
       Some(file) => Self::discover_file(&Path::new(file)),
       None => Self::discover_dir(&self.clone_dir.join(target.folder_name())),
-    }?;
+    }?
+    .adopt(self);
 
     // point new clone directory at self's clone directory
-    mold.clone_dir = self.clone_dir.clone();
     Ok(mold)
   }
 
@@ -309,7 +321,7 @@ impl Mold {
   /// Recursively fetch/checkout for all groups that have already been cloned,
   /// but with extra checks to avoid infinite recursion cycles
   fn update_all_track(&self, updated: &mut HashSet<PathBuf>) -> Result<(), Error> {
-    // find all groups that have already been cloned and update them.
+    // find all groups that have already been cloned and update them
     for (name, recipe) in &self.data.recipes {
       if let Recipe::Group(group) = recipe {
         let path = self.clone_dir.join(group.folder_name());
@@ -329,9 +341,7 @@ impl Mold {
       }
     }
 
-    // TODO not sure if includes should be updated here,
-    // since they're always automatically cloned (which
-    // means they're updated?)
+    // find all Includes that have already been cloned and update them
     for include in &self.data.includes {
       let path = self.clone_dir.join(include.folder_name());
 
@@ -346,26 +356,48 @@ impl Mold {
     Ok(())
   }
 
-  /// Clone all top-level targets
+  /// Recursively all Includes and Groups
   pub fn clone_all(&self) -> Result<(), Error> {
     for recipe in self.data.recipes.values() {
       if let Recipe::Group(group) = recipe {
-        let path = self.clone_dir.join(group.folder_name());
-        if !path.is_dir() {
-          remote::clone(&group.url, &path)?;
-          remote::checkout(&path, &group.ref_)?;
-
-          // now that we've cloned it, open it up!
-          let mut subgroup = match &group.file {
-            Some(file) => Self::discover_file(&path.join(file)),
-            None => Self::discover_dir(&path),
-          }?;
-
-          // recursively clone + merge
-          subgroup.clone_dir = self.clone_dir.clone();
-          subgroup.clone_all()?;
-        }
+        self.clone(
+          &group.folder_name(),
+          &group.url,
+          &group.ref_,
+          group.file.clone(),
+        )?;
       }
+    }
+
+    for include in &self.data.includes {
+      self.clone(
+        &include.folder_name(),
+        &include.url,
+        &include.ref_,
+        include.file.clone(),
+      )?;
+    }
+
+    Ok(())
+  }
+
+  /// Clone a single remote reference and then recursively clone subremotes
+  fn clone(
+    &self,
+    folder_name: &str,
+    url: &str,
+    ref_: &str,
+    file: Option<PathBuf>,
+  ) -> Result<(), Error> {
+    let path = self.clone_dir.join(folder_name);
+    if !path.is_dir() {
+      remote::clone(url, &path)?;
+      remote::checkout(&path, ref_)?;
+
+      // open it and recursively clone + merge
+      Self::discover(&path, file.clone())?
+        .adopt(self)
+        .clone_all()?;
     }
 
     Ok(())
@@ -421,6 +453,9 @@ impl Mold {
   }
 
   /// Find a Task object for a given recipe name
+  ///
+  /// This entails recursing through various groups to find the the appropriate
+  /// Task.
   pub fn find_task(&self, target_name: &str, prev_env: &EnvMap) -> Result<Option<Task>, Error> {
     // check if we're executing a nested subrecipe that we'll have to recurse into
     if target_name.contains('/') {
@@ -535,13 +570,9 @@ impl Mold {
     let mut merges = vec![];
     for include in &self.data.includes {
       let path = self.clone_dir.join(include.folder_name());
-      let mut merge = match &include.file {
-        Some(file) => Self::discover_file(&path.join(file)),
-        None => Self::discover_dir(&path),
-      }?;
+      let mut merge = Self::discover(&path, include.file.clone())?.adopt(self);
 
       // recursively merge
-      merge.clone_dir = self.clone_dir.clone();
       merge.process_includes()?;
       merges.push(merge);
     }
@@ -551,6 +582,12 @@ impl Mold {
     }
 
     Ok(())
+  }
+
+  /// Adopt the same clone dir of a parent
+  pub fn adopt(mut self, parent: &Self) -> Self {
+    self.clone_dir = parent.clone_dir.clone();
+    self
   }
 }
 

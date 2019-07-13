@@ -49,10 +49,7 @@ fn main() -> Result<(), ExitFailure> {
 
 fn run(args: Args) -> Result<(), Error> {
   // load the moldfile
-  let mut mold = match &args.file {
-    Some(file) => Mold::discover_file(file),
-    None => Mold::discover_dir(&Path::new(".")),
-  }?;
+  let mut mold = Mold::discover(&Path::new("."), args.file.clone())?;
 
   // early return if we passed a --clean
   if args.clean {
