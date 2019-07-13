@@ -207,7 +207,7 @@ impl Mold {
   }
 
   /// Try to locate a moldfile by walking up the directory tree
-  fn discover_file(name: &Path) -> Result<PathBuf, Error> {
+  fn locate_file(name: &Path) -> Result<PathBuf, Error> {
     if name.is_absolute() {
       if name.is_file() {
         return Ok(name.to_path_buf());
@@ -235,13 +235,13 @@ impl Mold {
     }
   }
 
-  /// Try to locate a moldfile from a directory
+  /// Try to locate and open a moldfile by directory
   ///
   /// Checks for MOLD_FILES
   pub fn discover_dir(name: &Path) -> Result<Mold, Error> {
     let path = MOLD_FILES
       .iter()
-      .find_map(|file| Self::discover_file(&name.join(file)).ok())
+      .find_map(|file| Self::locate_file(&name.join(file)).ok())
       .ok_or_else(|| {
         failure::format_err!(
           "Cannot locate moldfile, tried the following:\n{}",
@@ -251,9 +251,9 @@ impl Mold {
     Self::open(&path)
   }
 
-  /// Try to locate a moldfile and load it
-  pub fn discover(name: &Path) -> Result<Mold, Error> {
-    let path = Self::discover_file(name)?;
+  /// Try to locate and open a moldfile by name
+  pub fn discover_file(name: &Path) -> Result<Mold, Error> {
+    let path = Self::locate_file(name)?;
     Self::open(&path)
   }
 
@@ -292,7 +292,7 @@ impl Mold {
   pub fn open_group(&self, group_name: &str) -> Result<Mold, Error> {
     let target = self.find_group(group_name)?;
     let mut mold = match &target.file {
-      Some(file) => Self::discover(&Path::new(file)),
+      Some(file) => Self::discover_file(&Path::new(file)),
       None => Self::discover_dir(&self.clone_dir.join(target.folder_name())),
     }?;
 
@@ -357,7 +357,7 @@ impl Mold {
 
           // now that we've cloned it, open it up!
           let mut subgroup = match &group.file {
-            Some(file) => Self::discover(&path.join(file)),
+            Some(file) => Self::discover_file(&path.join(file)),
             None => Self::discover_dir(&path),
           }?;
 
@@ -572,7 +572,7 @@ impl Mold {
     for include in &self.data.includes {
       let path = self.clone_dir.join(include.folder_name());
       let mut merge = match &include.file {
-        Some(file) => Self::discover(&path.join(file)),
+        Some(file) => Self::discover_file(&path.join(file)),
         None => Self::discover_dir(&path),
       }?;
 

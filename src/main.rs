@@ -50,7 +50,7 @@ fn main() -> Result<(), ExitFailure> {
 fn run(args: Args) -> Result<(), Error> {
   // load the moldfile
   let mut mold = match &args.file {
-    Some(file) => Mold::discover(file),
+    Some(file) => Mold::discover_file(file),
     None => Mold::discover_dir(&Path::new(".")),
   }?;
 
