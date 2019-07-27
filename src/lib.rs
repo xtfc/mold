@@ -157,6 +157,10 @@ pub struct Command {
   /// A list of command arguments
   #[serde(default)]
   pub command: Vec<String>,
+
+  /// The shell to use to interpret the command
+  #[serde(default)]
+  pub shell: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -503,7 +507,20 @@ impl Mold {
     env.extend(recipe.env().iter().map(|(k, v)| (k.clone(), v.clone())));
 
     let task = match recipe {
-      Recipe::Command(target) => Some(Task::from_args(&target.command, Some(&env))),
+      Recipe::Command(target) => {
+        if target.shell.is_empty() {
+          Some(Task::from_args(&target.command, Some(&env)))
+        } else {
+          Some(Task::from_args(
+            &[
+              target.shell.clone(),
+              "-c".to_owned(),
+              target.command.join(" "),
+            ],
+            Some(&env),
+          ))
+        }
+      }
       Recipe::Script(target) => {
         // what the interpreter is for this recipe
         let type_ = self.find_type(&target.type_)?;
