@@ -310,7 +310,8 @@ impl Mold {
   fn open_group(&self, group_name: &str) -> Result<Mold, Error> {
     let target = self.find_group(group_name)?;
     let path = self.clone_dir.join(&target.folder_name());
-    let mold = Self::discover(&path, target.file.clone())?.adopt(self);
+    let mut mold = Self::discover(&path, target.file.clone())?.adopt(self);
+    mold.process_includes()?;
     Ok(mold)
   }
 
