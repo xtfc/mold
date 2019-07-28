@@ -27,6 +27,7 @@ pub struct Mold {
   file: PathBuf,
   dir: PathBuf,
   clone_dir: PathBuf,
+  tmpcommand_dir: PathBuf,
   data: Moldfile,
 }
 
@@ -201,6 +202,7 @@ impl Mold {
 
     let dir = path.with_file_name(&data.recipe_dir);
     let clone_dir = dir.join(".clones");
+    let tmpcommand_dir = dir.join(".tmpcommands");
 
     if !dir.is_dir() {
       fs::create_dir(&dir)?;
@@ -208,11 +210,15 @@ impl Mold {
     if !clone_dir.is_dir() {
       fs::create_dir(&clone_dir)?;
     }
+    if !tmpcommand_dir.is_dir() {
+      fs::create_dir(&tmpcommand_dir)?;
+    }
 
     Ok(Mold {
       file: fs::canonicalize(path)?,
       dir: fs::canonicalize(dir)?,
       clone_dir: fs::canonicalize(clone_dir)?,
+      tmpcommand_dir: fs::canonicalize(tmpcommand_dir)?,
       data,
     })
   }
@@ -511,11 +517,13 @@ impl Mold {
         if target.interpreter.is_empty() {
           Some(Task::from_args(&target.command, Some(&env)))
         } else {
+          let command = target.command.join(" ");
+          let temp_file = self.tmpcommand_dir.join(hash_string(&command));
+          fs::write(&temp_file, command)?;
           Some(Task::from_args(
             &[
               target.interpreter.clone(),
-              "-c".to_owned(),
-              target.command.join(" "),
+              temp_file.to_str().unwrap().to_owned(),
             ],
             Some(&env),
           ))
@@ -613,9 +621,10 @@ impl Mold {
     Ok(())
   }
 
-  /// Adopt the same clone dir of a parent
+  /// Adopt the same clone and tmpcommand dir of a parent
   pub fn adopt(mut self, parent: &Self) -> Self {
     self.clone_dir = parent.clone_dir.clone();
+    self.tmpcommand_dir = parent.tmpcommand_dir.clone();
     self
   }
 }
@@ -747,10 +756,14 @@ impl Recipe {
   }
 }
 
-fn hash_url_ref(url: &str, ref_: &str) -> String {
+fn hash_string(string: &str) -> String {
   let mut hasher = DefaultHasher::new();
-  format!("{}@{}", url, ref_).hash(&mut hasher);
+  string.hash(&mut hasher);
   format!("{:16x}", hasher.finish())
+}
+
+fn hash_url_ref(url: &str, ref_: &str) -> String {
+  hash_string(&format!("{}@{}", url, ref_))
 }
 
 impl Group {
