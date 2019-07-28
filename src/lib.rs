@@ -158,9 +158,9 @@ pub struct Command {
   #[serde(default)]
   pub command: Vec<String>,
 
-  /// The shell to use to interpret the command
+  /// The interpreter to use
   #[serde(default)]
-  pub shell: String,
+  pub interpreter: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -508,12 +508,12 @@ impl Mold {
 
     let task = match recipe {
       Recipe::Command(target) => {
-        if target.shell.is_empty() {
+        if target.interpreter.is_empty() {
           Some(Task::from_args(&target.command, Some(&env)))
         } else {
           Some(Task::from_args(
             &[
-              target.shell.clone(),
+              target.interpreter.clone(),
               "-c".to_owned(),
               target.command.join(" "),
             ],
