@@ -1,6 +1,6 @@
 [package]
 name = "mold"
-version = "0.1.0"
+version = "0.1.1"
 authors = [
   "John Weachock <jweachock@gmail.com>",
   "Philip Dexter <philip.dexter@gmail.com>",
