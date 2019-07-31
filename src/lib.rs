@@ -14,6 +14,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process;
 use std::str::FromStr;
+use std::string::ToString;
 
 pub mod remote;
 
@@ -105,7 +106,7 @@ pub struct Group {
 }
 
 fn default_git_ref() -> String {
-  "master".to_string()
+  "master".into()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -436,7 +437,7 @@ impl Mold {
 
     for target_name in targets {
       new_targets.extend(self.find_task_dependencies(target_name)?);
-      new_targets.insert(target_name.to_string());
+      new_targets.insert(target_name.clone());
     }
 
     Ok(new_targets)
@@ -463,11 +464,7 @@ impl Mold {
 
     // ...not a subrecipe
     let recipe = self.find_recipe(target)?;
-    let deps = recipe
-      .deps()
-      .iter()
-      .map(std::string::ToString::to_string)
-      .collect();
+    let deps = recipe.deps().iter().map(ToString::to_string).collect();
     self.find_all_dependencies(&deps)
   }
 
@@ -685,13 +682,7 @@ impl Type {
     let args: Vec<_> = self
       .command
       .iter()
-      .map(|x| {
-        if x == "?" {
-          script.to_string()
-        } else {
-          x.to_string()
-        }
-      })
+      .map(|x| if x == "?" { script.into() } else { x.clone() })
       .collect();
 
     Task {
