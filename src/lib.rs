@@ -368,25 +368,35 @@ impl Mold {
   pub fn clone_all(&self) -> Result<(), Error> {
     for recipe in self.data.recipes.values() {
       if let Recipe::Group(group) = recipe {
-        self.clone(
-          &group.folder_name(),
-          &group.url,
-          &group.ref_,
-          group.file.clone(),
-        )?;
+        self.clone_group(&group)?;
       }
     }
 
     for include in &self.data.includes {
-      self.clone(
-        &include.folder_name(),
-        &include.url,
-        &include.ref_,
-        include.file.clone(),
-      )?;
+      self.clone_include(&include)?;
     }
 
     Ok(())
+  }
+
+  /// Clone a single remote group
+  pub fn clone_group(&self, group: &Group) -> Result<(), Error> {
+    self.clone(
+      &group.folder_name(),
+      &group.url,
+      &group.ref_,
+      group.file.clone(),
+    )
+  }
+
+  /// Clone a single remote include
+  pub fn clone_include(&self, include: &Include) -> Result<(), Error> {
+    self.clone(
+      &include.folder_name(),
+      &include.url,
+      &include.ref_,
+      include.file.clone(),
+    )
   }
 
   /// Clone a single remote reference and then recursively clone subremotes
@@ -593,6 +603,17 @@ impl Mold {
       self.data.merge_absent(merge);
     }
 
+    Ok(())
+  }
+
+  /// Merge a single Include into `self`
+  pub fn process_include(&mut self, include: &Include) -> Result<(), Error> {
+    let path = self.clone_dir.join(include.folder_name());
+    let mut merge = Self::discover(&path, include.file.clone())?.adopt(self);
+
+    // recursively merge
+    merge.process_includes()?;
+    self.data.merge_absent(merge);
     Ok(())
   }
 
