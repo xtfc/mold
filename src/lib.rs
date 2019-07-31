@@ -769,6 +769,14 @@ impl Include {
   pub fn folder_name(&self) -> String {
     hash_url_ref(&self.url, &self.ref_)
   }
+
+  pub fn parse_cli(url: &str) -> Self {
+    Self {
+      url: url.to_owned(),
+      ref_: default_git_ref(),
+      file: None,
+    }
+  }
 }
 
 impl Moldfile {
