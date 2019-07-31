@@ -673,7 +673,7 @@ impl Task {
   /// Create a Task from a Vec of strings
   pub fn from_args(args: &[String], env: Option<&EnvMap>) -> Task {
     Task {
-      args: args.to_owned(),
+      args: args.into(),
       env: env.map(std::clone::Clone::clone),
     }
   }
@@ -771,11 +771,45 @@ impl Include {
     hash_url_ref(&self.url, &self.ref_)
   }
 
-  pub fn parse_cli(url: &str) -> Self {
-    Self {
-      url: url.to_owned(),
-      ref_: default_git_ref(),
-      file: None,
+  /// Parse a string into an Include
+  ///
+  /// The format is roughly: url[#[ref][/file]], eg:
+  ///   https://foo.com/mold.git -> ref = master, file = None
+  ///   https://foo.com/mold.git#dev -> ref = dev, file = None
+  ///   https://foo.com/mold.git#dev/dev.yaml, ref = dev, file = dev.yaml
+  ///   https://foo.com/mold.git#/dev.yaml -> ref = master, file = dev.yaml
+  pub fn parse(url: &str) -> Self {
+    match url.find('#') {
+      Some(idx) => {
+        let (url, frag) = url.split_at(idx);
+        let frag = frag.trim_start_matches('#');
+
+        let (ref_, file) = match frag.find('/') {
+          Some(idx) => {
+            let (ref_, file) = frag.split_at(idx);
+            let file = file.trim_start_matches('/');
+
+            let ref_ = match ref_ {
+              "" => default_git_ref(),
+              _ => ref_.into(),
+            };
+
+            (ref_, Some(file.into()))
+          }
+          None => (frag.into(), None),
+        };
+
+        Self {
+          url: url.into(),
+          ref_,
+          file,
+        }
+      }
+      None => Self {
+        url: url.into(),
+        ref_: default_git_ref(),
+        file: None,
+      },
     }
   }
 }
@@ -784,7 +818,7 @@ impl FromStr for Include {
   type Err = Error;
 
   fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(Self::parse_cli(s))
+    Ok(Self::parse(s))
   }
 }
 
