@@ -13,6 +13,7 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;
+use std::str::FromStr;
 
 pub mod remote;
 
@@ -776,6 +777,14 @@ impl Include {
       ref_: default_git_ref(),
       file: None,
     }
+  }
+}
+
+impl FromStr for Include {
+  type Err = Error;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(Self::parse_cli(s))
   }
 }
 

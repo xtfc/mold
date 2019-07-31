@@ -25,7 +25,7 @@ pub struct Args {
 
   /// Fetch new updates for all downloaded remote data
   #[structopt(long = "include", short = "i")]
-  pub includes: Vec<String>,
+  pub includes: Vec<Include>,
 
   /// Fetch new updates for all downloaded remote data
   #[structopt(long = "update", short = "u")]
@@ -67,17 +67,11 @@ fn run(args: Args) -> Result<(), Error> {
     return Ok(());
   }
 
-  let includes: Vec<_> = args
-    .includes
-    .iter()
-    .map(|x| Include::parse_cli(&x))
-    .collect();
-
   // we'll actually be doing something if we get this far, so we want to make
   // sure we have all of the Groups and Includes cloned before proceeding
   mold.clone_all()?;
 
-  for include in &includes {
+  for include in &args.includes {
     mold.clone_include(include)?;
   }
 
@@ -85,8 +79,7 @@ fn run(args: Args) -> Result<(), Error> {
   mold.process_includes()?;
 
   // merge all CLI includes
-  for include in &includes {
-    dbg!(&include);
+  for include in &args.includes {
     mold.process_include(&include)?;
   }
 
