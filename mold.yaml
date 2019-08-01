@@ -8,6 +8,10 @@ types:
     extensions: ["py"]
 
 recipes:
+  staticbuild:
+    help: "Build a static MUSL binary using Docker"
+    type: "sh"
+
   python:
     type: "python"
 
