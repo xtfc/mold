@@ -734,6 +734,12 @@ impl Type {
         return Ok(path);
       }
     }
+
+    // support no ext
+    if path.is_file() {
+      return Ok(path);
+    }
+
     Err(failure::err_msg("Couldn't find a file"))
   }
 }
