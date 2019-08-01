@@ -29,6 +29,7 @@ pub struct Mold {
   file: PathBuf,
   dir: PathBuf,
   clone_dir: PathBuf,
+  script_dir: PathBuf,
   data: Moldfile,
 }
 
@@ -64,8 +65,10 @@ const MOLD_FILES: &[&str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Recipe {
+  // apparently the order here matters?
   Group(Group),
   Script(Script),
+  File(File),
   Command(Command),
 }
 
@@ -85,7 +88,7 @@ pub struct Include {
 // FIXME Group / Script / Command should be able to document what environment vars they depend on
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Group {
+pub struct RecipeBase {
   /// A short description of the group's contents
   #[serde(default)]
   pub help: String,
@@ -93,6 +96,13 @@ pub struct Group {
   /// A list of environment variables that overrides the base environment
   #[serde(default)]
   pub environment: EnvMap,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Group {
+  /// Base data
+  #[serde(flatten)]
+  pub base: RecipeBase,
 
   /// Git URL of a remote repo
   pub url: String,
@@ -110,18 +120,14 @@ fn default_git_ref() -> String {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Script {
-  /// A short description of the command
-  #[serde(default)]
-  pub help: String,
+pub struct File {
+  /// Base data
+  #[serde(flatten)]
+  pub base: RecipeBase,
 
   /// A list of pre-execution dependencies
   #[serde(default)]
   pub deps: Vec<String>,
-
-  /// A list of environment variables that overrides the base environment
-  #[serde(default)]
-  pub environment: EnvMap,
 
   /// The actual root of this script
   ///
@@ -139,22 +145,36 @@ pub struct Script {
   /// If left undefined, Mold will attempt to discover the recipe name by
   /// searching the recipe_dir for any files that start with the recipe name and
   /// have an appropriate extension for the specified interpreter type.
-  pub script: Option<PathBuf>,
+  pub file: Option<PathBuf>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Command {
-  /// A short description of the command
-  #[serde(default)]
-  pub help: String,
+pub struct Script {
+  /// Base data
+  #[serde(flatten)]
+  pub base: RecipeBase,
 
   /// A list of pre-execution dependencies
   #[serde(default)]
   pub deps: Vec<String>,
 
-  /// A list of environment variables that overrides the base environment
+  /// Which interpreter should be used to execute this script
+  #[serde(alias = "type")]
+  pub type_: String,
+
+  /// The script contents as a multiline string
+  pub script: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Command {
+  /// Base data
+  #[serde(flatten)]
+  pub base: RecipeBase,
+
+  /// A list of pre-execution dependencies
   #[serde(default)]
-  pub environment: EnvMap,
+  pub deps: Vec<String>,
 
   /// A list of command arguments
   #[serde(default)]
@@ -199,6 +219,7 @@ impl Mold {
 
     let dir = path.with_file_name(&data.recipe_dir);
     let clone_dir = dir.join(".clones");
+    let script_dir = dir.join(".scripts");
 
     if !dir.is_dir() {
       fs::create_dir(&dir)?;
@@ -206,11 +227,15 @@ impl Mold {
     if !clone_dir.is_dir() {
       fs::create_dir(&clone_dir)?;
     }
+    if !script_dir.is_dir() {
+      fs::create_dir(&script_dir)?;
+    }
 
     Ok(Mold {
       file: fs::canonicalize(path)?,
       dir: fs::canonicalize(dir)?,
       clone_dir: fs::canonicalize(clone_dir)?,
+      script_dir: fs::canonicalize(script_dir)?,
       data,
     })
   }
@@ -303,9 +328,10 @@ impl Mold {
   pub fn find_group(&self, group_name: &str) -> Result<&Group, Error> {
     // unwrap the group or quit
     match self.find_recipe(group_name)? {
-      Recipe::Script(_) => Err(failure::err_msg("Requested recipe is a script")),
       Recipe::Command(_) => Err(failure::err_msg("Requested recipe is a command")),
+      Recipe::File(_) => Err(failure::err_msg("Requested recipe is a file")),
       Recipe::Group(target) => Ok(target),
+      Recipe::Script(_) => Err(failure::err_msg("Requested recipe is a script")),
     }
   }
 
@@ -512,7 +538,7 @@ impl Mold {
 
     let task = match recipe {
       Recipe::Command(target) => Some(Task::from_args(&target.command, Some(&env))),
-      Recipe::Script(target) => {
+      Recipe::File(target) => {
         // what the interpreter is for this recipe
         let type_ = self.find_type(&target.type_)?;
 
@@ -521,7 +547,7 @@ impl Mold {
         let search_dir = target.root.clone().unwrap_or_else(|| self.dir.clone());
 
         // find the script file to execute
-        let script = match &target.script {
+        let script = match &target.file {
           Some(x) => search_dir.join(x),
 
           // we need to look it up based on our interpreter's known extensions
@@ -529,6 +555,20 @@ impl Mold {
         };
 
         Some(type_.task(&script.to_str().unwrap(), &env))
+      }
+      Recipe::Script(target) => {
+        // what the interpreter is for this recipe
+        let type_ = self.find_type(&target.type_)?;
+
+        // locate a file to write the script to
+        let mut temp_file = self.script_dir.join(hash_string(&target.script));
+        if let Some(x) = type_.extensions.get(0) {
+          temp_file.set_extension(&x);
+        }
+
+        fs::write(&temp_file, &target.script)?;
+
+        Some(type_.task(&temp_file.to_str().unwrap(), &env))
       }
       Recipe::Group(_) => {
         // this is kinda hacky, but... whatever. it should probably
@@ -553,8 +593,9 @@ impl Mold {
     for (name, recipe) in &self.data.recipes {
       let colored_name = match recipe {
         Recipe::Command(_) => name.yellow(),
-        Recipe::Script(_) => name.cyan(),
+        Recipe::File(_) => name.cyan(),
         Recipe::Group(_) => format!("{}/", name).magenta(),
+        Recipe::Script(_) => name.yellow(),
       };
 
       // this is supposed to be 12 character padded, but after all the
@@ -703,6 +744,12 @@ impl Type {
         return Ok(path);
       }
     }
+
+    // support no ext
+    if path.is_file() {
+      return Ok(path);
+    }
+
     Err(failure::err_msg("Couldn't find a file"))
   }
 }
@@ -711,7 +758,7 @@ impl Recipe {
   /// Return this recipe's dependencies
   pub fn deps(&self) -> Vec<String> {
     match self {
-      Recipe::Script(s) => s.deps.clone(),
+      Recipe::File(s) => s.deps.clone(),
       Recipe::Command(c) => c.deps.clone(),
       _ => vec![],
     }
@@ -720,32 +767,38 @@ impl Recipe {
   /// Return this recipe's help string
   pub fn help(&self) -> &str {
     match self {
-      Recipe::Script(s) => &s.help,
-      Recipe::Command(c) => &c.help,
-      Recipe::Group(g) => &g.help,
+      Recipe::Command(c) => &c.base.help,
+      Recipe::File(f) => &f.base.help,
+      Recipe::Group(g) => &g.base.help,
+      Recipe::Script(s) => &s.base.help,
     }
   }
 
   /// Return this recipe's environment
   pub fn env(&self) -> &EnvMap {
     match self {
-      Recipe::Script(s) => &s.environment,
-      Recipe::Command(c) => &c.environment,
-      Recipe::Group(g) => &g.environment,
+      Recipe::File(f) => &f.base.environment,
+      Recipe::Command(c) => &c.base.environment,
+      Recipe::Script(s) => &s.base.environment,
+      Recipe::Group(g) => &g.base.environment,
     }
   }
 
   /// Set this recipe's root
   pub fn set_root(&mut self, to: Option<PathBuf>) {
-    if let Recipe::Script(s) = self {
+    if let Recipe::File(s) = self {
       s.root = to;
     }
   }
 }
 
 fn hash_url_ref(url: &str, ref_: &str) -> String {
+  hash_string(&format!("{}@{}", url, ref_))
+}
+
+fn hash_string(string: &str) -> String {
   let mut hasher = DefaultHasher::new();
-  format!("{}@{}", url, ref_).hash(&mut hasher);
+  string.hash(&mut hasher);
   format!("{:16x}", hasher.finish())
 }
 
