@@ -64,9 +64,10 @@ const MOLD_FILES: &[&str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Recipe {
+  // apparently the order here matters?
   Group(Group),
-  File(File),
   Script(Script),
+  File(File),
   Command(Command),
 }
 
@@ -552,6 +553,9 @@ impl Mold {
       Recipe::Script(target) => {
         // what the interpreter is for this recipe
         let type_ = self.find_type(&target.type_)?;
+
+        // FIXME write target.script to file
+        // FIXME execute target.script
 
         println!("Can't actually execute yet but it WOULD be with: {:?}", type_);
 
