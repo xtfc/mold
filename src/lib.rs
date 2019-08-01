@@ -29,6 +29,7 @@ pub struct Mold {
   file: PathBuf,
   dir: PathBuf,
   clone_dir: PathBuf,
+  script_dir: PathBuf,
   data: Moldfile,
 }
 
@@ -218,6 +219,7 @@ impl Mold {
 
     let dir = path.with_file_name(&data.recipe_dir);
     let clone_dir = dir.join(".clones");
+    let script_dir = dir.join(".scripts");
 
     if !dir.is_dir() {
       fs::create_dir(&dir)?;
@@ -225,11 +227,15 @@ impl Mold {
     if !clone_dir.is_dir() {
       fs::create_dir(&clone_dir)?;
     }
+    if !script_dir.is_dir() {
+      fs::create_dir(&script_dir)?;
+    }
 
     Ok(Mold {
       file: fs::canonicalize(path)?,
       dir: fs::canonicalize(dir)?,
       clone_dir: fs::canonicalize(clone_dir)?,
+      script_dir: fs::canonicalize(script_dir)?,
       data,
     })
   }
@@ -554,10 +560,14 @@ impl Mold {
         // what the interpreter is for this recipe
         let type_ = self.find_type(&target.type_)?;
 
-        // FIXME pick a better location
-        // FIXME append an extension?
-        let temp_file = self.dir.join(hash_string(&target.script));
+        // locate a file to write the script to
+        let mut temp_file = self.script_dir.join(hash_string(&target.script));
+        if let Some(x) = type_.extensions.get(0) {
+          temp_file.set_extension(&x);
+        }
+
         fs::write(&temp_file, &target.script)?;
+
         Some(type_.task(&temp_file.to_str().unwrap(), &env))
       }
       Recipe::Group(_) => {
