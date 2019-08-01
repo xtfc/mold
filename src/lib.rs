@@ -13,6 +13,8 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;
+use std::str::FromStr;
+use std::string::ToString;
 
 pub mod remote;
 
@@ -104,7 +106,7 @@ pub struct Group {
 }
 
 fn default_git_ref() -> String {
-  "master".to_string()
+  "master".into()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -368,25 +370,35 @@ impl Mold {
   pub fn clone_all(&self) -> Result<(), Error> {
     for recipe in self.data.recipes.values() {
       if let Recipe::Group(group) = recipe {
-        self.clone(
-          &group.folder_name(),
-          &group.url,
-          &group.ref_,
-          group.file.clone(),
-        )?;
+        self.clone_group(&group)?;
       }
     }
 
     for include in &self.data.includes {
-      self.clone(
-        &include.folder_name(),
-        &include.url,
-        &include.ref_,
-        include.file.clone(),
-      )?;
+      self.clone_include(&include)?;
     }
 
     Ok(())
+  }
+
+  /// Clone a single remote group
+  pub fn clone_group(&self, group: &Group) -> Result<(), Error> {
+    self.clone(
+      &group.folder_name(),
+      &group.url,
+      &group.ref_,
+      group.file.clone(),
+    )
+  }
+
+  /// Clone a single remote include
+  pub fn clone_include(&self, include: &Include) -> Result<(), Error> {
+    self.clone(
+      &include.folder_name(),
+      &include.url,
+      &include.ref_,
+      include.file.clone(),
+    )
   }
 
   /// Clone a single remote reference and then recursively clone subremotes
@@ -425,7 +437,7 @@ impl Mold {
 
     for target_name in targets {
       new_targets.extend(self.find_task_dependencies(target_name)?);
-      new_targets.insert(target_name.to_string());
+      new_targets.insert(target_name.clone());
     }
 
     Ok(new_targets)
@@ -452,11 +464,7 @@ impl Mold {
 
     // ...not a subrecipe
     let recipe = self.find_recipe(target)?;
-    let deps = recipe
-      .deps()
-      .iter()
-      .map(std::string::ToString::to_string)
-      .collect();
+    let deps = recipe.deps().iter().map(ToString::to_string).collect();
     self.find_all_dependencies(&deps)
   }
 
@@ -596,6 +604,17 @@ impl Mold {
     Ok(())
   }
 
+  /// Merge a single Include into `self`
+  pub fn process_include(&mut self, include: &Include) -> Result<(), Error> {
+    let path = self.clone_dir.join(include.folder_name());
+    let mut merge = Self::discover(&path, include.file.clone())?.adopt(self);
+
+    // recursively merge
+    merge.process_includes()?;
+    self.data.merge_absent(merge);
+    Ok(())
+  }
+
   /// Adopt the same clone dir of a parent
   pub fn adopt(mut self, parent: &Self) -> Self {
     self.clone_dir = parent.clone_dir.clone();
@@ -651,7 +670,7 @@ impl Task {
   /// Create a Task from a Vec of strings
   pub fn from_args(args: &[String], env: Option<&EnvMap>) -> Task {
     Task {
-      args: args.to_owned(),
+      args: args.into(),
       env: env.map(std::clone::Clone::clone),
     }
   }
@@ -663,13 +682,7 @@ impl Type {
     let args: Vec<_> = self
       .command
       .iter()
-      .map(|x| {
-        if x == "?" {
-          script.to_string()
-        } else {
-          x.to_string()
-        }
-      })
+      .map(|x| if x == "?" { script.into() } else { x.clone() })
       .collect();
 
     Task {
@@ -747,6 +760,56 @@ impl Include {
   /// Return this group's folder name in the format hash(url@ref)
   pub fn folder_name(&self) -> String {
     hash_url_ref(&self.url, &self.ref_)
+  }
+
+  /// Parse a string into an Include
+  ///
+  /// The format is roughly: url[#[ref][/file]], eg:
+  ///   https://foo.com/mold.git -> ref = master, file = None
+  ///   https://foo.com/mold.git#dev -> ref = dev, file = None
+  ///   https://foo.com/mold.git#dev/dev.yaml, ref = dev, file = dev.yaml
+  ///   https://foo.com/mold.git#/dev.yaml -> ref = master, file = dev.yaml
+  pub fn parse(url: &str) -> Self {
+    match url.find('#') {
+      Some(idx) => {
+        let (url, frag) = url.split_at(idx);
+        let frag = frag.trim_start_matches('#');
+
+        let (ref_, file) = match frag.find('/') {
+          Some(idx) => {
+            let (ref_, file) = frag.split_at(idx);
+            let file = file.trim_start_matches('/');
+
+            let ref_ = match ref_ {
+              "" => default_git_ref(),
+              _ => ref_.into(),
+            };
+
+            (ref_, Some(file.into()))
+          }
+          None => (frag.into(), None),
+        };
+
+        Self {
+          url: url.into(),
+          ref_,
+          file,
+        }
+      }
+      None => Self {
+        url: url.into(),
+        ref_: default_git_ref(),
+        file: None,
+      },
+    }
+  }
+}
+
+impl FromStr for Include {
+  type Err = Error;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(Self::parse(s))
   }
 }
 
