@@ -554,13 +554,11 @@ impl Mold {
         // what the interpreter is for this recipe
         let type_ = self.find_type(&target.type_)?;
 
-        // FIXME write target.script to file
-        // FIXME execute target.script
-
-        println!("Can't actually execute yet but it WOULD be with: {:?}", type_);
-
-        None
-        //Some(type_.task(&script.to_str().unwrap(), &env))
+        // FIXME pick a better location
+        // FIXME append an extension?
+        let temp_file = self.dir.join(hash_string(&target.script));
+        fs::write(&temp_file, &target.script)?;
+        Some(type_.task(&temp_file.to_str().unwrap(), &env))
       }
       Recipe::Group(_) => {
         // this is kinda hacky, but... whatever. it should probably
@@ -779,8 +777,12 @@ impl Recipe {
 }
 
 fn hash_url_ref(url: &str, ref_: &str) -> String {
+  hash_string(&format!("{}@{}", url, ref_))
+}
+
+fn hash_string(string: &str) -> String {
   let mut hasher = DefaultHasher::new();
-  format!("{}@{}", url, ref_).hash(&mut hasher);
+  string.hash(&mut hasher);
   format!("{:16x}", hasher.finish())
 }
 
