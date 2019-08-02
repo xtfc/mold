@@ -1,5 +1,7 @@
 use colored::*;
 use failure::Error;
+use semver::Version;
+use semver::VersionReq;
 use serde_derive::Deserialize;
 use serde_derive::Serialize;
 use std::collections::hash_map::DefaultHasher;
@@ -35,6 +37,9 @@ pub struct Mold {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Moldfile {
+  /// Version of mold required to run this Moldfile
+  pub version: Option<String>,
+
   /// The directory that recipe scripts can be found in
   #[serde(default = "default_recipe_dir")]
   pub recipe_dir: PathBuf,
@@ -216,6 +221,21 @@ impl Mold {
       Some("yaml") | Some("yml") => serde_yaml::from_str(&contents)?,
       _ => toml::de::from_str(&contents)?,
     };
+
+    let self_version = Version::parse(clap::crate_version!())?;
+    let target_version = match data.version {
+      Some(ref version) => VersionReq::parse(&version)?,
+      None => VersionReq::parse(clap::crate_version!())?,
+    };
+
+    if !target_version.matches(&self_version) {
+      return Err(failure::format_err!(
+        "Incompatible versions: file {} requires version {}, but current version is {}",
+        path.to_str().unwrap().blue(),
+        target_version.to_string().green(),
+        self_version.to_string().red()
+      ));
+    }
 
     let dir = path.with_file_name(&data.recipe_dir);
     let clone_dir = dir.join(".clones");
