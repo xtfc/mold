@@ -1,3 +1,5 @@
+version: "0.2.0"
+
 includes:
   - url: "https://github.com/philipdexter/std.mold"
   - url: "https://github.com/scizzorz/cargo.mold"
