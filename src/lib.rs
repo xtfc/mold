@@ -474,6 +474,9 @@ impl Mold {
     // no point in checking if it exists, because Mold::open creates it
     fs::remove_dir_all(&self.clone_dir)?;
     println!("{:>12} {}", "Deleted".red(), self.clone_dir.display());
+
+    fs::remove_dir_all(&self.script_dir)?;
+    println!("{:>12} {}", "Deleted".red(), self.script_dir.display());
     Ok(())
   }
 
