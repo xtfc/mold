@@ -352,12 +352,24 @@ impl Mold {
     }
   }
 
+  /// Return this moldfile's variables
   pub fn vars(&self) -> &VarMap {
     &self.data.variables
   }
 
-  pub fn envs(&self) -> &EnvMap {
+  /// Return this moldfile's environment maps
+  pub fn env_map(&self) -> &EnvMap {
     &self.data.environments
+  }
+
+  /// Return a specific variable map for an environment
+  pub fn get_env(&self, name: &str) -> Option<&VarMap> {
+    self.env_map().get(name)
+  }
+
+  /// Return the list of selected environments
+  pub fn envs(&self) -> &Vec<String> {
+    &self.envs
   }
 
   pub fn set_env(&mut self, env: Option<String>) {
@@ -851,13 +863,18 @@ impl Recipe {
   }
 
   /// Return this recipe's environments
-  pub fn envs(&self) -> &EnvMap {
+  pub fn env_map(&self) -> &EnvMap {
     match self {
       Recipe::File(f) => &f.base.environments,
       Recipe::Command(c) => &c.base.environments,
       Recipe::Script(s) => &s.base.environments,
       Recipe::Group(g) => &g.base.environments,
     }
+  }
+
+  /// Return a specific variable map for an environment
+  pub fn get_env(&self, name: &str) -> Option<&VarMap> {
+    self.env_map().get(name)
   }
 
   /// Set this recipe's root
