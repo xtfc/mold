@@ -679,9 +679,10 @@ impl Mold {
     Ok(())
   }
 
-  /// Adopt the same clone dir of a parent
+  /// Adopt any attributes from the parent that should be shared
   pub fn adopt(mut self, parent: &Self) -> Self {
     self.clone_dir = parent.clone_dir.clone();
+    self.script_dir = parent.script_dir.clone();
     self
   }
 }
