@@ -42,7 +42,7 @@ pub struct Mold {
   script_dir: PathBuf,
 
   /// which environments to use in the environment
-  env: Option<String>,
+  envs: Vec<String>,
 
   /// the parsed moldfile data
   data: Moldfile,
@@ -285,7 +285,7 @@ impl Mold {
       dir: fs::canonicalize(dir)?,
       clone_dir: fs::canonicalize(clone_dir)?,
       script_dir: fs::canonicalize(script_dir)?,
-      env: None,
+      envs: vec![],
       data,
     })
   }
@@ -361,7 +361,10 @@ impl Mold {
   }
 
   pub fn set_env(&mut self, env: Option<String>) {
-    self.env = env;
+    self.envs = match env {
+      Some(envs) => envs.split(',').map(|x| x.into()).collect(),
+      None => vec![],
+    };
   }
 
   /// Find a Recipe by name
@@ -721,7 +724,7 @@ impl Mold {
   pub fn adopt(mut self, parent: &Self) -> Self {
     self.clone_dir = parent.clone_dir.clone();
     self.script_dir = parent.script_dir.clone();
-    self.env = parent.env.clone();
+    self.envs = parent.envs.clone();
     self
   }
 }
