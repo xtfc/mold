@@ -356,21 +356,11 @@ impl Mold {
   pub fn env_vars(&self) -> VarMap {
     let mut vars = self.data.variables.clone();
     for env_name in &self.envs {
-      if let Some(env) = self.get_env(env_name) {
+      if let Some(env) = self.data.environments.get(env_name) {
         vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
       }
     }
     vars
-  }
-
-  /// Return this moldfile's environment maps
-  pub fn env_map(&self) -> &EnvMap {
-    &self.data.environments
-  }
-
-  /// Return a specific variable map for an environment
-  pub fn get_env(&self, name: &str) -> Option<&VarMap> {
-    self.env_map().get(name)
   }
 
   pub fn set_env(&mut self, env: Option<String>) {
@@ -623,13 +613,6 @@ impl Mold {
         .map(|(k, v)| (k.clone(), v.clone())),
     );
 
-    // extend the variables with the recipe's environment variables
-    for env_name in &self.envs {
-      if let Some(env) = recipe.get_env(env_name) {
-        vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
-      }
-    }
-
     let task = match recipe {
       Recipe::Command(target) => Some(Task::from_args(&target.command, Some(&vars))),
       Recipe::File(target) => {
@@ -871,7 +854,7 @@ impl Recipe {
   }
 
   /// Return this recipe's variables
-  pub fn vars(&self) -> &VarMap {
+  fn vars(&self) -> &VarMap {
     match self {
       Recipe::File(f) => &f.base.variables,
       Recipe::Command(c) => &c.base.variables,
@@ -880,19 +863,8 @@ impl Recipe {
     }
   }
 
-  /// Return this recipe's variables with activated environments
-  pub fn env_vars(&self, envs: &[String]) -> VarMap {
-    let mut vars = self.vars().clone();
-    for env_name in envs {
-      if let Some(env) = self.get_env(env_name) {
-        vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
-      }
-    }
-    vars
-  }
-
   /// Return this recipe's environments
-  pub fn env_map(&self) -> &EnvMap {
+  fn envs(&self) -> &EnvMap {
     match self {
       Recipe::File(f) => &f.base.environments,
       Recipe::Command(c) => &c.base.environments,
@@ -901,9 +873,16 @@ impl Recipe {
     }
   }
 
-  /// Return a specific variable map for an environment
-  pub fn get_env(&self, name: &str) -> Option<&VarMap> {
-    self.env_map().get(name)
+  /// Return this recipe's variables with activated environments
+  pub fn env_vars(&self, envs: &[String]) -> VarMap {
+    let mut vars = self.vars().clone();
+    let env_maps = self.envs();
+    for env_name in envs {
+      if let Some(env) = env_maps.get(env_name) {
+        vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
+      }
+    }
+    vars
   }
 
   /// Set this recipe's root
