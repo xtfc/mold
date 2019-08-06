@@ -59,6 +59,7 @@ fn main() -> Result<(), ExitFailure> {
 fn run(args: Args) -> Result<(), Error> {
   // load the moldfile
   let mut mold = Mold::discover(&Path::new("."), args.file.clone())?;
+  mold.set_env(args.env);
 
   // early return if we passed a --clean
   if args.clean {

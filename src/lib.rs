@@ -32,6 +32,7 @@ pub struct Mold {
   dir: PathBuf,
   clone_dir: PathBuf,
   script_dir: PathBuf,
+  env: Option<String>,
   data: Moldfile,
 }
 
@@ -256,6 +257,7 @@ impl Mold {
       dir: fs::canonicalize(dir)?,
       clone_dir: fs::canonicalize(clone_dir)?,
       script_dir: fs::canonicalize(script_dir)?,
+      env: None,
       data,
     })
   }
@@ -324,6 +326,10 @@ impl Mold {
 
   pub fn env(&self) -> &EnvMap {
     &self.data.environment
+  }
+
+  pub fn set_env(&mut self, env: Option<String>) {
+    self.env = env;
   }
 
   /// Find a Recipe by name
@@ -683,6 +689,7 @@ impl Mold {
   pub fn adopt(mut self, parent: &Self) -> Self {
     self.clone_dir = parent.clone_dir.clone();
     self.script_dir = parent.script_dir.clone();
+    self.env = parent.env.clone();
     self
   }
 }
