@@ -357,6 +357,17 @@ impl Mold {
     &self.data.variables
   }
 
+  /// Return this moldfile's variables with activated environments as well
+  pub fn env_vars(&self) -> VarMap {
+    let mut vars = self.data.variables.clone();
+    for env_name in &self.envs {
+      if let Some(env) = self.get_env(env_name) {
+        vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
+      }
+    }
+    vars
+  }
+
   /// Return this moldfile's environment maps
   pub fn env_map(&self) -> &EnvMap {
     &self.data.environments
