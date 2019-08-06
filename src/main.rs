@@ -27,6 +27,10 @@ pub struct Args {
   #[structopt(long = "include", short = "i")]
   pub includes: Vec<Include>,
 
+  /// Which mold environment is running
+  #[structopt(long = "env", short = "e", env = "MOLDENV")]
+  pub env: Option<String>,
+
   /// Fetch new updates for all downloaded remote data
   #[structopt(long = "update", short = "u")]
   pub update: bool,
