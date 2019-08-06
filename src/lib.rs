@@ -27,6 +27,26 @@ pub type VarMap = BTreeMap<String, String>; // TODO maybe down the line this sho
 pub type EnvMap = BTreeMap<String, VarMap>;
 pub type TaskSet = indexmap::IndexSet<String>;
 
+const MOLD_FILES: &[&str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
+
+fn default_recipe_dir() -> PathBuf {
+  PathBuf::from("./mold")
+}
+
+fn default_git_ref() -> String {
+  "master".into()
+}
+
+fn hash_url_ref(url: &str, ref_: &str) -> String {
+  hash_string(&format!("{}@{}", url, ref_))
+}
+
+fn hash_string(string: &str) -> String {
+  let mut hasher = DefaultHasher::new();
+  string.hash(&mut hasher);
+  format!("{:16x}", hasher.finish())
+}
+
 #[derive(Debug)]
 pub struct Mold {
   /// path to the moldfile
@@ -82,22 +102,6 @@ pub struct Moldfile {
   pub environments: EnvMap,
 }
 
-fn default_recipe_dir() -> PathBuf {
-  PathBuf::from("./mold")
-}
-
-const MOLD_FILES: &[&str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Recipe {
-  // apparently the order here matters?
-  Group(Group),
-  Script(Script),
-  File(File),
-  Command(Command),
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Include {
   /// Git URL of a remote repo
@@ -111,7 +115,23 @@ pub struct Include {
   pub file: Option<PathBuf>,
 }
 
-// FIXME Group / Script / Command should be able to document what environment vars they depend on
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Type {
+  /// A list of arguments used as a shell command
+  ///
+  /// Any element "?" will be / replaced with the desired script when
+  /// executing. eg:
+  ///   ["python", "-m", "?"]
+  /// will produce the shell command when .exec("foo") is called:
+  ///   $ python -m foo
+  pub command: Vec<String>,
+
+  /// A list of extensions used to search for the script name
+  ///
+  /// These should omit the leading dot.
+  #[serde(default)]
+  pub extensions: Vec<String>,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RecipeBase {
@@ -133,6 +153,16 @@ pub struct RecipeBase {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Recipe {
+  // apparently the order here matters?
+  Group(Group),
+  Script(Script),
+  File(File),
+  Command(Command),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Group {
   /// Base data
   #[serde(flatten)]
@@ -147,10 +177,6 @@ pub struct Group {
 
   /// Moldfile to look at
   pub file: Option<PathBuf>,
-}
-
-fn default_git_ref() -> String {
-  "master".into()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -213,24 +239,6 @@ pub struct Command {
   /// A list of command arguments
   #[serde(default)]
   pub command: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Type {
-  /// A list of arguments used as a shell command
-  ///
-  /// Any element "?" will be / replaced with the desired script when
-  /// executing. eg:
-  ///   ["python", "-m", "?"]
-  /// will produce the shell command when .exec("foo") is called:
-  ///   $ python -m foo
-  pub command: Vec<String>,
-
-  /// A list of extensions used to search for the script name
-  ///
-  /// These should omit the leading dot.
-  #[serde(default)]
-  pub extensions: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -742,57 +750,74 @@ impl Mold {
   }
 }
 
-impl Task {
-  /// Execute the task
-  pub fn exec(&self) -> Result<(), Error> {
-    if self.args.is_empty() {
-      return Ok(());
+impl Moldfile {
+  /// Merges any types in other missing in self
+  pub fn merge_absent(&mut self, other: Mold) {
+    for (type_name, type_) in other.data.types {
+      self.types.entry(type_name).or_insert(type_);
     }
 
-    let mut command = process::Command::new(&self.args[0]);
-    command.args(&self.args[1..]);
-
-    if let Some(vars) = &self.vars {
-      command.envs(vars);
+    for (recipe_name, mut recipe) in other.data.recipes {
+      recipe.set_root(Some(other.dir.clone()));
+      self.recipes.entry(recipe_name).or_insert(recipe);
     }
+  }
+}
 
-    let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
-
-    if !exit_status.success() {
-      return Err(failure::err_msg("recipe exited with non-zero code"));
-    }
-
-    Ok(())
+impl Include {
+  /// Return this group's folder name in the format hash(url@ref)
+  fn folder_name(&self) -> String {
+    hash_url_ref(&self.url, &self.ref_)
   }
 
-  /// Print the command to be executed
-  pub fn print_cmd(&self) {
-    if self.args.is_empty() {
-      return;
-    }
+  /// Parse a string into an Include
+  ///
+  /// The format is roughly: url[#[ref][/file]], eg:
+  ///   https://foo.com/mold.git -> ref = master, file = None
+  ///   https://foo.com/mold.git#dev -> ref = dev, file = None
+  ///   https://foo.com/mold.git#dev/dev.yaml, ref = dev, file = dev.yaml
+  ///   https://foo.com/mold.git#/dev.yaml -> ref = master, file = dev.yaml
+  fn parse(url: &str) -> Self {
+    match url.find('#') {
+      Some(idx) => {
+        let (url, frag) = url.split_at(idx);
+        let frag = frag.trim_start_matches('#');
 
-    println!("{} {}", "$".green(), self.args.join(" "));
-  }
+        let (ref_, file) = match frag.find('/') {
+          Some(idx) => {
+            let (ref_, file) = frag.split_at(idx);
+            let file = file.trim_start_matches('/');
 
-  /// Print the environment that will be used
-  pub fn print_vars(&self) {
-    if self.args.is_empty() {
-      return;
-    }
+            let ref_ = match ref_ {
+              "" => default_git_ref(),
+              _ => ref_.into(),
+            };
 
-    if let Some(vars) = &self.vars {
-      for (name, value) in vars {
-        println!("  {} = \"{}\"", format!("${}", name).bright_cyan(), value);
+            (ref_, Some(file.into()))
+          }
+          None => (frag.into(), None),
+        };
+
+        Self {
+          url: url.into(),
+          ref_,
+          file,
+        }
       }
+      None => Self {
+        url: url.into(),
+        ref_: default_git_ref(),
+        file: None,
+      },
     }
   }
+}
 
-  /// Create a Task from a Vec of strings
-  fn from_args(args: &[String], vars: Option<&VarMap>) -> Task {
-    Task {
-      args: args.into(),
-      vars: vars.map(std::clone::Clone::clone),
-    }
+impl FromStr for Include {
+  type Err = Error;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(Self::parse(s))
   }
 }
 
@@ -893,16 +918,6 @@ impl Recipe {
   }
 }
 
-fn hash_url_ref(url: &str, ref_: &str) -> String {
-  hash_string(&format!("{}@{}", url, ref_))
-}
-
-fn hash_string(string: &str) -> String {
-  let mut hasher = DefaultHasher::new();
-  string.hash(&mut hasher);
-  format!("{:16x}", hasher.finish())
-}
-
 impl Group {
   /// Return this group's folder name in the format hash(url@ref)
   fn folder_name(&self) -> String {
@@ -910,73 +925,56 @@ impl Group {
   }
 }
 
-impl Include {
-  /// Return this group's folder name in the format hash(url@ref)
-  fn folder_name(&self) -> String {
-    hash_url_ref(&self.url, &self.ref_)
+impl Task {
+  /// Execute the task
+  pub fn exec(&self) -> Result<(), Error> {
+    if self.args.is_empty() {
+      return Ok(());
+    }
+
+    let mut command = process::Command::new(&self.args[0]);
+    command.args(&self.args[1..]);
+
+    if let Some(vars) = &self.vars {
+      command.envs(vars);
+    }
+
+    let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
+
+    if !exit_status.success() {
+      return Err(failure::err_msg("recipe exited with non-zero code"));
+    }
+
+    Ok(())
   }
 
-  /// Parse a string into an Include
-  ///
-  /// The format is roughly: url[#[ref][/file]], eg:
-  ///   https://foo.com/mold.git -> ref = master, file = None
-  ///   https://foo.com/mold.git#dev -> ref = dev, file = None
-  ///   https://foo.com/mold.git#dev/dev.yaml, ref = dev, file = dev.yaml
-  ///   https://foo.com/mold.git#/dev.yaml -> ref = master, file = dev.yaml
-  fn parse(url: &str) -> Self {
-    match url.find('#') {
-      Some(idx) => {
-        let (url, frag) = url.split_at(idx);
-        let frag = frag.trim_start_matches('#');
+  /// Print the command to be executed
+  pub fn print_cmd(&self) {
+    if self.args.is_empty() {
+      return;
+    }
 
-        let (ref_, file) = match frag.find('/') {
-          Some(idx) => {
-            let (ref_, file) = frag.split_at(idx);
-            let file = file.trim_start_matches('/');
+    println!("{} {}", "$".green(), self.args.join(" "));
+  }
 
-            let ref_ = match ref_ {
-              "" => default_git_ref(),
-              _ => ref_.into(),
-            };
+  /// Print the environment that will be used
+  pub fn print_vars(&self) {
+    if self.args.is_empty() {
+      return;
+    }
 
-            (ref_, Some(file.into()))
-          }
-          None => (frag.into(), None),
-        };
-
-        Self {
-          url: url.into(),
-          ref_,
-          file,
-        }
+    if let Some(vars) = &self.vars {
+      for (name, value) in vars {
+        println!("  {} = \"{}\"", format!("${}", name).bright_cyan(), value);
       }
-      None => Self {
-        url: url.into(),
-        ref_: default_git_ref(),
-        file: None,
-      },
     }
   }
-}
 
-impl FromStr for Include {
-  type Err = Error;
-
-  fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(Self::parse(s))
-  }
-}
-
-impl Moldfile {
-  /// Merges any types in other missing in self
-  pub fn merge_absent(&mut self, other: Mold) {
-    for (type_name, type_) in other.data.types {
-      self.types.entry(type_name).or_insert(type_);
-    }
-
-    for (recipe_name, mut recipe) in other.data.recipes {
-      recipe.set_root(Some(other.dir.clone()));
-      self.recipes.entry(recipe_name).or_insert(recipe);
+  /// Create a Task from a Vec of strings
+  fn from_args(args: &[String], vars: Option<&VarMap>) -> Task {
+    Task {
+      args: args.into(),
+      vars: vars.map(std::clone::Clone::clone),
     }
   }
 }
