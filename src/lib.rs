@@ -609,7 +609,12 @@ impl Mold {
         // it's done here so that parent group's configuration can override one
         // of the subrecipes in the group
         if let Some(vars) = &mut task.vars {
-          vars.extend(recipe.env_vars(&self.envs).iter().map(|(k, v)| (k.clone(), v.clone())));
+          vars.extend(
+            recipe
+              .env_vars(&self.envs)
+              .iter()
+              .map(|(k, v)| (k.clone(), v.clone())),
+          );
         }
       }
 
@@ -621,7 +626,12 @@ impl Mold {
 
     // extend the variables with the recipe's variables
     let mut vars = prev_vars.clone();
-    vars.extend(recipe.env_vars(&self.envs).iter().map(|(k, v)| (k.clone(), v.clone())));
+    vars.extend(
+      recipe
+        .env_vars(&self.envs)
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone())),
+    );
 
     // extend the variables with the recipe's environment variables
     for env_name in &self.envs {
@@ -881,7 +891,7 @@ impl Recipe {
   }
 
   /// Return this recipe's variables with activated environments
-  pub fn env_vars(&self, envs: &Vec<String>) -> VarMap {
+  pub fn env_vars(&self, envs: &[String]) -> VarMap {
     let mut vars = self.vars().clone();
     for env_name in envs {
       if let Some(env) = self.get_env(env_name) {
