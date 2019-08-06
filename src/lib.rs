@@ -357,7 +357,7 @@ impl Mold {
     &self.data.variables
   }
 
-  /// Return this moldfile's variables with activated environments as well
+  /// Return this moldfile's variables with activated environments
   pub fn env_vars(&self) -> VarMap {
     let mut vars = self.data.variables.clone();
     for env_name in &self.envs {
@@ -598,9 +598,9 @@ impl Mold {
       // the parent has priority and overrides this moldfile because it's called recursively:
       //   $ mold foo/bar/baz
       // will call bar/baz with foo as the parent, which will call baz with bar as
-      // the parent.  we want foo's moldfile to override bar's moldfile to override
+      // the parent. we want foo's moldfile to override bar's moldfile to override
       // baz's moldfile, because baz should be the least specialized.
-      let mut vars = group.vars().clone();
+      let mut vars = group.env_vars().clone();
       vars.extend(prev_vars.iter().map(|(k, v)| (k.clone(), v.clone())));
 
       let mut task = group.find_task(recipe_name, &vars)?;
@@ -609,7 +609,7 @@ impl Mold {
         // it's done here so that parent group's configuration can override one
         // of the subrecipes in the group
         if let Some(vars) = &mut task.vars {
-          vars.extend(recipe.vars().iter().map(|(k, v)| (k.clone(), v.clone())));
+          vars.extend(recipe.env_vars(&self.envs).iter().map(|(k, v)| (k.clone(), v.clone())));
         }
       }
 
@@ -621,7 +621,7 @@ impl Mold {
 
     // extend the variables with the recipe's variables
     let mut vars = prev_vars.clone();
-    vars.extend(recipe.vars().iter().map(|(k, v)| (k.clone(), v.clone())));
+    vars.extend(recipe.env_vars(&self.envs).iter().map(|(k, v)| (k.clone(), v.clone())));
 
     // extend the variables with the recipe's environment variables
     for env_name in &self.envs {
@@ -878,6 +878,17 @@ impl Recipe {
       Recipe::Script(s) => &s.base.variables,
       Recipe::Group(g) => &g.base.variables,
     }
+  }
+
+  /// Return this recipe's variables with activated environments
+  pub fn env_vars(&self, envs: &Vec<String>) -> VarMap {
+    let mut vars = self.vars().clone();
+    for env_name in envs {
+      if let Some(env) = self.get_env(env_name) {
+        vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
+      }
+    }
+    vars
   }
 
   /// Return this recipe's environments
