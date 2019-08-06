@@ -352,11 +352,6 @@ impl Mold {
     }
   }
 
-  /// Return this moldfile's variables
-  pub fn vars(&self) -> &VarMap {
-    &self.data.variables
-  }
-
   /// Return this moldfile's variables with activated environments
   pub fn env_vars(&self) -> VarMap {
     let mut vars = self.data.variables.clone();
@@ -376,11 +371,6 @@ impl Mold {
   /// Return a specific variable map for an environment
   pub fn get_env(&self, name: &str) -> Option<&VarMap> {
     self.env_map().get(name)
-  }
-
-  /// Return the list of selected environments
-  pub fn envs(&self) -> &Vec<String> {
-    &self.envs
   }
 
   pub fn set_env(&mut self, env: Option<String>) {
