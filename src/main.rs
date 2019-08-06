@@ -114,7 +114,7 @@ fn run(args: Args) -> Result<(), Error> {
   // generate a Task for each target
   let mut tasks = vec![];
   for target_name in &targets {
-    if let Some(task) = mold.find_task(&target_name, mold.env())? {
+    if let Some(task) = mold.find_task(&target_name, mold.vars())? {
       tasks.push(task);
     }
   }
@@ -123,7 +123,7 @@ fn run(args: Args) -> Result<(), Error> {
   for task in &tasks {
     task.print_cmd();
     if args.dry {
-      task.print_env();
+      task.print_vars();
     } else {
       task.exec()?;
     }

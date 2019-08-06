@@ -23,7 +23,7 @@ pub mod remote;
 pub type RecipeMap = BTreeMap<String, Recipe>;
 pub type IncludeVec = Vec<Include>;
 pub type TypeMap = BTreeMap<String, Type>;
-pub type EnvMap = BTreeMap<String, String>;
+pub type VarMap = BTreeMap<String, String>;
 pub type TaskSet = indexmap::IndexSet<String>;
 
 #[derive(Debug)]
@@ -58,8 +58,10 @@ pub struct Moldfile {
   pub types: TypeMap,
 
   /// A list of environment variables used to parametrize recipes
+  ///
+  /// BREAKING: Renamed from `environment` in 0.3.0
   #[serde(default)]
-  pub environment: EnvMap,
+  pub variables: VarMap,
 }
 
 fn default_recipe_dir() -> PathBuf {
@@ -100,8 +102,10 @@ pub struct RecipeBase {
   pub help: String,
 
   /// A list of environment variables that overrides the base environment
+  ///
+  /// BREAKING: Renamed from `environment` in 0.3.0
   #[serde(default)]
-  pub environment: EnvMap,
+  pub variables: VarMap,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -208,7 +212,7 @@ pub struct Type {
 #[derive(Debug)]
 pub struct Task {
   args: Vec<String>,
-  env: Option<EnvMap>,
+  vars: Option<VarMap>,
 }
 
 impl Mold {
@@ -324,8 +328,8 @@ impl Mold {
     }
   }
 
-  pub fn env(&self) -> &EnvMap {
-    &self.data.environment
+  pub fn vars(&self) -> &VarMap {
+    &self.data.variables
   }
 
   pub fn set_env(&mut self, env: Option<String>) {
@@ -527,7 +531,7 @@ impl Mold {
   ///
   /// This entails recursing through various groups to find the the appropriate
   /// Task.
-  pub fn find_task(&self, target_name: &str, prev_env: &EnvMap) -> Result<Option<Task>, Error> {
+  pub fn find_task(&self, target_name: &str, prev_vars: &VarMap) -> Result<Option<Task>, Error> {
     // check if we're executing a nested subrecipe that we'll have to recurse into
     if target_name.contains('/') {
       let splits: Vec<_> = target_name.splitn(2, '/').collect();
@@ -536,22 +540,22 @@ impl Mold {
       let recipe = self.find_recipe(group_name)?;
       let group = self.open_group(group_name)?;
 
-      // merge this moldfile's environment with its parent.
+      // merge this moldfile's variables with its parent.
       // the parent has priority and overrides this moldfile because it's called recursively:
       //   $ mold foo/bar/baz
       // will call bar/baz with foo as the parent, which will call baz with bar as
       // the parent.  we want foo's moldfile to override bar's moldfile to override
       // baz's moldfile, because baz should be the least specialized.
-      let mut env = group.env().clone();
-      env.extend(prev_env.iter().map(|(k, v)| (k.clone(), v.clone())));
+      let mut vars = group.vars().clone();
+      vars.extend(prev_vars.iter().map(|(k, v)| (k.clone(), v.clone())));
 
-      let mut task = group.find_task(recipe_name, &env)?;
+      let mut task = group.find_task(recipe_name, &vars)?;
       if let Some(task) = &mut task {
-        // not sure if this is the right ordering to update environments in, but
+        // not sure if this is the right ordering to update variables in, but
         // it's done here so that parent group's configuration can override one
         // of the subrecipes in the group
-        if let Some(env) = &mut task.env {
-          env.extend(recipe.env().iter().map(|(k, v)| (k.clone(), v.clone())));
+        if let Some(vars) = &mut task.vars {
+          vars.extend(recipe.vars().iter().map(|(k, v)| (k.clone(), v.clone())));
         }
       }
 
@@ -561,12 +565,12 @@ impl Mold {
     // ...not executing subrecipe, so look up the top-level recipe
     let recipe = self.find_recipe(target_name)?;
 
-    // extend the environment with the recipe's environment settings
-    let mut env = prev_env.clone();
-    env.extend(recipe.env().iter().map(|(k, v)| (k.clone(), v.clone())));
+    // extend the variables with the recipe's variables
+    let mut vars = prev_vars.clone();
+    vars.extend(recipe.vars().iter().map(|(k, v)| (k.clone(), v.clone())));
 
     let task = match recipe {
-      Recipe::Command(target) => Some(Task::from_args(&target.command, Some(&env))),
+      Recipe::Command(target) => Some(Task::from_args(&target.command, Some(&vars))),
       Recipe::File(target) => {
         // what the interpreter is for this recipe
         let type_ = self.find_type(&target.type_)?;
@@ -583,7 +587,7 @@ impl Mold {
           None => type_.find(&search_dir, &target_name)?,
         };
 
-        Some(type_.task(&script.to_str().unwrap(), &env))
+        Some(type_.task(&script.to_str().unwrap(), &vars))
       }
       Recipe::Script(target) => {
         // what the interpreter is for this recipe
@@ -597,7 +601,7 @@ impl Mold {
 
         fs::write(&temp_file, &target.script)?;
 
-        Some(type_.task(&temp_file.to_str().unwrap(), &env))
+        Some(type_.task(&temp_file.to_str().unwrap(), &vars))
       }
       Recipe::Group(_) => {
         // this is kinda hacky, but... whatever. it should probably
@@ -704,8 +708,8 @@ impl Task {
     let mut command = process::Command::new(&self.args[0]);
     command.args(&self.args[1..]);
 
-    if let Some(env) = &self.env {
-      command.envs(env);
+    if let Some(vars) = &self.vars {
+      command.envs(vars);
     }
 
     let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
@@ -727,30 +731,30 @@ impl Task {
   }
 
   /// Print the environment that will be used
-  pub fn print_env(&self) {
+  pub fn print_vars(&self) {
     if self.args.is_empty() {
       return;
     }
 
-    if let Some(env) = &self.env {
-      for (name, value) in env {
+    if let Some(vars) = &self.vars {
+      for (name, value) in vars {
         println!("  {} = \"{}\"", format!("${}", name).bright_cyan(), value);
       }
     }
   }
 
   /// Create a Task from a Vec of strings
-  pub fn from_args(args: &[String], env: Option<&EnvMap>) -> Task {
+  pub fn from_args(args: &[String], vars: Option<&VarMap>) -> Task {
     Task {
       args: args.into(),
-      env: env.map(std::clone::Clone::clone),
+      vars: vars.map(std::clone::Clone::clone),
     }
   }
 }
 
 impl Type {
   /// Create a Task ready to execute a script
-  pub fn task(&self, script: &str, env: &EnvMap) -> Task {
+  pub fn task(&self, script: &str, vars: &VarMap) -> Task {
     let args: Vec<_> = self
       .command
       .iter()
@@ -759,7 +763,7 @@ impl Type {
 
     Task {
       args,
-      env: Some(env.clone()),
+      vars: Some(vars.clone()),
     }
   }
 
@@ -806,12 +810,12 @@ impl Recipe {
   }
 
   /// Return this recipe's environment
-  pub fn env(&self) -> &EnvMap {
+  pub fn vars(&self) -> &VarMap {
     match self {
-      Recipe::File(f) => &f.base.environment,
-      Recipe::Command(c) => &c.base.environment,
-      Recipe::Script(s) => &s.base.environment,
-      Recipe::Group(g) => &g.base.environment,
+      Recipe::File(f) => &f.base.variables,
+      Recipe::Command(c) => &c.base.variables,
+      Recipe::Script(s) => &s.base.variables,
+      Recipe::Group(g) => &g.base.variables,
     }
   }
 
