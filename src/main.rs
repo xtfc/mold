@@ -111,10 +111,18 @@ fn run(args: Args) -> Result<(), Error> {
     .collect();
   let targets = mold.find_all_dependencies(&targets_set)?;
 
+  // prepare environment variables
+  let mut vars = mold.vars().clone();
+  for env_name in mold.envs() {
+    if let Some(env) = mold.get_env(env_name) {
+      vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
+    }
+  }
+
   // generate a Task for each target
   let mut tasks = vec![];
   for target_name in &targets {
-    if let Some(task) = mold.find_task(&target_name, mold.vars())? {
+    if let Some(task) = mold.find_task(&target_name, &vars)? {
       tasks.push(task);
     }
   }
