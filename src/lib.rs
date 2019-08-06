@@ -24,15 +24,27 @@ pub type RecipeMap = BTreeMap<String, Recipe>;
 pub type IncludeVec = Vec<Include>;
 pub type TypeMap = BTreeMap<String, Type>;
 pub type VarMap = BTreeMap<String, String>;
+pub type EnvMap = BTreeMap<String, VarMap>;
 pub type TaskSet = indexmap::IndexSet<String>;
 
 #[derive(Debug)]
 pub struct Mold {
+  /// path to the moldfile
   file: PathBuf,
+
+  /// path to the recipe scripts
   dir: PathBuf,
+
+  /// (derived) path to the cloned repos
   clone_dir: PathBuf,
+
+  /// (derived) path to the generated scripts
   script_dir: PathBuf,
+
+  /// which environments to use in the environment
   env: Option<String>,
+
+  /// the parsed moldfile data
   data: Moldfile,
 }
 
@@ -62,6 +74,12 @@ pub struct Moldfile {
   /// BREAKING: Renamed from `environment` in 0.3.0
   #[serde(default)]
   pub variables: VarMap,
+
+  /// A map of environment names to variable maps used to parametrize recipes
+  ///
+  /// ADDED: 0.3.0
+  #[serde(default)]
+  pub environments: EnvMap,
 }
 
 fn default_recipe_dir() -> PathBuf {
@@ -106,6 +124,12 @@ pub struct RecipeBase {
   /// BREAKING: Renamed from `environment` in 0.3.0
   #[serde(default)]
   pub variables: VarMap,
+
+  /// A map of environment names to variable maps used to parametrize recipes
+  ///
+  /// ADDED: 0.3.0
+  #[serde(default)]
+  pub environments: EnvMap,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -330,6 +354,10 @@ impl Mold {
 
   pub fn vars(&self) -> &VarMap {
     &self.data.variables
+  }
+
+  pub fn envs(&self) -> &EnvMap {
+    &self.data.environments
   }
 
   pub fn set_env(&mut self, env: Option<String>) {
@@ -809,13 +837,23 @@ impl Recipe {
     }
   }
 
-  /// Return this recipe's environment
+  /// Return this recipe's variables
   pub fn vars(&self) -> &VarMap {
     match self {
       Recipe::File(f) => &f.base.variables,
       Recipe::Command(c) => &c.base.variables,
       Recipe::Script(s) => &s.base.variables,
       Recipe::Group(g) => &g.base.variables,
+    }
+  }
+
+  /// Return this recipe's environments
+  pub fn envs(&self) -> &EnvMap {
+    match self {
+      Recipe::File(f) => &f.base.environments,
+      Recipe::Command(c) => &c.base.environments,
+      Recipe::Script(s) => &s.base.environments,
+      Recipe::Group(g) => &g.base.environments,
     }
   }
 
