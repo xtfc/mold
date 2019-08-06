@@ -612,6 +612,13 @@ impl Mold {
     let mut vars = prev_vars.clone();
     vars.extend(recipe.vars().iter().map(|(k, v)| (k.clone(), v.clone())));
 
+    // extend the variables with the recipe's environment variables
+    for env_name in &self.envs {
+      if let Some(env) = recipe.get_env(env_name) {
+        vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
+      }
+    }
+
     let task = match recipe {
       Recipe::Command(target) => Some(Task::from_args(&target.command, Some(&vars))),
       Recipe::File(target) => {
