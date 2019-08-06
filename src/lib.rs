@@ -371,7 +371,7 @@ impl Mold {
   }
 
   /// Find a Recipe by name
-  pub fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
+  fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
     self
       .data
       .recipes
@@ -380,7 +380,7 @@ impl Mold {
   }
 
   /// Find a Type by name
-  pub fn find_type(&self, type_name: &str) -> Result<&Type, Error> {
+  fn find_type(&self, type_name: &str) -> Result<&Type, Error> {
     self
       .data
       .types
@@ -389,7 +389,7 @@ impl Mold {
   }
 
   /// Find a Recipe by name and attempt to unwrap it to a Group
-  pub fn find_group(&self, group_name: &str) -> Result<&Group, Error> {
+  fn find_group(&self, group_name: &str) -> Result<&Group, Error> {
     // unwrap the group or quit
     match self.find_recipe(group_name)? {
       Recipe::Command(_) => Err(failure::err_msg("Requested recipe is a command")),
@@ -472,7 +472,7 @@ impl Mold {
   }
 
   /// Clone a single remote group
-  pub fn clone_group(&self, group: &Group) -> Result<(), Error> {
+  fn clone_group(&self, group: &Group) -> Result<(), Error> {
     self.clone(
       &group.folder_name(),
       &group.url,
@@ -666,7 +666,7 @@ impl Mold {
   }
 
   /// Print a description of all recipes in this moldfile
-  pub fn help_prefixed(&self, prefix: &str) -> Result<(), Error> {
+  fn help_prefixed(&self, prefix: &str) -> Result<(), Error> {
     for (name, recipe) in &self.data.recipes {
       let colored_name = match recipe {
         Recipe::Command(_) => name.yellow(),
@@ -734,7 +734,7 @@ impl Mold {
   }
 
   /// Adopt any attributes from the parent that should be shared
-  pub fn adopt(mut self, parent: &Self) -> Self {
+  fn adopt(mut self, parent: &Self) -> Self {
     self.clone_dir = parent.clone_dir.clone();
     self.script_dir = parent.script_dir.clone();
     self.envs = parent.envs.clone();
@@ -788,7 +788,7 @@ impl Task {
   }
 
   /// Create a Task from a Vec of strings
-  pub fn from_args(args: &[String], vars: Option<&VarMap>) -> Task {
+  fn from_args(args: &[String], vars: Option<&VarMap>) -> Task {
     Task {
       args: args.into(),
       vars: vars.map(std::clone::Clone::clone),
@@ -798,7 +798,7 @@ impl Task {
 
 impl Type {
   /// Create a Task ready to execute a script
-  pub fn task(&self, script: &str, vars: &VarMap) -> Task {
+  fn task(&self, script: &str, vars: &VarMap) -> Task {
     let args: Vec<_> = self
       .command
       .iter()
@@ -812,7 +812,7 @@ impl Type {
   }
 
   /// Attempt to discover an appropriate script in a recipe directory
-  pub fn find(&self, dir: &Path, name: &str) -> Result<PathBuf, Error> {
+  fn find(&self, dir: &Path, name: &str) -> Result<PathBuf, Error> {
     // set up the pathbuf to look for dir/name
     let mut path = dir.join(name);
 
@@ -835,7 +835,7 @@ impl Type {
 
 impl Recipe {
   /// Return this recipe's dependencies
-  pub fn deps(&self) -> Vec<String> {
+  fn deps(&self) -> Vec<String> {
     match self {
       Recipe::File(s) => s.deps.clone(),
       Recipe::Command(c) => c.deps.clone(),
@@ -844,7 +844,7 @@ impl Recipe {
   }
 
   /// Return this recipe's help string
-  pub fn help(&self) -> &str {
+  fn help(&self) -> &str {
     match self {
       Recipe::Command(c) => &c.base.help,
       Recipe::File(f) => &f.base.help,
@@ -886,7 +886,7 @@ impl Recipe {
   }
 
   /// Set this recipe's root
-  pub fn set_root(&mut self, to: Option<PathBuf>) {
+  fn set_root(&mut self, to: Option<PathBuf>) {
     if let Recipe::File(s) = self {
       s.root = to;
     }
@@ -905,14 +905,14 @@ fn hash_string(string: &str) -> String {
 
 impl Group {
   /// Return this group's folder name in the format hash(url@ref)
-  pub fn folder_name(&self) -> String {
+  fn folder_name(&self) -> String {
     hash_url_ref(&self.url, &self.ref_)
   }
 }
 
 impl Include {
   /// Return this group's folder name in the format hash(url@ref)
-  pub fn folder_name(&self) -> String {
+  fn folder_name(&self) -> String {
     hash_url_ref(&self.url, &self.ref_)
   }
 
@@ -923,7 +923,7 @@ impl Include {
   ///   https://foo.com/mold.git#dev -> ref = dev, file = None
   ///   https://foo.com/mold.git#dev/dev.yaml, ref = dev, file = dev.yaml
   ///   https://foo.com/mold.git#/dev.yaml -> ref = master, file = dev.yaml
-  pub fn parse(url: &str) -> Self {
+  fn parse(url: &str) -> Self {
     match url.find('#') {
       Some(idx) => {
         let (url, frag) = url.split_at(idx);
