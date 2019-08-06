@@ -23,7 +23,7 @@ pub mod remote;
 pub type RecipeMap = BTreeMap<String, Recipe>;
 pub type IncludeVec = Vec<Include>;
 pub type TypeMap = BTreeMap<String, Type>;
-pub type VarMap = BTreeMap<String, String>;
+pub type VarMap = BTreeMap<String, String>; // TODO maybe down the line this should allow nulls to `unset` a variable
 pub type EnvMap = BTreeMap<String, VarMap>;
 pub type TaskSet = indexmap::IndexSet<String>;
 
