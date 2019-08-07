@@ -31,7 +31,7 @@ pub type TaskSet = indexmap::IndexSet<String>;
 const MOLD_FILES: &[&str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
 
 fn default_recipe_dir() -> PathBuf {
-  PathBuf::from("./mold")
+  "./mold".into()
 }
 
 fn default_git_ref() -> String {
