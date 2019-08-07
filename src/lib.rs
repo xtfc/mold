@@ -1,5 +1,6 @@
 use colored::*;
 use failure::Error;
+use itertools::Itertools;
 use semver::Version;
 use semver::VersionReq;
 use serde_derive::Deserialize;
@@ -45,6 +46,62 @@ fn hash_string(string: &str) -> String {
   let mut hasher = DefaultHasher::new();
   string.hash(&mut hasher);
   format!("{:16x}", hasher.finish())
+}
+
+fn permutations(size: usize) -> Permutations {
+  Permutations {
+    idxs: (0..size).collect(),
+    swaps: vec![0; size],
+    i: 0,
+  }
+}
+
+struct Permutations {
+  idxs: Vec<usize>,
+  swaps: Vec<usize>,
+  i: usize,
+}
+
+impl Iterator for Permutations {
+  type Item = Vec<usize>;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.i > 0 {
+      loop {
+        if self.i >= self.swaps.len() {
+          return None;
+        }
+        if self.swaps[self.i] < self.i {
+          break;
+        }
+        self.swaps[self.i] = 0;
+        self.i += 1;
+      }
+      self.idxs.swap(self.i, (self.i & 1) * self.swaps[self.i]);
+      self.swaps[self.i] += 1;
+    }
+    self.i = 1;
+    Some(self.idxs.clone())
+  }
+}
+
+fn apply<T: Clone>(idx: &[usize], to: &[T]) -> Vec<T> {
+  idx.iter().map(|x| to[*x].clone()).collect()
+}
+
+fn all_permutations<T>(of: &[T]) -> Vec<Vec<&T>> {
+  let mut result = vec![];
+
+  for n in 1..=of.len() {
+    for combo in of.iter().combinations(n) {
+      let perms = permutations(combo.len());
+      for perm in perms {
+        result.push(apply(&perm, &combo));
+      }
+    }
+  }
+
+  result
 }
 
 #[derive(Debug)]
@@ -360,11 +417,21 @@ impl Mold {
     }
   }
 
+  /// Generate a list of all permutations of the activated environments
+  ///
+  /// Environments are yielded as strings joined by plus signs.
+  /// eg, given environments {a, b, c}, this will yield:
+  ///    a, b, c, a+b, b+a, a+c, c+a, b+c, c+b, etc...
+  fn cross_envs(&self) -> Vec<String> {
+    let result = all_permutations(&self.envs);
+    result.iter().map(|x| x.iter().join("+")).collect()
+  }
+
   /// Return this moldfile's variables with activated environments
   pub fn env_vars(&self) -> VarMap {
     let mut vars = self.data.variables.clone();
-    for env_name in &self.envs {
-      if let Some(env) = self.data.environments.get(env_name) {
+    for env_name in self.cross_envs() {
+      if let Some(env) = self.data.environments.get(&env_name) {
         vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
       }
     }
@@ -599,7 +666,7 @@ impl Mold {
         if let Some(vars) = &mut task.vars {
           vars.extend(
             recipe
-              .env_vars(&self.envs)
+              .env_vars(&self.cross_envs())
               .iter()
               .map(|(k, v)| (k.clone(), v.clone())),
           );
@@ -616,7 +683,7 @@ impl Mold {
     let mut vars = prev_vars.clone();
     vars.extend(
       recipe
-        .env_vars(&self.envs)
+        .env_vars(&self.cross_envs())
         .iter()
         .map(|(k, v)| (k.clone(), v.clone())),
     );
