@@ -116,8 +116,12 @@ pub fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
   fo.remote_callbacks(cb);
   remote.fetch(&[ref_], Some(&mut fo), None)?;
 
-  let name = String::from("refs/remotes/origin/") + ref_;
-  repo.set_head(&name)?;
+  let tag_name = format!("tags/{}", ref_);
+  let branch_name = format!("origin/{}", ref_);
+  let object = repo
+    .revparse_single(&tag_name)
+    .or_else(|_| repo.revparse_single(&branch_name))?;
+  repo.set_head_detached(object.id())?;
 
   let mut checkout = CheckoutBuilder::new();
   checkout.force();
