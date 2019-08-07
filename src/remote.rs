@@ -1,17 +1,3 @@
-/*
- * libgit2 "clone" example
- *
- * Written by the libgit2 contributors
- *
- * To the extent possible under law, the author(s) have dedicated all copyright
- * and related and neighboring rights to this software to the public domain
- * worldwide. This software is distributed without any warranty.
- *
- * You should have received a copy of the CC0 Public Domain Dedication along
- * with this software. If not, see
- * <http://creativecommons.org/publicdomain/zero/1.0/>.
- */
-
 use colored::*;
 use failure::Error;
 use git2::build::CheckoutBuilder;
@@ -24,6 +10,10 @@ use std::io;
 use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
+
+// This is a heavily modified version of the libgit2 "clone" example
+// Its original form was public domain and linked to the CC0 Public Domain Dedication:
+// <http://creativecommons.org/publicdomain/zero/1.0/>.
 
 struct State<'a> {
   start: Instant,

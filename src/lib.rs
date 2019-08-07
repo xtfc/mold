@@ -5,13 +5,10 @@ use semver::Version;
 use semver::VersionReq;
 use serde_derive::Deserialize;
 use serde_derive::Serialize;
-use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs;
-use std::hash::Hash;
-use std::hash::Hasher;
 use std::io::prelude::*;
 use std::path::Path;
 use std::path::PathBuf;
@@ -20,6 +17,7 @@ use std::str::FromStr;
 use std::string::ToString;
 
 pub mod remote;
+pub mod util;
 
 pub type RecipeMap = BTreeMap<String, Recipe>;
 pub type IncludeVec = Vec<Include>;
@@ -31,77 +29,11 @@ pub type TaskSet = indexmap::IndexSet<String>;
 const MOLD_FILES: &[&str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
 
 fn default_recipe_dir() -> PathBuf {
-  PathBuf::from("./mold")
+  "./mold".into()
 }
 
 fn default_git_ref() -> String {
   "master".into()
-}
-
-fn hash_url_ref(url: &str, ref_: &str) -> String {
-  hash_string(&format!("{}@{}", url, ref_))
-}
-
-fn hash_string(string: &str) -> String {
-  let mut hasher = DefaultHasher::new();
-  string.hash(&mut hasher);
-  format!("{:16x}", hasher.finish())
-}
-
-fn permutations(size: usize) -> Permutations {
-  Permutations {
-    idxs: (0..size).collect(),
-    swaps: vec![0; size],
-    i: 0,
-  }
-}
-
-struct Permutations {
-  idxs: Vec<usize>,
-  swaps: Vec<usize>,
-  i: usize,
-}
-
-impl Iterator for Permutations {
-  type Item = Vec<usize>;
-
-  fn next(&mut self) -> Option<Self::Item> {
-    if self.i > 0 {
-      loop {
-        if self.i >= self.swaps.len() {
-          return None;
-        }
-        if self.swaps[self.i] < self.i {
-          break;
-        }
-        self.swaps[self.i] = 0;
-        self.i += 1;
-      }
-      self.idxs.swap(self.i, (self.i & 1) * self.swaps[self.i]);
-      self.swaps[self.i] += 1;
-    }
-    self.i = 1;
-    Some(self.idxs.clone())
-  }
-}
-
-fn apply<T: Clone>(idx: &[usize], to: &[T]) -> Vec<T> {
-  idx.iter().map(|x| to[*x].clone()).collect()
-}
-
-fn all_permutations<T>(of: &[T]) -> Vec<Vec<&T>> {
-  let mut result = vec![];
-
-  for n in 1..=of.len() {
-    for combo in of.iter().combinations(n) {
-      let perms = permutations(combo.len());
-      for perm in perms {
-        result.push(apply(&perm, &combo));
-      }
-    }
-  }
-
-  result
 }
 
 #[derive(Debug)]
@@ -423,7 +355,7 @@ impl Mold {
   /// eg, given environments {a, b, c}, this will yield:
   ///    a, b, c, a+b, b+a, a+c, c+a, b+c, c+b, etc...
   fn cross_envs(&self) -> Vec<String> {
-    let result = all_permutations(&self.envs);
+    let result = util::all_permutations(&self.envs);
     result.iter().map(|x| x.iter().join("+")).collect()
   }
 
@@ -713,7 +645,7 @@ impl Mold {
         let type_ = self.find_type(&target.type_)?;
 
         // locate a file to write the script to
-        let mut temp_file = self.script_dir.join(hash_string(&target.script));
+        let mut temp_file = self.script_dir.join(util::hash_string(&target.script));
         if let Some(x) = type_.extensions.get(0) {
           temp_file.set_extension(&x);
         }
@@ -834,7 +766,7 @@ impl Moldfile {
 impl Include {
   /// Return this group's folder name in the format hash(url@ref)
   fn folder_name(&self) -> String {
-    hash_url_ref(&self.url, &self.ref_)
+    util::hash_url_ref(&self.url, &self.ref_)
   }
 
   /// Parse a string into an Include
@@ -988,7 +920,7 @@ impl Recipe {
 impl Group {
   /// Return this group's folder name in the format hash(url@ref)
   fn folder_name(&self) -> String {
-    hash_url_ref(&self.url, &self.ref_)
+    util::hash_url_ref(&self.url, &self.ref_)
   }
 }
 
