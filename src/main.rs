@@ -27,6 +27,10 @@ pub struct Args {
   #[structopt(long = "include", short = "i")]
   pub includes: Vec<Include>,
 
+  /// Which mold environment is running
+  #[structopt(long = "env", short = "e", env = "MOLDENV")]
+  pub env: Option<String>,
+
   /// Fetch new updates for all downloaded remote data
   #[structopt(long = "update", short = "u")]
   pub update: bool,
@@ -55,6 +59,7 @@ fn main() -> Result<(), ExitFailure> {
 fn run(args: Args) -> Result<(), Error> {
   // load the moldfile
   let mut mold = Mold::discover(&Path::new("."), args.file.clone())?;
+  mold.set_env(args.env);
 
   // early return if we passed a --clean
   if args.clean {
@@ -109,7 +114,7 @@ fn run(args: Args) -> Result<(), Error> {
   // generate a Task for each target
   let mut tasks = vec![];
   for target_name in &targets {
-    if let Some(task) = mold.find_task(&target_name, mold.env())? {
+    if let Some(task) = mold.find_task(&target_name, &mold.env_vars())? {
       tasks.push(task);
     }
   }
@@ -118,7 +123,7 @@ fn run(args: Args) -> Result<(), Error> {
   for task in &tasks {
     task.print_cmd();
     if args.dry {
-      task.print_env();
+      task.print_vars();
     } else {
       task.exec()?;
     }
