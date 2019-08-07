@@ -27,6 +27,26 @@ pub type VarMap = BTreeMap<String, String>; // TODO maybe down the line this sho
 pub type EnvMap = BTreeMap<String, VarMap>;
 pub type TaskSet = indexmap::IndexSet<String>;
 
+const MOLD_FILES: &[&str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
+
+fn default_recipe_dir() -> PathBuf {
+  PathBuf::from("./mold")
+}
+
+fn default_git_ref() -> String {
+  "master".into()
+}
+
+fn hash_url_ref(url: &str, ref_: &str) -> String {
+  hash_string(&format!("{}@{}", url, ref_))
+}
+
+fn hash_string(string: &str) -> String {
+  let mut hasher = DefaultHasher::new();
+  string.hash(&mut hasher);
+  format!("{:16x}", hasher.finish())
+}
+
 #[derive(Debug)]
 pub struct Mold {
   /// path to the moldfile
@@ -82,22 +102,6 @@ pub struct Moldfile {
   pub environments: EnvMap,
 }
 
-fn default_recipe_dir() -> PathBuf {
-  PathBuf::from("./mold")
-}
-
-const MOLD_FILES: &[&str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Recipe {
-  // apparently the order here matters?
-  Group(Group),
-  Script(Script),
-  File(File),
-  Command(Command),
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Include {
   /// Git URL of a remote repo
@@ -111,7 +115,23 @@ pub struct Include {
   pub file: Option<PathBuf>,
 }
 
-// FIXME Group / Script / Command should be able to document what environment vars they depend on
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Type {
+  /// A list of arguments used as a shell command
+  ///
+  /// Any element "?" will be / replaced with the desired script when
+  /// executing. eg:
+  ///   ["python", "-m", "?"]
+  /// will produce the shell command when .exec("foo") is called:
+  ///   $ python -m foo
+  pub command: Vec<String>,
+
+  /// A list of extensions used to search for the script name
+  ///
+  /// These should omit the leading dot.
+  #[serde(default)]
+  pub extensions: Vec<String>,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RecipeBase {
@@ -133,6 +153,16 @@ pub struct RecipeBase {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Recipe {
+  // apparently the order here matters?
+  Group(Group),
+  Script(Script),
+  File(File),
+  Command(Command),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Group {
   /// Base data
   #[serde(flatten)]
@@ -147,10 +177,6 @@ pub struct Group {
 
   /// Moldfile to look at
   pub file: Option<PathBuf>,
-}
-
-fn default_git_ref() -> String {
-  "master".into()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -213,24 +239,6 @@ pub struct Command {
   /// A list of command arguments
   #[serde(default)]
   pub command: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Type {
-  /// A list of arguments used as a shell command
-  ///
-  /// Any element "?" will be / replaced with the desired script when
-  /// executing. eg:
-  ///   ["python", "-m", "?"]
-  /// will produce the shell command when .exec("foo") is called:
-  ///   $ python -m foo
-  pub command: Vec<String>,
-
-  /// A list of extensions used to search for the script name
-  ///
-  /// These should omit the leading dot.
-  #[serde(default)]
-  pub extensions: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -371,7 +379,7 @@ impl Mold {
   }
 
   /// Find a Recipe by name
-  pub fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
+  fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
     self
       .data
       .recipes
@@ -380,7 +388,7 @@ impl Mold {
   }
 
   /// Find a Type by name
-  pub fn find_type(&self, type_name: &str) -> Result<&Type, Error> {
+  fn find_type(&self, type_name: &str) -> Result<&Type, Error> {
     self
       .data
       .types
@@ -389,7 +397,7 @@ impl Mold {
   }
 
   /// Find a Recipe by name and attempt to unwrap it to a Group
-  pub fn find_group(&self, group_name: &str) -> Result<&Group, Error> {
+  fn find_group(&self, group_name: &str) -> Result<&Group, Error> {
     // unwrap the group or quit
     match self.find_recipe(group_name)? {
       Recipe::Command(_) => Err(failure::err_msg("Requested recipe is a command")),
@@ -472,7 +480,7 @@ impl Mold {
   }
 
   /// Clone a single remote group
-  pub fn clone_group(&self, group: &Group) -> Result<(), Error> {
+  fn clone_group(&self, group: &Group) -> Result<(), Error> {
     self.clone(
       &group.folder_name(),
       &group.url,
@@ -666,7 +674,7 @@ impl Mold {
   }
 
   /// Print a description of all recipes in this moldfile
-  pub fn help_prefixed(&self, prefix: &str) -> Result<(), Error> {
+  fn help_prefixed(&self, prefix: &str) -> Result<(), Error> {
     for (name, recipe) in &self.data.recipes {
       let colored_name = match recipe {
         Recipe::Command(_) => name.yellow(),
@@ -734,11 +742,186 @@ impl Mold {
   }
 
   /// Adopt any attributes from the parent that should be shared
-  pub fn adopt(mut self, parent: &Self) -> Self {
+  fn adopt(mut self, parent: &Self) -> Self {
     self.clone_dir = parent.clone_dir.clone();
     self.script_dir = parent.script_dir.clone();
     self.envs = parent.envs.clone();
     self
+  }
+}
+
+impl Moldfile {
+  /// Merges any types in other missing in self
+  pub fn merge_absent(&mut self, other: Mold) {
+    for (type_name, type_) in other.data.types {
+      self.types.entry(type_name).or_insert(type_);
+    }
+
+    for (recipe_name, mut recipe) in other.data.recipes {
+      recipe.set_root(Some(other.dir.clone()));
+      self.recipes.entry(recipe_name).or_insert(recipe);
+    }
+  }
+}
+
+impl Include {
+  /// Return this group's folder name in the format hash(url@ref)
+  fn folder_name(&self) -> String {
+    hash_url_ref(&self.url, &self.ref_)
+  }
+
+  /// Parse a string into an Include
+  ///
+  /// The format is roughly: url[#[ref][/file]], eg:
+  ///   https://foo.com/mold.git -> ref = master, file = None
+  ///   https://foo.com/mold.git#dev -> ref = dev, file = None
+  ///   https://foo.com/mold.git#dev/dev.yaml, ref = dev, file = dev.yaml
+  ///   https://foo.com/mold.git#/dev.yaml -> ref = master, file = dev.yaml
+  fn parse(url: &str) -> Self {
+    match url.find('#') {
+      Some(idx) => {
+        let (url, frag) = url.split_at(idx);
+        let frag = frag.trim_start_matches('#');
+
+        let (ref_, file) = match frag.find('/') {
+          Some(idx) => {
+            let (ref_, file) = frag.split_at(idx);
+            let file = file.trim_start_matches('/');
+
+            let ref_ = match ref_ {
+              "" => default_git_ref(),
+              _ => ref_.into(),
+            };
+
+            (ref_, Some(file.into()))
+          }
+          None => (frag.into(), None),
+        };
+
+        Self {
+          url: url.into(),
+          ref_,
+          file,
+        }
+      }
+      None => Self {
+        url: url.into(),
+        ref_: default_git_ref(),
+        file: None,
+      },
+    }
+  }
+}
+
+impl FromStr for Include {
+  type Err = Error;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(Self::parse(s))
+  }
+}
+
+impl Type {
+  /// Create a Task ready to execute a script
+  fn task(&self, script: &str, vars: &VarMap) -> Task {
+    let args: Vec<_> = self
+      .command
+      .iter()
+      .map(|x| if x == "?" { script.into() } else { x.clone() })
+      .collect();
+
+    Task {
+      args,
+      vars: Some(vars.clone()),
+    }
+  }
+
+  /// Attempt to discover an appropriate script in a recipe directory
+  fn find(&self, dir: &Path, name: &str) -> Result<PathBuf, Error> {
+    // set up the pathbuf to look for dir/name
+    let mut path = dir.join(name);
+
+    // try all of our known extensions, early returning on the first match
+    for ext in &self.extensions {
+      path.set_extension(ext);
+      if path.is_file() {
+        return Ok(path);
+      }
+    }
+
+    // support no ext
+    if path.is_file() {
+      return Ok(path);
+    }
+
+    Err(failure::err_msg("Couldn't find a file"))
+  }
+}
+
+impl Recipe {
+  /// Return this recipe's dependencies
+  fn deps(&self) -> Vec<String> {
+    match self {
+      Recipe::File(s) => s.deps.clone(),
+      Recipe::Command(c) => c.deps.clone(),
+      _ => vec![],
+    }
+  }
+
+  /// Return this recipe's help string
+  fn help(&self) -> &str {
+    match self {
+      Recipe::Command(c) => &c.base.help,
+      Recipe::File(f) => &f.base.help,
+      Recipe::Group(g) => &g.base.help,
+      Recipe::Script(s) => &s.base.help,
+    }
+  }
+
+  /// Return this recipe's variables
+  fn vars(&self) -> &VarMap {
+    match self {
+      Recipe::File(f) => &f.base.variables,
+      Recipe::Command(c) => &c.base.variables,
+      Recipe::Script(s) => &s.base.variables,
+      Recipe::Group(g) => &g.base.variables,
+    }
+  }
+
+  /// Return this recipe's environments
+  fn envs(&self) -> &EnvMap {
+    match self {
+      Recipe::File(f) => &f.base.environments,
+      Recipe::Command(c) => &c.base.environments,
+      Recipe::Script(s) => &s.base.environments,
+      Recipe::Group(g) => &g.base.environments,
+    }
+  }
+
+  /// Return this recipe's variables with activated environments
+  pub fn env_vars(&self, envs: &[String]) -> VarMap {
+    let mut vars = self.vars().clone();
+    let env_maps = self.envs();
+    for env_name in envs {
+      if let Some(env) = env_maps.get(env_name) {
+        vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
+      }
+    }
+    vars
+  }
+
+  /// Set this recipe's root
+  fn set_root(&mut self, to: Option<PathBuf>) {
+    if let Recipe::File(s) = self {
+      s.root = to;
+    }
+  }
+}
+
+impl Group {
+  /// Return this group's folder name in the format hash(url@ref)
+  fn folder_name(&self) -> String {
+    hash_url_ref(&self.url, &self.ref_)
   }
 }
 
@@ -788,195 +971,10 @@ impl Task {
   }
 
   /// Create a Task from a Vec of strings
-  pub fn from_args(args: &[String], vars: Option<&VarMap>) -> Task {
+  fn from_args(args: &[String], vars: Option<&VarMap>) -> Task {
     Task {
       args: args.into(),
       vars: vars.map(std::clone::Clone::clone),
-    }
-  }
-}
-
-impl Type {
-  /// Create a Task ready to execute a script
-  pub fn task(&self, script: &str, vars: &VarMap) -> Task {
-    let args: Vec<_> = self
-      .command
-      .iter()
-      .map(|x| if x == "?" { script.into() } else { x.clone() })
-      .collect();
-
-    Task {
-      args,
-      vars: Some(vars.clone()),
-    }
-  }
-
-  /// Attempt to discover an appropriate script in a recipe directory
-  pub fn find(&self, dir: &Path, name: &str) -> Result<PathBuf, Error> {
-    // set up the pathbuf to look for dir/name
-    let mut path = dir.join(name);
-
-    // try all of our known extensions, early returning on the first match
-    for ext in &self.extensions {
-      path.set_extension(ext);
-      if path.is_file() {
-        return Ok(path);
-      }
-    }
-
-    // support no ext
-    if path.is_file() {
-      return Ok(path);
-    }
-
-    Err(failure::err_msg("Couldn't find a file"))
-  }
-}
-
-impl Recipe {
-  /// Return this recipe's dependencies
-  pub fn deps(&self) -> Vec<String> {
-    match self {
-      Recipe::File(s) => s.deps.clone(),
-      Recipe::Command(c) => c.deps.clone(),
-      _ => vec![],
-    }
-  }
-
-  /// Return this recipe's help string
-  pub fn help(&self) -> &str {
-    match self {
-      Recipe::Command(c) => &c.base.help,
-      Recipe::File(f) => &f.base.help,
-      Recipe::Group(g) => &g.base.help,
-      Recipe::Script(s) => &s.base.help,
-    }
-  }
-
-  /// Return this recipe's variables
-  fn vars(&self) -> &VarMap {
-    match self {
-      Recipe::File(f) => &f.base.variables,
-      Recipe::Command(c) => &c.base.variables,
-      Recipe::Script(s) => &s.base.variables,
-      Recipe::Group(g) => &g.base.variables,
-    }
-  }
-
-  /// Return this recipe's environments
-  fn envs(&self) -> &EnvMap {
-    match self {
-      Recipe::File(f) => &f.base.environments,
-      Recipe::Command(c) => &c.base.environments,
-      Recipe::Script(s) => &s.base.environments,
-      Recipe::Group(g) => &g.base.environments,
-    }
-  }
-
-  /// Return this recipe's variables with activated environments
-  pub fn env_vars(&self, envs: &[String]) -> VarMap {
-    let mut vars = self.vars().clone();
-    let env_maps = self.envs();
-    for env_name in envs {
-      if let Some(env) = env_maps.get(env_name) {
-        vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
-      }
-    }
-    vars
-  }
-
-  /// Set this recipe's root
-  pub fn set_root(&mut self, to: Option<PathBuf>) {
-    if let Recipe::File(s) = self {
-      s.root = to;
-    }
-  }
-}
-
-fn hash_url_ref(url: &str, ref_: &str) -> String {
-  hash_string(&format!("{}@{}", url, ref_))
-}
-
-fn hash_string(string: &str) -> String {
-  let mut hasher = DefaultHasher::new();
-  string.hash(&mut hasher);
-  format!("{:16x}", hasher.finish())
-}
-
-impl Group {
-  /// Return this group's folder name in the format hash(url@ref)
-  pub fn folder_name(&self) -> String {
-    hash_url_ref(&self.url, &self.ref_)
-  }
-}
-
-impl Include {
-  /// Return this group's folder name in the format hash(url@ref)
-  pub fn folder_name(&self) -> String {
-    hash_url_ref(&self.url, &self.ref_)
-  }
-
-  /// Parse a string into an Include
-  ///
-  /// The format is roughly: url[#[ref][/file]], eg:
-  ///   https://foo.com/mold.git -> ref = master, file = None
-  ///   https://foo.com/mold.git#dev -> ref = dev, file = None
-  ///   https://foo.com/mold.git#dev/dev.yaml, ref = dev, file = dev.yaml
-  ///   https://foo.com/mold.git#/dev.yaml -> ref = master, file = dev.yaml
-  pub fn parse(url: &str) -> Self {
-    match url.find('#') {
-      Some(idx) => {
-        let (url, frag) = url.split_at(idx);
-        let frag = frag.trim_start_matches('#');
-
-        let (ref_, file) = match frag.find('/') {
-          Some(idx) => {
-            let (ref_, file) = frag.split_at(idx);
-            let file = file.trim_start_matches('/');
-
-            let ref_ = match ref_ {
-              "" => default_git_ref(),
-              _ => ref_.into(),
-            };
-
-            (ref_, Some(file.into()))
-          }
-          None => (frag.into(), None),
-        };
-
-        Self {
-          url: url.into(),
-          ref_,
-          file,
-        }
-      }
-      None => Self {
-        url: url.into(),
-        ref_: default_git_ref(),
-        file: None,
-      },
-    }
-  }
-}
-
-impl FromStr for Include {
-  type Err = Error;
-
-  fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(Self::parse(s))
-  }
-}
-
-impl Moldfile {
-  /// Merges any types in other missing in self
-  pub fn merge_absent(&mut self, other: Mold) {
-    for (type_name, type_) in other.data.types {
-      self.types.entry(type_name).or_insert(type_);
-    }
-
-    for (recipe_name, mut recipe) in other.data.recipes {
-      recipe.set_root(Some(other.dir.clone()));
-      self.recipes.entry(recipe_name).or_insert(recipe);
     }
   }
 }
