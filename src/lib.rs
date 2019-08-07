@@ -89,6 +89,21 @@ fn apply<T: Clone>(idx: &[usize], to: &[T]) -> Vec<T> {
   idx.iter().map(|x| to[*x].clone()).collect()
 }
 
+fn all_permutations<T>(of: &[T]) -> Vec<Vec<&T>> {
+  let mut result = vec![];
+
+  for n in 1..=of.len() {
+    for combo in of.iter().combinations(n) {
+      let perms = permutations(combo.len());
+      for perm in perms {
+        result.push(apply(&perm, &combo));
+      }
+    }
+  }
+
+  result
+}
+
 #[derive(Debug)]
 pub struct Mold {
   /// path to the moldfile
@@ -408,17 +423,7 @@ impl Mold {
   /// eg, given environments {a, b, c}, this will yield:
   ///    a, b, c, a+b, b+a, a+c, c+a, b+c, c+b, etc...
   fn cross_envs(&self) -> Vec<String> {
-    let mut result = vec![];
-
-    for n in 1..=self.envs.len() {
-      for combo in self.envs.iter().combinations(n) {
-        let perms = permutations(combo.len());
-        for perm in perms {
-          result.push(apply(&perm, &combo));
-        }
-      }
-    }
-
+    let result = all_permutations(&self.envs);
     result.iter().map(|x| x.iter().join("+")).collect()
   }
 
