@@ -1,5 +1,6 @@
 use colored::*;
 use failure::Error;
+use itertools::Itertools;
 use semver::Version;
 use semver::VersionReq;
 use serde_derive::Deserialize;
@@ -45,6 +46,47 @@ fn hash_string(string: &str) -> String {
   let mut hasher = DefaultHasher::new();
   string.hash(&mut hasher);
   format!("{:16x}", hasher.finish())
+}
+
+fn permutations(size: usize) -> Permutations {
+  Permutations {
+    idxs: (0..size).collect(),
+    swaps: vec![0; size],
+    i: 0,
+  }
+}
+
+struct Permutations {
+  idxs: Vec<usize>,
+  swaps: Vec<usize>,
+  i: usize,
+}
+
+impl Iterator for Permutations {
+  type Item = Vec<usize>;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.i > 0 {
+      loop {
+        if self.i >= self.swaps.len() {
+          return None;
+        }
+        if self.swaps[self.i] < self.i {
+          break;
+        }
+        self.swaps[self.i] = 0;
+        self.i += 1;
+      }
+      self.idxs.swap(self.i, (self.i & 1) * self.swaps[self.i]);
+      self.swaps[self.i] += 1;
+    }
+    self.i = 1;
+    Some(self.idxs.clone())
+  }
+}
+
+fn apply<T: Clone>(idx: &[usize], to: &[T]) -> Vec<T> {
+  idx.iter().map(|x| to[*x].clone()).collect()
 }
 
 #[derive(Debug)]
@@ -358,6 +400,26 @@ impl Mold {
       Some(file) => Self::discover_file(&dir.join(file)),
       None => Self::discover_dir(dir),
     }
+  }
+
+  /// Generate a list of all permutations of the activated environments
+  ///
+  /// Environments are yielded as strings joined by plus signs.
+  /// eg, given environments {a, b, c}, this will yield:
+  ///    a, b, c, a+b, b+a, a+c, c+a, b+c, c+b, etc...
+  fn cross_envs(&self) -> Vec<String> {
+    let mut result = vec![];
+
+    for n in 1..=self.envs.len() {
+      for combo in self.envs.iter().combinations(n) {
+        let perms = permutations(combo.len());
+        for perm in perms {
+          result.push(apply(&perm, &combo));
+        }
+      }
+    }
+
+    result.iter().map(|x| x.iter().join("+")).collect()
   }
 
   /// Return this moldfile's variables with activated environments
