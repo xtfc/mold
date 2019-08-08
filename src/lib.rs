@@ -1,5 +1,7 @@
 use colored::*;
 use failure::Error;
+use indexmap::IndexMap;
+use indexmap::IndexSet;
 use itertools::Itertools;
 use semver::Version;
 use semver::VersionReq;
@@ -19,12 +21,15 @@ use std::string::ToString;
 pub mod remote;
 pub mod util;
 
-pub type RecipeMap = BTreeMap<String, Recipe>;
+// sorted by insertion order
 pub type IncludeVec = Vec<Include>;
-pub type TypeMap = BTreeMap<String, Type>;
-pub type VarMap = BTreeMap<String, String>; // TODO maybe down the line this should allow nulls to `unset` a variable
-pub type EnvMap = BTreeMap<String, VarMap>;
-pub type TaskSet = indexmap::IndexSet<String>;
+pub type TaskSet = IndexSet<String>;
+pub type VarMap = IndexMap<String, String>; // TODO maybe down the line this should allow nulls to `unset` a variable
+pub type EnvMap = IndexMap<String, VarMap>;
+
+// sorted alphabetically
+pub type RecipeMap = BTreeMap<String, Recipe>; // sorted alphabetically
+pub type TypeMap = BTreeMap<String, Type>; // sorted alphabetically
 
 const MOLD_FILES: &[&str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
 
