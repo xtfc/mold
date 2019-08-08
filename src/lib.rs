@@ -1,16 +1,14 @@
 use colored::*;
 use failure::Error;
+use itertools::Itertools;
 use semver::Version;
 use semver::VersionReq;
 use serde_derive::Deserialize;
 use serde_derive::Serialize;
-use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs;
-use std::hash::Hash;
-use std::hash::Hasher;
 use std::io::prelude::*;
 use std::path::Path;
 use std::path::PathBuf;
@@ -19,6 +17,7 @@ use std::str::FromStr;
 use std::string::ToString;
 
 pub mod remote;
+pub mod util;
 
 pub type RecipeMap = BTreeMap<String, Recipe>;
 pub type IncludeVec = Vec<Include>;
@@ -30,21 +29,11 @@ pub type TaskSet = indexmap::IndexSet<String>;
 const MOLD_FILES: &[&str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
 
 fn default_recipe_dir() -> PathBuf {
-  PathBuf::from("./mold")
+  "./mold".into()
 }
 
 fn default_git_ref() -> String {
   "master".into()
-}
-
-fn hash_url_ref(url: &str, ref_: &str) -> String {
-  hash_string(&format!("{}@{}", url, ref_))
-}
-
-fn hash_string(string: &str) -> String {
-  let mut hasher = DefaultHasher::new();
-  string.hash(&mut hasher);
-  format!("{:16x}", hasher.finish())
 }
 
 #[derive(Debug)]
@@ -360,11 +349,23 @@ impl Mold {
     }
   }
 
+  /// Generate a list of all permutations of the activated environments
+  ///
+  /// Environments are yielded as strings joined by plus signs.
+  /// eg, given environments {a, b, c}, this will yield:
+  ///    a, b, c, a+b, b+a, a+c, c+a, b+c, c+b, etc...
+  fn cross_envs(&self) -> Vec<String> {
+    util::all_permutations(&self.envs)
+      .iter()
+      .map(|x| x.iter().join("+"))
+      .collect()
+  }
+
   /// Return this moldfile's variables with activated environments
   pub fn env_vars(&self) -> VarMap {
     let mut vars = self.data.variables.clone();
-    for env_name in &self.envs {
-      if let Some(env) = self.data.environments.get(env_name) {
+    for env_name in self.cross_envs() {
+      if let Some(env) = self.data.environments.get(&env_name) {
         vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
       }
     }
@@ -599,7 +600,7 @@ impl Mold {
         if let Some(vars) = &mut task.vars {
           vars.extend(
             recipe
-              .env_vars(&self.envs)
+              .env_vars(&self.cross_envs())
               .iter()
               .map(|(k, v)| (k.clone(), v.clone())),
           );
@@ -616,7 +617,7 @@ impl Mold {
     let mut vars = prev_vars.clone();
     vars.extend(
       recipe
-        .env_vars(&self.envs)
+        .env_vars(&self.cross_envs())
         .iter()
         .map(|(k, v)| (k.clone(), v.clone())),
     );
@@ -646,7 +647,7 @@ impl Mold {
         let type_ = self.find_type(&target.type_)?;
 
         // locate a file to write the script to
-        let mut temp_file = self.script_dir.join(hash_string(&target.script));
+        let mut temp_file = self.script_dir.join(util::hash_string(&target.script));
         if let Some(x) = type_.extensions.get(0) {
           temp_file.set_extension(&x);
         }
@@ -767,7 +768,7 @@ impl Moldfile {
 impl Include {
   /// Return this group's folder name in the format hash(url@ref)
   fn folder_name(&self) -> String {
-    hash_url_ref(&self.url, &self.ref_)
+    util::hash_url_ref(&self.url, &self.ref_)
   }
 
   /// Parse a string into an Include
@@ -921,7 +922,7 @@ impl Recipe {
 impl Group {
   /// Return this group's folder name in the format hash(url@ref)
   fn folder_name(&self) -> String {
-    hash_url_ref(&self.url, &self.ref_)
+    util::hash_url_ref(&self.url, &self.ref_)
   }
 }
 
