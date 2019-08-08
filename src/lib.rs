@@ -372,11 +372,19 @@ impl Mold {
     vars
   }
 
-  pub fn set_env(&mut self, env: Option<String>) {
+  pub fn set_envs(&mut self, env: Option<String>) {
     self.envs = match env {
       Some(envs) => envs.split(',').map(|x| x.into()).collect(),
       None => vec![],
     };
+  }
+
+  pub fn add_envs(&mut self, envs: Vec<String>) {
+    self.envs.extend(envs);
+  }
+
+  pub fn add_env(&mut self, env: &str) {
+    self.envs.push(env.into());
   }
 
   /// Find a Recipe by name
