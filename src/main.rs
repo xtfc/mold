@@ -27,9 +27,13 @@ pub struct Args {
   #[structopt(long = "include", short = "i")]
   pub includes: Vec<Include>,
 
-  /// Which mold environment is running
+  /// Comma-separated list of mold environments to activate
   #[structopt(long = "env", short = "e", env = "MOLDENV")]
   pub env: Option<String>,
+
+  /// An extra environment to append
+  #[structopt(long = "add", short = "a")]
+  pub add_envs: Vec<String>,
 
   /// Fetch new updates for all downloaded remote data
   #[structopt(long = "update", short = "u")]
@@ -59,7 +63,8 @@ fn main() -> Result<(), ExitFailure> {
 fn run(args: Args) -> Result<(), Error> {
   // load the moldfile
   let mut mold = Mold::discover(&Path::new("."), args.file.clone())?;
-  mold.set_env(args.env);
+  mold.set_envs(args.env);
+  mold.add_envs(args.add_envs);
 
   // early return if we passed a --clean
   if args.clean {
