@@ -32,7 +32,7 @@ pub struct Args {
   pub env: Option<String>,
 
   /// An extra environment to append
-  #[structopt(long = "add", short = "a")]
+  #[structopt(long = "add", short = "a", number_of_values = 1)]
   pub add_envs: Vec<String>,
 
   /// Fetch new updates for all downloaded remote data
