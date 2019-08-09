@@ -48,7 +48,11 @@ pub fn compile(expr: &str) -> Result<Expr, Error> {
 
 fn parse(tokens: &[Token]) -> Result<Expr, Error> {
   let mut it: TokenIter = tokens.iter().peekable();
-  parse_expr(&mut it)
+  let expr = parse_expr(&mut it)?;
+  match it.next() {
+    Some(_) => Err(err_msg("Parse error; expected end of expression")),
+    None => Ok(expr),
+  }
 }
 
 fn parse_expr(it: &mut TokenIter) -> Result<Expr, Error> {
