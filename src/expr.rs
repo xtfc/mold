@@ -90,9 +90,8 @@ fn parse_not(it: &mut TokenIter) -> Result<Expr, Error> {
 }
 
 fn parse_atom(it: &mut TokenIter) -> Result<Expr, Error> {
-  match it.peek() {
+  match it.next() {
     Some(Token::Pal) => {
-      it.next();
       let inner = parse_expr(it)?;
       if let Some(Token::Par) = it.next() {
         Ok(Expr::Group(inner.into()))
@@ -100,15 +99,10 @@ fn parse_atom(it: &mut TokenIter) -> Result<Expr, Error> {
         Err(err_msg("Parse error; expected close parenthesis"))
       }
     }
-    Some(Token::Name(x)) => {
-      it.next();
-      Ok(Expr::Atom(x.clone()))
-    }
-    Some(Token::Wild) => {
-      it.next();
-      Ok(Expr::Wild)
-    }
-    _ => Err(err_msg("Parse error; expected name or open parenthesis")),
+    Some(Token::Name(x)) => Ok(Expr::Atom(x.clone())),
+    Some(Token::Wild) => Ok(Expr::Wild),
+    Some(_) => Err(err_msg("Parse error; expected name or open parenthesis")),
+    None => Err(err_msg("Parse error; unexpected end of expression")),
   }
 }
 
@@ -116,41 +110,17 @@ fn lex(expr: &str) -> Vec<Token> {
   let mut tokens = vec![];
   let mut it: CharIter = expr.chars().peekable();
 
-  while let Some(&c) = it.peek() {
+  while let Some(c) = it.next() {
     let x = match c {
-      'a'...'z' | 'A'...'Z' | '0'...'9' | '_' | '-' => Some(lex_name(&mut it)),
-      '+' => {
-        it.next();
-        Some(Token::And)
-      }
-      '|' => {
-        it.next();
-        Some(Token::Or)
-      }
-      '*' | '?' => {
-        it.next();
-        Some(Token::Wild)
-      }
-      '~' => {
-        it.next();
-        Some(Token::Not)
-      }
-      '(' => {
-        it.next();
-        Some(Token::Pal)
-      }
-      ')' => {
-        it.next();
-        Some(Token::Par)
-      }
-      ' ' | '\t' | '\n' => {
-        it.next();
-        None
-      }
-      _ => {
-        it.next();
-        None
-      }
+      'a'...'z' | 'A'...'Z' | '0'...'9' | '_' | '-' => Some(lex_name(c, &mut it)),
+      '+' => Some(Token::And),
+      '|' => Some(Token::Or),
+      '*' | '?' => Some(Token::Wild),
+      '~' => Some(Token::Not),
+      '(' => Some(Token::Pal),
+      ')' => Some(Token::Par),
+      ' ' | '\t' | '\n' => None,
+      _ => None,
     };
     if let Some(token) = x {
       tokens.push(token);
@@ -160,9 +130,9 @@ fn lex(expr: &str) -> Vec<Token> {
   tokens
 }
 
-fn lex_name(it: &mut CharIter) -> Token {
+fn lex_name(first: char, it: &mut CharIter) -> Token {
   let mut name = String::new();
-  name.push(it.next().unwrap());
+  name.push(first);
 
   while let Some(&c) = it.peek() {
     match c {
