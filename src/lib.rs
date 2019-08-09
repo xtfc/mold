@@ -18,6 +18,7 @@ use std::process;
 use std::str::FromStr;
 use std::string::ToString;
 
+pub mod expr;
 pub mod remote;
 pub mod util;
 
