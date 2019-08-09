@@ -2,7 +2,6 @@ use colored::*;
 use failure::Error;
 use indexmap::IndexMap;
 use indexmap::IndexSet;
-use itertools::Itertools;
 use semver::Version;
 use semver::VersionReq;
 use serde_derive::Deserialize;
@@ -364,7 +363,7 @@ impl Mold {
     let mut result = vec![];
     for (test, _) in &self.data.environments {
       match expr::compile(&test) {
-        Ok(ex) =>  {
+        Ok(ex) => {
           if ex.apply(&self.envs) {
             result.push(test.clone());
           }

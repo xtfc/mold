@@ -27,7 +27,7 @@ pub enum Expr {
 }
 
 impl Expr {
-  pub fn apply(&self, to: &Vec<String>) -> bool {
+  pub fn apply(&self, to: &[String]) -> bool {
     match self {
       Expr::And(x, y) => x.apply(to) && y.apply(to),
       Expr::Or(x, y) => x.apply(to) || y.apply(to),
