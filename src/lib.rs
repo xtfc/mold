@@ -361,10 +361,18 @@ impl Mold {
   /// eg, given environments {a, b, c}, this will yield:
   ///    a, b, c, a+b, b+a, a+c, c+a, b+c, c+b, etc...
   fn cross_envs(&self) -> Vec<String> {
-    util::all_permutations(&self.envs)
-      .iter()
-      .map(|x| x.iter().join("+"))
-      .collect()
+    let mut result = vec![];
+    for (test, _) in &self.data.environments {
+      let ex = expr::compile(&test);
+
+      // ignore errors, I guess
+      if let Ok(ex) = ex {
+        if ex.apply(&self.envs) {
+          result.push(test.clone());
+        }
+      }
+    }
+    result
   }
 
   /// Return this moldfile's variables with activated environments
