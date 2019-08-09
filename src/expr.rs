@@ -27,8 +27,14 @@ pub enum Expr {
 }
 
 impl Expr {
-  pub fn apply(to: &[&str]) -> bool {
-    false
+  pub fn apply(&self, to: &Vec<String>) -> bool {
+    match self {
+      Expr::And(x, y) => x.apply(to) && y.apply(to),
+      Expr::Or(x, y) => x.apply(to) || y.apply(to),
+      Expr::Not(x) => !x.apply(to),
+      Expr::Group(x) => x.apply(to),
+      Expr::Atom(x) => to.contains(x),
+    }
   }
 }
 
@@ -106,7 +112,7 @@ fn parse_atom(it: &mut TokenIter) -> Result<Expr, Error> {
     }
     Some(Token::Name(x)) => {
       it.next();
-      Ok(Expr::Atom(x.to_string()))
+      Ok(Expr::Atom(x.clone()))
     }
     _ => Err(err_msg("Parse error; expected name or open parenthesis")),
   }
