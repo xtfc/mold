@@ -355,21 +355,22 @@ impl Mold {
     }
   }
 
-  /// Generate a list of all permutations of the activated environments
+  /// Generate a list of all active environments
   ///
-  /// Environments are yielded as strings joined by plus signs.
-  /// eg, given environments {a, b, c}, this will yield:
-  ///    a, b, c, a+b, b+a, a+c, c+a, b+c, c+b, etc...
+  /// Environment tests are parsed as expressions and evaluated against the
+  /// list of environments. Environments that evaluate to true are added to the
+  /// returned list; environments that evaluate to false are ignored.
   fn cross_envs(&self) -> Vec<String> {
     let mut result = vec![];
     for (test, _) in &self.data.environments {
-      let ex = expr::compile(&test);
-
-      // ignore errors, I guess
-      if let Ok(ex) = ex {
-        if ex.apply(&self.envs) {
-          result.push(test.clone());
+      match expr::compile(&test) {
+        Ok(ex) =>  {
+          if ex.apply(&self.envs) {
+            result.push(test.clone());
+          }
         }
+        // FIXME this error handling should probably be better
+        Err(err) => println!("{}: '{}': {}", "Warning".bright_red(), test, err),
       }
     }
     result
