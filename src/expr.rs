@@ -38,6 +38,73 @@ impl Expr {
   }
 }
 
+pub fn compile(expr: &str) -> Result<Expr, Error> {
+  let tokens = lex(expr);
+  parse(&tokens)
+}
+
+fn parse(tokens: &[Token]) -> Result<Expr, Error> {
+  let mut it: TokenIter = tokens.iter().peekable();
+  parse_expr(&mut it)
+}
+
+fn parse_expr(it: &mut TokenIter) -> Result<Expr, Error> {
+  parse_or(it)
+}
+
+fn parse_or(it: &mut TokenIter) -> Result<Expr, Error> {
+  let lhs = parse_and(it)?;
+
+  if let Some(Token::Or) = it.peek() {
+    it.next();
+    let rhs = parse_expr(it)?;
+    Ok(Expr::Or(lhs.into(), rhs.into()))
+  } else {
+    Ok(lhs)
+  }
+}
+
+fn parse_and(it: &mut TokenIter) -> Result<Expr, Error> {
+  let lhs = parse_not(it)?;
+
+  if let Some(Token::And) = it.peek() {
+    it.next();
+    let rhs = parse_expr(it)?;
+    Ok(Expr::And(lhs.into(), rhs.into()))
+  } else {
+    Ok(lhs)
+  }
+}
+
+fn parse_not(it: &mut TokenIter) -> Result<Expr, Error> {
+  if let Some(Token::Not) = it.peek() {
+    it.next();
+    let inner = parse_atom(it)?;
+    Ok(Expr::Not(inner.into()))
+  } else {
+    parse_atom(it)
+  }
+}
+
+fn parse_atom(it: &mut TokenIter) -> Result<Expr, Error> {
+  match it.peek() {
+    Some(Token::Pal) => {
+      it.next();
+      let inner = parse_expr(it)?;
+      if let Some(Token::Par) = it.next() {
+        Ok(Expr::Group(inner.into()))
+      } else {
+        Err(err_msg("Parse error; expected close parenthesis"))
+      }
+    }
+    Some(Token::Name(x)) => {
+      it.next();
+      Ok(Expr::Atom(x.clone()))
+    }
+    _ => Err(err_msg("Parse error; expected name or open parenthesis")),
+  }
+}
+
 fn lex(expr: &str) -> Vec<Token> {
   let mut tokens = vec![];
   let mut it: CharIter = expr.chars().peekable();
@@ -97,71 +164,4 @@ fn lex_name(it: &mut CharIter) -> Token {
   }
 
   Token::Name(name)
-}
-
-fn parse_atom(it: &mut TokenIter) -> Result<Expr, Error> {
-  match it.peek() {
-    Some(Token::Pal) => {
-      it.next();
-      let inner = parse_expr(it)?;
-      if let Some(Token::Par) = it.next() {
-        Ok(Expr::Group(inner.into()))
-      } else {
-        Err(err_msg("Parse error; expected close parenthesis"))
-      }
-    }
-    Some(Token::Name(x)) => {
-      it.next();
-      Ok(Expr::Atom(x.clone()))
-    }
-    _ => Err(err_msg("Parse error; expected name or open parenthesis")),
-  }
-}
-
-fn parse_not(it: &mut TokenIter) -> Result<Expr, Error> {
-  if let Some(Token::Not) = it.peek() {
-    it.next();
-    let inner = parse_atom(it)?;
-    Ok(Expr::Not(inner.into()))
-  } else {
-    parse_atom(it)
-  }
-}
-
-fn parse_and(it: &mut TokenIter) -> Result<Expr, Error> {
-  let lhs = parse_not(it)?;
-
-  if let Some(Token::And) = it.peek() {
-    it.next();
-    let rhs = parse_expr(it)?;
-    Ok(Expr::And(lhs.into(), rhs.into()))
-  } else {
-    Ok(lhs)
-  }
-}
-
-fn parse_or(it: &mut TokenIter) -> Result<Expr, Error> {
-  let lhs = parse_and(it)?;
-
-  if let Some(Token::Or) = it.peek() {
-    it.next();
-    let rhs = parse_expr(it)?;
-    Ok(Expr::Or(lhs.into(), rhs.into()))
-  } else {
-    Ok(lhs)
-  }
-}
-
-fn parse_expr(it: &mut TokenIter) -> Result<Expr, Error> {
-  parse_or(it)
-}
-
-fn parse(tokens: &[Token]) -> Result<Expr, Error> {
-  let mut it: TokenIter = tokens.iter().peekable();
-  parse_expr(&mut it)
-}
-
-pub fn compile(expr: &str) -> Result<Expr, Error> {
-  let tokens = lex(expr);
-  parse(&tokens)
 }
