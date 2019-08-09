@@ -14,6 +14,7 @@ enum Token {
   Not,
   Pal,
   Par,
+  Wild,
   Name(String),
 }
 
@@ -24,6 +25,7 @@ pub enum Expr {
   Not(Box<Expr>),
   Group(Box<Expr>),
   Atom(String),
+  Wild,
 }
 
 impl Expr {
@@ -34,6 +36,7 @@ impl Expr {
       Expr::Not(x) => !x.apply(to),
       Expr::Group(x) => x.apply(to),
       Expr::Atom(x) => to.contains(x),
+      Expr::Wild => true,
     }
   }
 }
@@ -101,6 +104,10 @@ fn parse_atom(it: &mut TokenIter) -> Result<Expr, Error> {
       it.next();
       Ok(Expr::Atom(x.clone()))
     }
+    Some(Token::Wild) => {
+      it.next();
+      Ok(Expr::Wild)
+    }
     _ => Err(err_msg("Parse error; expected name or open parenthesis")),
   }
 }
@@ -119,6 +126,10 @@ fn lex(expr: &str) -> Vec<Token> {
       '|' => {
         it.next();
         Some(Token::Or)
+      }
+      '*' | '?' => {
+        it.next();
+        Some(Token::Wild)
       }
       '~' => {
         it.next();
