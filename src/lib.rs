@@ -360,7 +360,7 @@ impl Mold {
   /// Environment tests are parsed as expressions and evaluated against the
   /// list of environments. Environments that evaluate to true are added to the
   /// returned list; environments that evaluate to false are ignored.
-  fn cross_envs(&self) -> Vec<String> {
+  fn active_envs(&self) -> Vec<String> {
     let mut result = vec![];
     for (test, _) in &self.data.environments {
       match expr::compile(&test) {
@@ -379,7 +379,7 @@ impl Mold {
   /// Return this moldfile's variables with activated environments
   pub fn env_vars(&self) -> VarMap {
     let mut vars = self.data.variables.clone();
-    for env_name in self.cross_envs() {
+    for env_name in self.active_envs() {
       if let Some(env) = self.data.environments.get(&env_name) {
         vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
       }
@@ -623,7 +623,7 @@ impl Mold {
         if let Some(vars) = &mut task.vars {
           vars.extend(
             recipe
-              .env_vars(&self.cross_envs())
+              .env_vars(&self.active_envs())
               .iter()
               .map(|(k, v)| (k.clone(), v.clone())),
           );
@@ -640,7 +640,7 @@ impl Mold {
     let mut vars = prev_vars.clone();
     vars.extend(
       recipe
-        .env_vars(&self.cross_envs())
+        .env_vars(&self.active_envs())
         .iter()
         .map(|(k, v)| (k.clone(), v.clone())),
     );
