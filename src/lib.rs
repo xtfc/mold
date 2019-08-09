@@ -41,6 +41,27 @@ fn default_git_ref() -> String {
   "master".into()
 }
 
+/// Generate a list of all active environments
+///
+/// Environment map keys are parsed as test expressions and evaluated against
+/// the list of environments. Environments that evaluate to true are added to
+/// the returned list; environments that evaluate to false are ignored.
+fn active_envs(env_map: &EnvMap, envs: &[String]) -> Vec<String> {
+  let mut result = vec![];
+  for (test, _) in env_map {
+    match expr::compile(&test) {
+      Ok(ex) => {
+        if ex.apply(&envs) {
+          result.push(test.clone());
+        }
+      }
+      // FIXME this error handling should probably be better
+      Err(err) => println!("{}: '{}': {}", "Warning".bright_red(), test, err),
+    }
+  }
+  result
+}
+
 #[derive(Debug)]
 pub struct Mold {
   /// path to the moldfile
@@ -354,31 +375,12 @@ impl Mold {
     }
   }
 
-  /// Generate a list of all active environments
-  ///
-  /// Environment tests are parsed as expressions and evaluated against the
-  /// list of environments. Environments that evaluate to true are added to the
-  /// returned list; environments that evaluate to false are ignored.
-  fn active_envs(&self) -> Vec<String> {
-    let mut result = vec![];
-    for (test, _) in &self.data.environments {
-      match expr::compile(&test) {
-        Ok(ex) => {
-          if ex.apply(&self.envs) {
-            result.push(test.clone());
-          }
-        }
-        // FIXME this error handling should probably be better
-        Err(err) => println!("{}: '{}': {}", "Warning".bright_red(), test, err),
-      }
-    }
-    result
-  }
-
   /// Return this moldfile's variables with activated environments
   pub fn env_vars(&self) -> VarMap {
+    let active = active_envs(&self.data.environments, &self.envs);
     let mut vars = self.data.variables.clone();
-    for env_name in self.active_envs() {
+
+    for env_name in active {
       if let Some(env) = self.data.environments.get(&env_name) {
         vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
       }
@@ -622,7 +624,7 @@ impl Mold {
         if let Some(vars) = &mut task.vars {
           vars.extend(
             recipe
-              .env_vars(&self.active_envs())
+              .env_vars(&self.envs)
               .iter()
               .map(|(k, v)| (k.clone(), v.clone())),
           );
@@ -639,7 +641,7 @@ impl Mold {
     let mut vars = prev_vars.clone();
     vars.extend(
       recipe
-        .env_vars(&self.active_envs())
+        .env_vars(&self.envs)
         .iter()
         .map(|(k, v)| (k.clone(), v.clone())),
     );
@@ -912,7 +914,7 @@ impl Recipe {
   }
 
   /// Return this recipe's environments
-  fn envs(&self) -> &EnvMap {
+  fn env_maps(&self) -> &EnvMap {
     match self {
       Recipe::File(f) => &f.base.environments,
       Recipe::Command(c) => &c.base.environments,
@@ -923,10 +925,12 @@ impl Recipe {
 
   /// Return this recipe's variables with activated environments
   pub fn env_vars(&self, envs: &[String]) -> VarMap {
+    let env_maps = self.env_maps();
+    let active = active_envs(&env_maps, envs);
     let mut vars = self.vars().clone();
-    let env_maps = self.envs();
-    for env_name in envs {
-      if let Some(env) = env_maps.get(env_name) {
+
+    for env_name in active {
+      if let Some(env) = env_maps.get(&env_name) {
         vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
       }
     }
