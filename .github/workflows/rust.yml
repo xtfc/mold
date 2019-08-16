@@ -1,0 +1,19 @@
+name: Rust
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Versions
+      run: rustc --version && cargo --version && rustup --version
+    - name: Build
+      run: ./mold.sh build
+    - name: Check formatting
+      run: ./mold.sh fmtcheck
+    - name: Lint
+      run: ./mold.sh lint
+    - name: Test
+      run: ./mold.sh test

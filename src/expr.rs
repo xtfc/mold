@@ -116,7 +116,7 @@ fn lex(expr: &str) -> Vec<Token> {
 
   while let Some(c) = it.next() {
     let x = match c {
-      'a'...'z' | 'A'...'Z' | '0'...'9' | '_' | '-' => Some(lex_name(c, &mut it)),
+      'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => Some(lex_name(c, &mut it)),
       '+' => Some(Token::And),
       '|' => Some(Token::Or),
       '*' | '?' => Some(Token::Wild),
@@ -140,7 +140,7 @@ fn lex_name(first: char, it: &mut CharIter) -> Token {
 
   while let Some(&c) = it.peek() {
     match c {
-      'a'...'z' | 'A'...'Z' | '0'...'9' | '_' | '-' => {
+      'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => {
         it.next();
         name.push(c);
       }

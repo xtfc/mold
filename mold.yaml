@@ -3,6 +3,7 @@ version: "0.3.0"
 includes:
   - url: "https://github.com/philipdexter/std.mold"
   - url: "https://github.com/scizzorz/cargo.mold"
+    ref: "v2"
 
 types:
   python:
