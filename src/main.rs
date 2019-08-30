@@ -9,7 +9,7 @@ use structopt::StructOpt;
 
 /// A fresh task runner
 #[derive(StructOpt, Debug)]
-#[structopt(raw(setting = "structopt::clap::AppSettings::ColoredHelp"))]
+#[structopt(author, global_settings(&[structopt::clap::AppSettings::ColoredHelp]))]
 pub struct Args {
   /// Path to the moldfile
   #[structopt(long = "file", short = "f")]
