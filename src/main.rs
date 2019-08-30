@@ -23,7 +23,7 @@ pub struct Args {
   #[structopt(long = "dry")]
   pub dry: bool,
 
-  /// Fetch new updates for all downloaded remote data
+  /// Additional mold repositories to include
   #[structopt(long = "include", short = "i")]
   pub includes: Vec<Include>,
 
