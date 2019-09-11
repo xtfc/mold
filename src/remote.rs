@@ -2,6 +2,8 @@ use colored::*;
 use failure::Error;
 use git2::build::CheckoutBuilder;
 use git2::build::RepoBuilder;
+use git2::Cred;
+use git2::CredentialType;
 use git2::FetchOptions;
 use git2::RemoteCallbacks;
 use git2::Repository;
@@ -46,6 +48,23 @@ fn print_done(state: &mut State) {
   io::stdout().flush().unwrap();
 }
 
+pub fn git_credentials_callback(
+  _user: &str,
+  _user_from_url: Option<&str>,
+  _cred: CredentialType,
+) -> Result<Cred, git2::Error> {
+  if let Some(home_dir) = dirs::home_dir() {
+    let pub_key = home_dir.join(".ssh/id_rsa.pub");
+    let priv_key = home_dir.join(".ssh/id_rsa");
+    let credentials = Cred::ssh_key("git", Some(&pub_key), &priv_key, None)
+      .expect("Could not create credentials object");
+
+    Ok(credentials)
+  } else {
+    Err(git2::Error::from_str("Couldn't locate home directory"))
+  }
+}
+
 pub fn clone(url: &str, path: &Path) -> Result<(), Error> {
   let label = format!("{} into {}", url, path.display());
 
@@ -63,6 +82,10 @@ pub fn clone(url: &str, path: &Path) -> Result<(), Error> {
     print_progress(&mut *state);
     true
   });
+  cb.credentials(git_credentials_callback);
+
+  let mut fo = FetchOptions::new();
+  fo.remote_callbacks(cb);
 
   let mut co = CheckoutBuilder::new();
   co.progress(|_, _, _| {
@@ -70,12 +93,10 @@ pub fn clone(url: &str, path: &Path) -> Result<(), Error> {
     print_progress(&mut *state);
   });
 
-  let mut fo = FetchOptions::new();
-  fo.remote_callbacks(cb);
   RepoBuilder::new()
     .fetch_options(fo)
     .with_checkout(co)
-    .clone(url, path)?;;
+    .clone(url, path)?;
 
   print_done(&mut state.borrow_mut());
 
@@ -101,6 +122,7 @@ pub fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
     print_progress(&mut *state);
     true
   });
+  cb.credentials(git_credentials_callback);
 
   let mut fo = FetchOptions::new();
   fo.remote_callbacks(cb);
