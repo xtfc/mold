@@ -376,9 +376,22 @@ impl Mold {
   }
 
   /// Return this moldfile's variables with activated environments
+  ///
+  /// This also inserts a few special mold variables
   pub fn env_vars(&self) -> VarMap {
     let active = active_envs(&self.data.environments, &self.envs);
     let mut vars = self.data.variables.clone();
+    // this is not very ergonomic and can panic. oh well.
+    vars.insert("MOLD_FILE".into(), self.file.to_str().unwrap().into());
+    vars.insert("MOLD_RECIPE_DIR".into(), self.dir.to_str().unwrap().into());
+    vars.insert(
+      "MOLD_CLONE_DIR".into(),
+      self.clone_dir.to_str().unwrap().into(),
+    );
+    vars.insert(
+      "MOLD_SCRIPT_DIR".into(),
+      self.script_dir.to_str().unwrap().into(),
+    );
 
     for env_name in active {
       if let Some(env) = self.data.environments.get(&env_name) {
@@ -776,7 +789,7 @@ impl Mold {
 }
 
 impl Moldfile {
-  /// Merges any types in other missing in self
+  /// Merges any types or recipes from `other` that aren't in `self`
   pub fn merge_absent(&mut self, other: Mold) {
     for (type_name, type_) in other.data.types {
       self.types.entry(type_name).or_insert(type_);

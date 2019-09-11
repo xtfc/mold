@@ -5,7 +5,7 @@
 
 VER="0.3.0"
 EXE="./.mold-$VER"
-URL="https://github.com/scizzorz/mold/releases/download/v$VER/mold-$VER"
+URL="https://github.com/xtfc/mold/releases/download/v$VER/mold-$VER"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
