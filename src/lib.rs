@@ -789,7 +789,7 @@ impl Mold {
 }
 
 impl Moldfile {
-  /// Merges any types in other missing in self
+  /// Merges any types or recipes from `other` that aren't in `self`
   pub fn merge_absent(&mut self, other: Mold) {
     for (type_name, type_) in other.data.types {
       self.types.entry(type_name).or_insert(type_);
