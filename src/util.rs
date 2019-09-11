@@ -9,5 +9,5 @@ pub fn hash_url_ref(url: &str, ref_: &str) -> String {
 pub fn hash_string(string: &str) -> String {
   let mut hasher = DefaultHasher::new();
   string.hash(&mut hasher);
-  format!("{:16x}", hasher.finish())
+  format!("{:016x}", hasher.finish())
 }
