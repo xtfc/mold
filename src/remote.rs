@@ -76,26 +76,26 @@ pub fn clone(url: &str, path: &Path) -> Result<(), Error> {
     dots: 0,
   });
 
-  let mut cb = RemoteCallbacks::new();
-  cb.transfer_progress(|_| {
+  let mut callbacks = RemoteCallbacks::new();
+  callbacks.transfer_progress(|_| {
     let mut state = state.borrow_mut();
     print_progress(&mut *state);
     true
   });
-  cb.credentials(git_credentials_callback);
+  callbacks.credentials(git_credentials_callback);
 
-  let mut fo = FetchOptions::new();
-  fo.remote_callbacks(cb);
+  let mut fetch = FetchOptions::new();
+  fetch.remote_callbacks(callbacks);
 
-  let mut co = CheckoutBuilder::new();
-  co.progress(|_, _, _| {
+  let mut builder = CheckoutBuilder::new();
+  builder.progress(|_, _, _| {
     let mut state = state.borrow_mut();
     print_progress(&mut *state);
   });
 
   RepoBuilder::new()
-    .fetch_options(fo)
-    .with_checkout(co)
+    .fetch_options(fetch)
+    .with_checkout(builder)
     .clone(url, path)?;
 
   print_done(&mut state.borrow_mut());
@@ -116,17 +116,18 @@ pub fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
     dots: 0,
   });
 
-  let mut cb = RemoteCallbacks::new();
-  cb.transfer_progress(|_| {
+  let mut callbacks = RemoteCallbacks::new();
+  callbacks.transfer_progress(|_| {
     let mut state = state.borrow_mut();
     print_progress(&mut *state);
     true
   });
-  cb.credentials(git_credentials_callback);
+  callbacks.credentials(git_credentials_callback);
 
-  let mut fo = FetchOptions::new();
-  fo.remote_callbacks(cb);
-  remote.fetch(&[ref_], Some(&mut fo), None)?;
+  let mut fetch = FetchOptions::new();
+  fetch.remote_callbacks(callbacks);
+
+  remote.fetch(&[ref_], Some(&mut fetch), None)?;
 
   let tag_name = format!("tags/{}", ref_);
   let branch_name = format!("origin/{}", ref_);
