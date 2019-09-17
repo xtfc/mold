@@ -547,7 +547,7 @@ impl Mold {
   ) -> Result<(), Error> {
     let path = self.clone_dir.join(folder_name);
     if !path.is_dir() {
-      remote::clone(url, &path)?;
+      remote::clone(&format!("https://{}", url), &path).or_else(|_| remote::clone(url, &path))?;
       remote::checkout(&path, ref_)?;
 
       // open it and recursively clone + merge
