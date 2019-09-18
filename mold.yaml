@@ -1,8 +1,8 @@
 version: "0.3.1"
 
 includes:
-  - url: "https://github.com/xtfc/std.mold"
-  - url: "https://github.com/xtfc/cargo.mold"
+  - url: "github.com/xtfc/std.mold"
+  - url: "github.com/xtfc/cargo.mold"
     ref: "v2"
 
 types:
