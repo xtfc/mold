@@ -657,6 +657,15 @@ impl Mold {
         .map(|(k, v)| (k.clone(), v.clone())),
     );
 
+    let root = recipe
+      .root()
+      .clone()
+      .unwrap_or(self.dir.clone())
+      .to_str()
+      .unwrap()
+      .into();
+    vars.insert("MOLD_ROOT".into(), root);
+
     let task = match recipe {
       Recipe::Command(target) => Some(Task::from_args(&target.command, Some(&vars))),
       Recipe::File(target) => {
