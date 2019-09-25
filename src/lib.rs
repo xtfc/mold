@@ -166,12 +166,12 @@ pub struct RecipeBase {
   #[serde(default)]
   pub environments: EnvMap,
 
-  /// The actual root of this recipe
+  /// The actual search_dir of this recipe
   ///
   /// This is used for Includes, where the command may be lifted up to the
-  /// top-level, but the root is located in a different location
+  /// top-level, but the search_dir is located in a different location
   #[serde(skip)]
-  pub root: Option<PathBuf>,
+  pub search_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -381,7 +381,7 @@ impl Mold {
     let mut vars = self.data.variables.clone();
     // this is not very ergonomic and can panic. oh well.
     vars.insert("MOLD_FILE".into(), self.file.to_str().unwrap().into());
-    vars.insert("MOLD_RECIPE_DIR".into(), self.dir.to_str().unwrap().into());
+    vars.insert("MOLD_ROOT_DIR".into(), self.dir.to_str().unwrap().into());
     vars.insert(
       "MOLD_CLONE_DIR".into(),
       self.clone_dir.to_str().unwrap().into(),
@@ -657,14 +657,14 @@ impl Mold {
         .map(|(k, v)| (k.clone(), v.clone())),
     );
 
-    let root = recipe
-      .root()
+    let search_dir = recipe
+      .search_dir()
       .clone()
       .unwrap_or(self.dir.clone())
       .to_str()
       .unwrap()
       .into();
-    vars.insert("MOLD_ROOT".into(), root);
+    vars.insert("MOLD_SEARCH_DIR".into(), search_dir);
 
     let task = match recipe {
       Recipe::Command(target) => Some(Task::from_args(&target.command, Some(&vars))),
@@ -672,9 +672,12 @@ impl Mold {
         // what the interpreter is for this recipe
         let runtime = self.find_runtime(&target.runtime)?;
 
-        // use the target's root, but fall back to our own
+        // use the target's search_dir, but fall back to our own
         // (feels like I shouldn't have to clone these, though...)
-        let search_dir = recipe.root().clone().unwrap_or_else(|| self.dir.clone());
+        let search_dir = recipe
+          .search_dir()
+          .clone()
+          .unwrap_or_else(|| self.dir.clone());
 
         // find the script file to execute
         let script = match &target.file {
@@ -803,7 +806,7 @@ impl Moldfile {
     }
 
     for (recipe_name, mut recipe) in other.data.recipes {
-      recipe.set_root(Some(other.dir.clone()));
+      recipe.set_search_dir(Some(other.dir.clone()));
       self.recipes.entry(recipe_name).or_insert(recipe);
     }
   }
@@ -957,23 +960,23 @@ impl Recipe {
     vars
   }
 
-  /// Set this recipe's root
-  fn set_root(&mut self, to: Option<PathBuf>) {
+  /// Set this recipe's search_dir
+  fn set_search_dir(&mut self, to: Option<PathBuf>) {
     match self {
-      Recipe::File(f) => f.base.root = to,
-      Recipe::Command(c) => c.base.root = to,
-      Recipe::Script(s) => s.base.root = to,
-      Recipe::Module(m) => m.base.root = to,
+      Recipe::File(f) => f.base.search_dir = to,
+      Recipe::Command(c) => c.base.search_dir = to,
+      Recipe::Script(s) => s.base.search_dir = to,
+      Recipe::Module(m) => m.base.search_dir = to,
     }
   }
 
   /// Return this recipe's environments
-  fn root(&self) -> &Option<PathBuf> {
+  fn search_dir(&self) -> &Option<PathBuf> {
     match self {
-      Recipe::File(f) => &f.base.root,
-      Recipe::Command(c) => &c.base.root,
-      Recipe::Script(s) => &s.base.root,
-      Recipe::Module(g) => &g.base.root,
+      Recipe::File(f) => &f.base.search_dir,
+      Recipe::Command(c) => &c.base.search_dir,
+      Recipe::Script(s) => &s.base.search_dir,
+      Recipe::Module(g) => &g.base.search_dir,
     }
   }
 }
