@@ -175,7 +175,7 @@ pub struct RecipeBase {
   ///
   /// ADDED: 0.4.0
   #[serde(default)]
-  pub workdir: Option<PathBuf>,
+  pub work_dir: Option<PathBuf>,
 
   /// The actual search_dir of this recipe
   ///
@@ -273,7 +273,7 @@ pub struct Command {
 pub struct Task {
   args: Vec<String>,
   vars: Option<VarMap>,
-  workdir: PathBuf,
+  work_dir: PathBuf,
 }
 
 impl Mold {
@@ -892,7 +892,7 @@ impl FromStr for Include {
 
 impl Runtime {
   /// Create a Task ready to execute a script
-  fn task(&self, script: &str, vars: &VarMap, workdir: &PathBuf) -> Task {
+  fn task(&self, script: &str, vars: &VarMap, work_dir: &PathBuf) -> Task {
     let args: Vec<_> = self
       .command
       .iter()
@@ -901,7 +901,7 @@ impl Runtime {
 
     Task {
       args,
-      workdir: workdir.clone(),
+      work_dir: work_dir.clone(),
       vars: Some(vars.clone()),
     }
   }
@@ -985,10 +985,10 @@ impl Recipe {
   /// Return this recipe's working directory
   fn work_dir(&self) -> &Option<PathBuf> {
     match self {
-      Recipe::File(f) => &f.base.workdir,
-      Recipe::Command(c) => &c.base.workdir,
-      Recipe::Script(s) => &s.base.workdir,
-      Recipe::Module(g) => &g.base.workdir,
+      Recipe::File(f) => &f.base.work_dir,
+      Recipe::Command(c) => &c.base.work_dir,
+      Recipe::Script(s) => &s.base.work_dir,
+      Recipe::Module(g) => &g.base.work_dir,
     }
   }
 
@@ -1029,7 +1029,7 @@ impl Task {
 
     let mut command = process::Command::new(&self.args[0]);
     command.args(&self.args[1..]);
-    command.current_dir(&self.workdir);
+    command.current_dir(&self.work_dir);
 
     if let Some(vars) = &self.vars {
       command.envs(vars);
@@ -1067,11 +1067,11 @@ impl Task {
   }
 
   /// Create a Task from a Vec of strings
-  fn from_args(args: &[String], vars: Option<&VarMap>, workdir: &PathBuf) -> Task {
+  fn from_args(args: &[String], vars: Option<&VarMap>, work_dir: &PathBuf) -> Task {
     Task {
       args: args.into(),
       vars: vars.map(std::clone::Clone::clone),
-      workdir: workdir.clone(),
+      work_dir: work_dir.clone(),
     }
   }
 }
