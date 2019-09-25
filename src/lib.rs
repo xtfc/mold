@@ -8,7 +8,6 @@ use serde_derive::Deserialize;
 use serde_derive::Serialize;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
-use std::ffi::OsStr;
 use std::fs;
 use std::io::prelude::*;
 use std::path::Path;
@@ -678,7 +677,10 @@ impl Mold {
 
     // use the target's search_dir, but fall back to our own
     // (feels like I shouldn't have to clone these, though...)
-    let search_dir = recipe.search_dir().clone().unwrap_or(self.dir.clone());
+    let search_dir = recipe
+      .search_dir()
+      .clone()
+      .unwrap_or_else(|| self.dir.clone());
 
     // join the target's work_dir to our root_dir, or just pick our root_dir
     let work_dir = match recipe.work_dir() {
