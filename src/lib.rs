@@ -70,6 +70,9 @@ pub struct Mold {
   /// path to the recipe scripts
   dir: PathBuf,
 
+  /// (derived) root directory that the file sits in
+  root_dir: PathBuf,
+
   /// (derived) path to the cloned repos
   clone_dir: PathBuf,
 
@@ -288,6 +291,7 @@ impl Mold {
     }
 
     let dir = path.with_file_name(&data.recipe_dir);
+    let root_dir = dir.parent().unwrap_or(&Path::new("/")).to_path_buf();
     let clone_dir = dir.join(".clones");
     let script_dir = dir.join(".scripts");
 
@@ -304,6 +308,7 @@ impl Mold {
     Ok(Mold {
       file: fs::canonicalize(path)?,
       dir: fs::canonicalize(dir)?,
+      root_dir: fs::canonicalize(root_dir)?,
       clone_dir: fs::canonicalize(clone_dir)?,
       script_dir: fs::canonicalize(script_dir)?,
       envs: vec![],
