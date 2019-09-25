@@ -165,6 +165,13 @@ pub struct RecipeBase {
   /// ADDED: 0.3.0
   #[serde(default)]
   pub environments: EnvMap,
+
+  /// The actual root of this recipe
+  ///
+  /// This is used for Includes, where the command may be lifted up to the
+  /// top-level, but the root is located in a different location
+  #[serde(skip)]
+  pub root: Option<PathBuf>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -203,13 +210,6 @@ pub struct File {
   /// A list of pre-execution dependencies
   #[serde(default)]
   pub deps: Vec<String>,
-
-  /// The actual root of this script
-  ///
-  /// This is used for Includes, where the command may be lifted up to the
-  /// top-level, but the root is located in a different location
-  #[serde(skip)]
-  pub root: Option<PathBuf>,
 
   /// Which interpreter should be used to execute this script
   pub runtime: String,
@@ -665,7 +665,7 @@ impl Mold {
 
         // use the target's root, but fall back to our own
         // (feels like I shouldn't have to clone these, though...)
-        let search_dir = target.root.clone().unwrap_or_else(|| self.dir.clone());
+        let search_dir = recipe.root().clone().unwrap_or_else(|| self.dir.clone());
 
         // find the script file to execute
         let script = match &target.file {
@@ -950,8 +950,21 @@ impl Recipe {
 
   /// Set this recipe's root
   fn set_root(&mut self, to: Option<PathBuf>) {
-    if let Recipe::File(s) = self {
-      s.root = to;
+    match self {
+      Recipe::File(f) => f.base.root = to,
+      Recipe::Command(c) => c.base.root = to,
+      Recipe::Script(s) => s.base.root = to,
+      Recipe::Module(m) => m.base.root = to,
+    }
+  }
+
+  /// Return this recipe's environments
+  fn root(&self) -> &Option<PathBuf> {
+    match self {
+      Recipe::File(f) => &f.base.root,
+      Recipe::Command(c) => &c.base.root,
+      Recipe::Script(s) => &s.base.root,
+      Recipe::Module(g) => &g.base.root,
     }
   }
 }
