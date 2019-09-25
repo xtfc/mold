@@ -261,6 +261,7 @@ pub struct Command {
 pub struct Task {
   args: Vec<String>,
   vars: Option<VarMap>,
+  workdir: PathBuf,
 }
 
 impl Mold {
@@ -672,7 +673,11 @@ impl Mold {
     vars.insert("MOLD_SEARCH_DIR".into(), search_dir);
 
     let task = match recipe {
-      Recipe::Command(target) => Some(Task::from_args(&target.command, Some(&vars))),
+      Recipe::Command(target) => Some(Task::from_args(
+        &target.command,
+        Some(&vars),
+        &self.root_dir,
+      )),
       Recipe::File(target) => {
         // what the interpreter is for this recipe
         let runtime = self.find_runtime(&target.runtime)?;
@@ -692,7 +697,7 @@ impl Mold {
           None => runtime.find(&search_dir, &target_name)?,
         };
 
-        Some(runtime.task(&script.to_str().unwrap(), &vars))
+        Some(runtime.task(&script.to_str().unwrap(), &vars, &self.root_dir))
       }
       Recipe::Script(target) => {
         // what the interpreter is for this recipe
@@ -706,7 +711,7 @@ impl Mold {
 
         fs::write(&temp_file, &target.script)?;
 
-        Some(runtime.task(&temp_file.to_str().unwrap(), &vars))
+        Some(runtime.task(&temp_file.to_str().unwrap(), &vars, &self.root_dir))
       }
       Recipe::Module(_) => {
         // this is kinda hacky, but... whatever. it should probably
@@ -876,7 +881,7 @@ impl FromStr for Include {
 
 impl Runtime {
   /// Create a Task ready to execute a script
-  fn task(&self, script: &str, vars: &VarMap) -> Task {
+  fn task(&self, script: &str, vars: &VarMap, workdir: &PathBuf) -> Task {
     let args: Vec<_> = self
       .command
       .iter()
@@ -885,6 +890,7 @@ impl Runtime {
 
     Task {
       args,
+      workdir: workdir.clone(),
       vars: Some(vars.clone()),
     }
   }
@@ -1002,6 +1008,7 @@ impl Task {
 
     let mut command = process::Command::new(&self.args[0]);
     command.args(&self.args[1..]);
+    command.current_dir(&self.workdir);
 
     if let Some(vars) = &self.vars {
       command.envs(vars);
@@ -1039,10 +1046,11 @@ impl Task {
   }
 
   /// Create a Task from a Vec of strings
-  fn from_args(args: &[String], vars: Option<&VarMap>) -> Task {
+  fn from_args(args: &[String], vars: Option<&VarMap>, workdir: &PathBuf) -> Task {
     Task {
       args: args.into(),
       vars: vars.map(std::clone::Clone::clone),
+      workdir: workdir.clone(),
     }
   }
 }
