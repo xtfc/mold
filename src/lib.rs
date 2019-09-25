@@ -103,7 +103,9 @@ pub struct Moldfile {
   #[serde(default)]
   pub recipes: RecipeMap,
 
-  /// A map of interpreter types and characteristics
+  /// A map of interpreter runtimes and characteristics
+  ///
+  /// BREAKING: Renamed from `types` in 0.4.0
   #[serde(default)]
   pub runtimes: RuntimeMap,
 
@@ -215,6 +217,8 @@ pub struct File {
   pub deps: Vec<String>,
 
   /// Which interpreter should be used to execute this script
+  ///
+  /// BREAKING: Renamed from `type` in 0.4.0
   pub runtime: String,
 
   /// The script file name
@@ -236,6 +240,8 @@ pub struct Script {
   pub deps: Vec<String>,
 
   /// Which interpreter should be used to execute this script
+  ///
+  /// BREAKING: Renamed from `type` in 0.4.0
   pub runtime: String,
 
   /// The script contents as a multiline string
