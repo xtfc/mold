@@ -30,7 +30,7 @@ pub type EnvMap = IndexMap<String, VarMap>;
 pub type RecipeMap = BTreeMap<String, Recipe>; // sorted alphabetically
 pub type RuntimeMap = BTreeMap<String, Runtime>; // sorted alphabetically
 
-const MOLD_FILES: &[&str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
+const MOLD_FILES: &[&str] = &["mold.yaml", "mold.yml", "moldfile", "Moldfile"];
 
 fn default_recipe_dir() -> PathBuf {
   "./mold".into()
@@ -282,11 +282,7 @@ impl Mold {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
 
-    let data: Moldfile = match path.extension().and_then(OsStr::to_str) {
-      Some("yaml") | Some("yml") => serde_yaml::from_str(&contents)?,
-      _ => toml::de::from_str(&contents)?,
-    };
-
+    let data: Moldfile = serde_yaml::from_str(&contents)?;
     let self_version = Version::parse(clap::crate_version!())?;
     let target_version = match data.version {
       Some(ref version) => VersionReq::parse(&version)?,
