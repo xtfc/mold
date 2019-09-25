@@ -29,7 +29,7 @@ pub type EnvMap = IndexMap<String, VarMap>;
 
 // sorted alphabetically
 pub type RecipeMap = BTreeMap<String, Recipe>; // sorted alphabetically
-pub type TypeMap = BTreeMap<String, Type>; // sorted alphabetically
+pub type RuntimeMap = BTreeMap<String, Runtime>; // sorted alphabetically
 
 const MOLD_FILES: &[&str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
 
@@ -102,7 +102,7 @@ pub struct Moldfile {
 
   /// A map of interpreter types and characteristics
   #[serde(default)]
-  pub types: TypeMap,
+  pub runtimes: RuntimeMap,
 
   /// A list of environment variables used to parametrize recipes
   ///
@@ -131,7 +131,7 @@ pub struct Include {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Type {
+pub struct Runtime {
   /// A list of arguments used as a shell command
   ///
   /// Any element "?" will be / replaced with the desired script when
@@ -212,14 +212,13 @@ pub struct File {
   pub root: Option<PathBuf>,
 
   /// Which interpreter should be used to execute this script
-  #[serde(alias = "type")]
-  pub type_: String,
+  pub runtime: String,
 
   /// The script file name
   ///
   /// If left undefined, Mold will attempt to discover the recipe name by
   /// searching the recipe_dir for any files that start with the recipe name and
-  /// have an appropriate extension for the specified interpreter type.
+  /// have an appropriate extension for the specified interpreter runtime.
   pub file: Option<PathBuf>,
 }
 
@@ -234,8 +233,7 @@ pub struct Script {
   pub deps: Vec<String>,
 
   /// Which interpreter should be used to execute this script
-  #[serde(alias = "type")]
-  pub type_: String,
+  pub runtime: String,
 
   /// The script contents as a multiline string
   pub script: String,
@@ -425,13 +423,13 @@ impl Mold {
       .ok_or_else(|| failure::format_err!("Couldn't locate target '{}'", target_name.red()))
   }
 
-  /// Find a Type by name
-  fn find_type(&self, type_name: &str) -> Result<&Type, Error> {
+  /// Find a Runtime by name
+  fn find_runtime(&self, runtime_name: &str) -> Result<&Runtime, Error> {
     self
       .data
-      .types
-      .get(type_name)
-      .ok_or_else(|| failure::format_err!("Couldn't locate type '{}'", type_name.red()))
+      .runtimes
+      .get(runtime_name)
+      .ok_or_else(|| failure::format_err!("Couldn't locate runtime '{}'", runtime_name.red()))
   }
 
   /// Find a Recipe by name and attempt to unwrap it to a Module
@@ -663,7 +661,7 @@ impl Mold {
       Recipe::Command(target) => Some(Task::from_args(&target.command, Some(&vars))),
       Recipe::File(target) => {
         // what the interpreter is for this recipe
-        let type_ = self.find_type(&target.type_)?;
+        let runtime = self.find_runtime(&target.runtime)?;
 
         // use the target's root, but fall back to our own
         // (feels like I shouldn't have to clone these, though...)
@@ -674,24 +672,24 @@ impl Mold {
           Some(x) => search_dir.join(x),
 
           // we need to look it up based on our interpreter's known extensions
-          None => type_.find(&search_dir, &target_name)?,
+          None => runtime.find(&search_dir, &target_name)?,
         };
 
-        Some(type_.task(&script.to_str().unwrap(), &vars))
+        Some(runtime.task(&script.to_str().unwrap(), &vars))
       }
       Recipe::Script(target) => {
         // what the interpreter is for this recipe
-        let type_ = self.find_type(&target.type_)?;
+        let runtime = self.find_runtime(&target.runtime)?;
 
         // locate a file to write the script to
         let mut temp_file = self.script_dir.join(util::hash_string(&target.script));
-        if let Some(x) = type_.extensions.get(0) {
+        if let Some(x) = runtime.extensions.get(0) {
           temp_file.set_extension(&x);
         }
 
         fs::write(&temp_file, &target.script)?;
 
-        Some(type_.task(&temp_file.to_str().unwrap(), &vars))
+        Some(runtime.task(&temp_file.to_str().unwrap(), &vars))
       }
       Recipe::Module(_) => {
         // this is kinda hacky, but... whatever. it should probably
@@ -789,10 +787,10 @@ impl Mold {
 }
 
 impl Moldfile {
-  /// Merges any types or recipes from `other` that aren't in `self`
+  /// Merges any runtimes or recipes from `other` that aren't in `self`
   pub fn merge_absent(&mut self, other: Mold) {
-    for (type_name, type_) in other.data.types {
-      self.types.entry(type_name).or_insert(type_);
+    for (runtime_name, runtime) in other.data.runtimes {
+      self.runtimes.entry(runtime_name).or_insert(runtime);
     }
 
     for (recipe_name, mut recipe) in other.data.recipes {
@@ -859,7 +857,7 @@ impl FromStr for Include {
   }
 }
 
-impl Type {
+impl Runtime {
   /// Create a Task ready to execute a script
   fn task(&self, script: &str, vars: &VarMap) -> Task {
     let args: Vec<_> = self
