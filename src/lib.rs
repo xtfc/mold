@@ -685,6 +685,10 @@ impl Mold {
     };
 
     vars.insert(
+      "MOLD_MODULE_ROOT".into(),
+      self.root_dir.to_str().unwrap().into(),
+    );
+    vars.insert(
       "MOLD_SEARCH_DIR".into(),
       search_dir.to_str().unwrap().into(),
     );
