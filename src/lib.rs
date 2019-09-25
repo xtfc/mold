@@ -386,8 +386,9 @@ impl Mold {
     let active = active_envs(&self.data.environments, &self.envs);
     let mut vars = self.data.variables.clone();
     // this is not very ergonomic and can panic. oh well.
+    vars.insert("MOLD_ROOT".into(), self.root_dir.to_str().unwrap().into());
     vars.insert("MOLD_FILE".into(), self.file.to_str().unwrap().into());
-    vars.insert("MOLD_ROOT_DIR".into(), self.dir.to_str().unwrap().into());
+    vars.insert("MOLD_DIR".into(), self.dir.to_str().unwrap().into());
     vars.insert(
       "MOLD_CLONE_DIR".into(),
       self.clone_dir.to_str().unwrap().into(),
@@ -663,14 +664,14 @@ impl Mold {
         .map(|(k, v)| (k.clone(), v.clone())),
     );
 
-    let search_dir = recipe
-      .search_dir()
-      .clone()
-      .unwrap_or(self.dir.clone())
-      .to_str()
-      .unwrap()
-      .into();
-    vars.insert("MOLD_SEARCH_DIR".into(), search_dir);
+    // use the target's search_dir, but fall back to our own
+    // (feels like I shouldn't have to clone these, though...)
+    let search_dir = recipe.search_dir().clone().unwrap_or(self.dir.clone());
+
+    vars.insert(
+      "MOLD_SEARCH_DIR".into(),
+      search_dir.to_str().unwrap().into(),
+    );
 
     let task = match recipe {
       Recipe::Command(target) => Some(Task::from_args(
@@ -681,13 +682,6 @@ impl Mold {
       Recipe::File(target) => {
         // what the interpreter is for this recipe
         let runtime = self.find_runtime(&target.runtime)?;
-
-        // use the target's search_dir, but fall back to our own
-        // (feels like I shouldn't have to clone these, though...)
-        let search_dir = recipe
-          .search_dir()
-          .clone()
-          .unwrap_or_else(|| self.dir.clone());
 
         // find the script file to execute
         let script = match &target.file {
