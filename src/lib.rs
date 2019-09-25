@@ -171,6 +171,12 @@ pub struct RecipeBase {
   #[serde(default)]
   pub environments: EnvMap,
 
+  /// The working directory relative to the calling Moldfile's root_dir
+  ///
+  /// ADDED: 0.4.0
+  #[serde(default)]
+  pub workdir: Option<PathBuf>,
+
   /// The actual search_dir of this recipe
   ///
   /// This is used for Includes, where the command may be lifted up to the
@@ -673,18 +679,21 @@ impl Mold {
     // use the target's search_dir, but fall back to our own
     // (feels like I shouldn't have to clone these, though...)
     let search_dir = recipe.search_dir().clone().unwrap_or(self.dir.clone());
+    let work_dir = match recipe.work_dir() {
+      None => self.root_dir.clone(),
+      Some(val) => self.root_dir.join(val),
+    };
 
     vars.insert(
       "MOLD_SEARCH_DIR".into(),
       search_dir.to_str().unwrap().into(),
     );
 
+    vars.insert("MOLD_WORK_DIR".into(), work_dir.to_str().unwrap().into());
+
     let task = match recipe {
-      Recipe::Command(target) => Some(Task::from_args(
-        &target.command,
-        Some(&vars),
-        &self.root_dir,
-      )),
+      Recipe::Command(target) => Some(Task::from_args(&target.command, Some(&vars), &work_dir)),
+
       Recipe::File(target) => {
         // what the interpreter is for this recipe
         let runtime = self.find_runtime(&target.runtime)?;
@@ -697,8 +706,9 @@ impl Mold {
           None => runtime.find(&search_dir, &target_name)?,
         };
 
-        Some(runtime.task(&script.to_str().unwrap(), &vars, &self.root_dir))
+        Some(runtime.task(&script.to_str().unwrap(), &vars, &work_dir))
       }
+
       Recipe::Script(target) => {
         // what the interpreter is for this recipe
         let runtime = self.find_runtime(&target.runtime)?;
@@ -711,8 +721,9 @@ impl Mold {
 
         fs::write(&temp_file, &target.script)?;
 
-        Some(runtime.task(&temp_file.to_str().unwrap(), &vars, &self.root_dir))
+        Some(runtime.task(&temp_file.to_str().unwrap(), &vars, &work_dir))
       }
+
       Recipe::Module(_) => {
         // this is kinda hacky, but... whatever. it should probably
         // somehow map into a Task instead, but this is good enough.
@@ -971,7 +982,17 @@ impl Recipe {
     vars
   }
 
-  /// Set this recipe's search_dir
+  /// Return this recipe's working directory
+  fn work_dir(&self) -> &Option<PathBuf> {
+    match self {
+      Recipe::File(f) => &f.base.workdir,
+      Recipe::Command(c) => &c.base.workdir,
+      Recipe::Script(s) => &s.base.workdir,
+      Recipe::Module(g) => &g.base.workdir,
+    }
+  }
+
+  /// Set this recipe's search directory
   fn set_search_dir(&mut self, to: Option<PathBuf>) {
     match self {
       Recipe::File(f) => f.base.search_dir = to,
@@ -981,7 +1002,7 @@ impl Recipe {
     }
   }
 
-  /// Return this recipe's environments
+  /// Return this recipe's search directory
   fn search_dir(&self) -> &Option<PathBuf> {
     match self {
       Recipe::File(f) => &f.base.search_dir,
