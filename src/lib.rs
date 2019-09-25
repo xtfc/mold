@@ -637,7 +637,7 @@ impl Mold {
       let recipe = self.find_recipe(module_name)?;
       let module = self.open_module(module_name)?;
 
-      // merge this moldfile's variables with its parent.
+      // merge this moldfile's variables with its parent, ie the caller.
       // the parent has priority and overrides this moldfile because it's called recursively:
       //   $ mold foo/bar/baz
       // will call bar/baz with foo as the parent, which will call baz with bar as
@@ -679,6 +679,8 @@ impl Mold {
     // use the target's search_dir, but fall back to our own
     // (feels like I shouldn't have to clone these, though...)
     let search_dir = recipe.search_dir().clone().unwrap_or(self.dir.clone());
+
+    // join the target's work_dir to our root_dir, or just pick our root_dir
     let work_dir = match recipe.work_dir() {
       None => self.root_dir.clone(),
       Some(val) => self.root_dir.join(val),
