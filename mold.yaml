@@ -1,11 +1,12 @@
-version: "0.3.2"
+version: "0.4.0"
 
 includes:
   - url: "github.com/xtfc/std.mold"
+    ref: "0.4"
   - url: "github.com/xtfc/cargo.mold"
-    ref: "v2"
+    ref: "v3"
 
-types:
+runtimes:
   python:
     command: ["python", "?"]
     extensions: ["py"]
@@ -13,28 +14,28 @@ types:
 recipes:
   staticbuild:
     help: "Build a static MUSL binary using Docker"
-    type: "sh"
+    runtime: "sh"
 
   python:
-    type: "python"
+    runtime: "python"
 
   python-file:
-    type: "python"
+    runtime: "python"
     file: "python.py"
 
   python-script:
-    type: "python"
+    runtime: "python"
     script: |
       print("Hello, world!")
 
   shell:
-    type: "sh"
+    runtime: "sh"
 
   shell-file:
-    type: "sh"
+    runtime: "sh"
     file: "shell.sh"
 
   shell-script:
-    type: "sh"
+    runtime: "sh"
     script: |
       echo "Hello, world!"

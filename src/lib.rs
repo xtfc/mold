@@ -8,7 +8,6 @@ use serde_derive::Deserialize;
 use serde_derive::Serialize;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
-use std::ffi::OsStr;
 use std::fs;
 use std::io::prelude::*;
 use std::path::Path;
@@ -29,9 +28,9 @@ pub type EnvMap = IndexMap<String, VarMap>;
 
 // sorted alphabetically
 pub type RecipeMap = BTreeMap<String, Recipe>; // sorted alphabetically
-pub type TypeMap = BTreeMap<String, Type>; // sorted alphabetically
+pub type RuntimeMap = BTreeMap<String, Runtime>; // sorted alphabetically
 
-const MOLD_FILES: &[&str] = &["mold.toml", "mold.yaml", "moldfile", "Moldfile"];
+const MOLD_FILES: &[&str] = &["mold.yaml", "mold.yml", "moldfile", "Moldfile"];
 
 fn default_recipe_dir() -> PathBuf {
   "./mold".into()
@@ -70,6 +69,9 @@ pub struct Mold {
   /// path to the recipe scripts
   dir: PathBuf,
 
+  /// (derived) root directory that the file sits in
+  root_dir: PathBuf,
+
   /// (derived) path to the cloned repos
   clone_dir: PathBuf,
 
@@ -100,9 +102,11 @@ pub struct Moldfile {
   #[serde(default)]
   pub recipes: RecipeMap,
 
-  /// A map of interpreter types and characteristics
+  /// A map of interpreter runtimes and characteristics
+  ///
+  /// BREAKING: Renamed from `types` in 0.4.0
   #[serde(default)]
-  pub types: TypeMap,
+  pub runtimes: RuntimeMap,
 
   /// A list of environment variables used to parametrize recipes
   ///
@@ -131,7 +135,7 @@ pub struct Include {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Type {
+pub struct Runtime {
   /// A list of arguments used as a shell command
   ///
   /// Any element "?" will be / replaced with the desired script when
@@ -150,7 +154,7 @@ pub struct Type {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RecipeBase {
-  /// A short description of the group's contents
+  /// A short description of the module's contents
   #[serde(default)]
   pub help: String,
 
@@ -165,20 +169,33 @@ pub struct RecipeBase {
   /// ADDED: 0.3.0
   #[serde(default)]
   pub environments: EnvMap,
+
+  /// The working directory relative to the calling Moldfile's root_dir
+  ///
+  /// ADDED: 0.4.0
+  #[serde(default)]
+  pub work_dir: Option<PathBuf>,
+
+  /// The actual search_dir of this recipe
+  ///
+  /// This is used for Includes, where the command may be lifted up to the
+  /// top-level, but the search_dir is located in a different location
+  #[serde(skip)]
+  pub search_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Recipe {
   // apparently the order here matters?
-  Group(Group),
+  Module(Module),
   Script(Script),
   File(File),
   Command(Command),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Group {
+pub struct Module {
   /// Base data
   #[serde(flatten)]
   pub base: RecipeBase,
@@ -204,22 +221,16 @@ pub struct File {
   #[serde(default)]
   pub deps: Vec<String>,
 
-  /// The actual root of this script
-  ///
-  /// This is used for Includes, where the command may be lifted up to the
-  /// top-level, but the root is located in a different location
-  #[serde(skip)]
-  pub root: Option<PathBuf>,
-
   /// Which interpreter should be used to execute this script
-  #[serde(alias = "type")]
-  pub type_: String,
+  ///
+  /// BREAKING: Renamed from `type` in 0.4.0
+  pub runtime: String,
 
   /// The script file name
   ///
   /// If left undefined, Mold will attempt to discover the recipe name by
   /// searching the recipe_dir for any files that start with the recipe name and
-  /// have an appropriate extension for the specified interpreter type.
+  /// have an appropriate extension for the specified interpreter runtime.
   pub file: Option<PathBuf>,
 }
 
@@ -234,8 +245,9 @@ pub struct Script {
   pub deps: Vec<String>,
 
   /// Which interpreter should be used to execute this script
-  #[serde(alias = "type")]
-  pub type_: String,
+  ///
+  /// BREAKING: Renamed from `type` in 0.4.0
+  pub runtime: String,
 
   /// The script contents as a multiline string
   pub script: String,
@@ -260,6 +272,7 @@ pub struct Command {
 pub struct Task {
   args: Vec<String>,
   vars: Option<VarMap>,
+  work_dir: PathBuf,
 }
 
 impl Mold {
@@ -269,11 +282,7 @@ impl Mold {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
 
-    let data: Moldfile = match path.extension().and_then(OsStr::to_str) {
-      Some("yaml") | Some("yml") => serde_yaml::from_str(&contents)?,
-      _ => toml::de::from_str(&contents)?,
-    };
-
+    let data: Moldfile = serde_yaml::from_str(&contents)?;
     let self_version = Version::parse(clap::crate_version!())?;
     let target_version = match data.version {
       Some(ref version) => VersionReq::parse(&version)?,
@@ -290,6 +299,7 @@ impl Mold {
     }
 
     let dir = path.with_file_name(&data.recipe_dir);
+    let root_dir = dir.parent().unwrap_or(&Path::new("/")).to_path_buf();
     let clone_dir = dir.join(".clones");
     let script_dir = dir.join(".scripts");
 
@@ -306,6 +316,7 @@ impl Mold {
     Ok(Mold {
       file: fs::canonicalize(path)?,
       dir: fs::canonicalize(dir)?,
+      root_dir: fs::canonicalize(root_dir)?,
       clone_dir: fs::canonicalize(clone_dir)?,
       script_dir: fs::canonicalize(script_dir)?,
       envs: vec![],
@@ -382,8 +393,9 @@ impl Mold {
     let active = active_envs(&self.data.environments, &self.envs);
     let mut vars = self.data.variables.clone();
     // this is not very ergonomic and can panic. oh well.
+    vars.insert("MOLD_ROOT".into(), self.root_dir.to_str().unwrap().into());
     vars.insert("MOLD_FILE".into(), self.file.to_str().unwrap().into());
-    vars.insert("MOLD_RECIPE_DIR".into(), self.dir.to_str().unwrap().into());
+    vars.insert("MOLD_DIR".into(), self.dir.to_str().unwrap().into());
     vars.insert(
       "MOLD_CLONE_DIR".into(),
       self.clone_dir.to_str().unwrap().into(),
@@ -425,28 +437,28 @@ impl Mold {
       .ok_or_else(|| failure::format_err!("Couldn't locate target '{}'", target_name.red()))
   }
 
-  /// Find a Type by name
-  fn find_type(&self, type_name: &str) -> Result<&Type, Error> {
+  /// Find a Runtime by name
+  fn find_runtime(&self, runtime_name: &str) -> Result<&Runtime, Error> {
     self
       .data
-      .types
-      .get(type_name)
-      .ok_or_else(|| failure::format_err!("Couldn't locate type '{}'", type_name.red()))
+      .runtimes
+      .get(runtime_name)
+      .ok_or_else(|| failure::format_err!("Couldn't locate runtime '{}'", runtime_name.red()))
   }
 
-  /// Find a Recipe by name and attempt to unwrap it to a Group
-  fn find_group(&self, group_name: &str) -> Result<&Group, Error> {
-    // unwrap the group or quit
-    match self.find_recipe(group_name)? {
+  /// Find a Recipe by name and attempt to unwrap it to a Module
+  fn find_module(&self, module_name: &str) -> Result<&Module, Error> {
+    // unwrap the module or quit
+    match self.find_recipe(module_name)? {
       Recipe::Command(_) => Err(failure::err_msg("Requested recipe is a command")),
       Recipe::File(_) => Err(failure::err_msg("Requested recipe is a file")),
-      Recipe::Group(target) => Ok(target),
+      Recipe::Module(target) => Ok(target),
       Recipe::Script(_) => Err(failure::err_msg("Requested recipe is a script")),
     }
   }
 
-  fn open_group(&self, group_name: &str) -> Result<Mold, Error> {
-    let target = self.find_group(group_name)?;
+  fn open_module(&self, module_name: &str) -> Result<Mold, Error> {
+    let target = self.find_module(module_name)?;
     let path = self.clone_dir.join(&target.folder_name());
     let mut mold = Self::discover(&path, target.file.clone())?.adopt(self);
     mold.process_includes()?;
@@ -459,12 +471,12 @@ impl Mold {
     Ok(mold)
   }
 
-  /// Recursively fetch/checkout for all groups that have already been cloned
+  /// Recursively fetch/checkout for all modules that have already been cloned
   pub fn update_all(&self) -> Result<(), Error> {
     self.update_all_track(&mut HashSet::new())
   }
 
-  /// Recursively fetch/checkout for all groups that have already been cloned,
+  /// Recursively fetch/checkout for all modules that have already been cloned,
   /// but with extra checks to avoid infinite recursion cycles
   fn update_all_track(&self, updated: &mut HashSet<PathBuf>) -> Result<(), Error> {
     // `updated` contains all of the directories that have been, well, updated.
@@ -477,14 +489,14 @@ impl Mold {
     // * fetch / checkout
     // * recurse into it
 
-    // find all groups that have already been cloned and update them
+    // find all modules that have already been cloned and update them
     for (name, recipe) in &self.data.recipes {
-      if let Recipe::Group(group) = recipe {
-        let path = self.clone_dir.join(group.folder_name());
+      if let Recipe::Module(module) = recipe {
+        let path = self.clone_dir.join(module.folder_name());
         if path.is_dir() && !updated.contains(&path) {
           updated.insert(path.clone());
-          remote::checkout(&path, &group.ref_)?;
-          self.open_group(name)?.update_all_track(updated)?;
+          remote::checkout(&path, &module.ref_)?;
+          self.open_module(name)?.update_all_track(updated)?;
         }
       }
     }
@@ -502,11 +514,11 @@ impl Mold {
     Ok(())
   }
 
-  /// Recursively all Includes and Groups
+  /// Recursively all Includes and Modules
   pub fn clone_all(&self) -> Result<(), Error> {
     for recipe in self.data.recipes.values() {
-      if let Recipe::Group(group) = recipe {
-        self.clone_group(&group)?;
+      if let Recipe::Module(module) = recipe {
+        self.clone_module(&module)?;
       }
     }
 
@@ -517,13 +529,13 @@ impl Mold {
     Ok(())
   }
 
-  /// Clone a single remote group
-  fn clone_group(&self, group: &Group) -> Result<(), Error> {
+  /// Clone a single remote module
+  fn clone_module(&self, module: &Module) -> Result<(), Error> {
     self.clone(
-      &group.folder_name(),
-      &group.url,
-      &group.ref_,
-      group.file.clone(),
+      &module.folder_name(),
+      &module.url,
+      &module.ref_,
+      module.file.clone(),
     )
   }
 
@@ -587,16 +599,16 @@ impl Mold {
     // check if this is a nested subrecipe that we'll have to recurse into
     if target.contains('/') {
       let splits: Vec<_> = target.splitn(2, '/').collect();
-      let group_name = splits[0];
+      let module_name = splits[0];
       let recipe_name = splits[1];
 
-      let group = self.open_group(group_name)?;
-      let deps = group.find_task_dependencies(recipe_name)?;
-      let full_deps = group.find_all_dependencies(&deps)?;
+      let module = self.open_module(module_name)?;
+      let deps = module.find_task_dependencies(recipe_name)?;
+      let full_deps = module.find_all_dependencies(&deps)?;
       return Ok(
         full_deps
           .iter()
-          .map(|x| format!("{}/{}", group_name, x))
+          .map(|x| format!("{}/{}", module_name, x))
           .collect(),
       );
     }
@@ -609,31 +621,31 @@ impl Mold {
 
   /// Find a Task object for a given recipe name
   ///
-  /// This entails recursing through various groups to find the the appropriate
+  /// This entails recursing through various modules to find the the appropriate
   /// Task.
   pub fn find_task(&self, target_name: &str, prev_vars: &VarMap) -> Result<Option<Task>, Error> {
     // check if we're executing a nested subrecipe that we'll have to recurse into
     if target_name.contains('/') {
       let splits: Vec<_> = target_name.splitn(2, '/').collect();
-      let group_name = splits[0];
+      let module_name = splits[0];
       let recipe_name = splits[1];
-      let recipe = self.find_recipe(group_name)?;
-      let group = self.open_group(group_name)?;
+      let recipe = self.find_recipe(module_name)?;
+      let module = self.open_module(module_name)?;
 
-      // merge this moldfile's variables with its parent.
+      // merge this moldfile's variables with its parent, ie the caller.
       // the parent has priority and overrides this moldfile because it's called recursively:
       //   $ mold foo/bar/baz
       // will call bar/baz with foo as the parent, which will call baz with bar as
       // the parent. we want foo's moldfile to override bar's moldfile to override
       // baz's moldfile, because baz should be the least specialized.
-      let mut vars = group.env_vars().clone();
+      let mut vars = module.env_vars().clone();
       vars.extend(prev_vars.iter().map(|(k, v)| (k.clone(), v.clone())));
 
-      let mut task = group.find_task(recipe_name, &vars)?;
+      let mut task = module.find_task(recipe_name, &vars)?;
       if let Some(task) = &mut task {
         // not sure if this is the right ordering to update variables in, but
-        // it's done here so that parent group's configuration can override one
-        // of the subrecipes in the group
+        // it's done here so that parent module's configuration can override one
+        // of the subrecipes in the module
         if let Some(vars) = &mut task.vars {
           vars.extend(
             recipe
@@ -659,46 +671,69 @@ impl Mold {
         .map(|(k, v)| (k.clone(), v.clone())),
     );
 
+    // use the target's search_dir, but fall back to our own
+    // (feels like I shouldn't have to clone these, though...)
+    let search_dir = recipe
+      .search_dir()
+      .clone()
+      .unwrap_or_else(|| self.dir.clone());
+
+    // join the target's work_dir to our root_dir, or just pick our root_dir
+    let work_dir = match recipe.work_dir() {
+      None => self.root_dir.clone(),
+      Some(val) => self.root_dir.join(val),
+    };
+
+    vars.insert(
+      "MOLD_MODULE_ROOT".into(),
+      self.root_dir.to_str().unwrap().into(),
+    );
+    vars.insert(
+      "MOLD_SEARCH_DIR".into(),
+      search_dir.to_str().unwrap().into(),
+    );
+
+    vars.insert("MOLD_WORK_DIR".into(), work_dir.to_str().unwrap().into());
+
     let task = match recipe {
-      Recipe::Command(target) => Some(Task::from_args(&target.command, Some(&vars))),
+      Recipe::Command(target) => Some(Task::from_args(&target.command, Some(&vars), &work_dir)),
+
       Recipe::File(target) => {
         // what the interpreter is for this recipe
-        let type_ = self.find_type(&target.type_)?;
-
-        // use the target's root, but fall back to our own
-        // (feels like I shouldn't have to clone these, though...)
-        let search_dir = target.root.clone().unwrap_or_else(|| self.dir.clone());
+        let runtime = self.find_runtime(&target.runtime)?;
 
         // find the script file to execute
         let script = match &target.file {
           Some(x) => search_dir.join(x),
 
           // we need to look it up based on our interpreter's known extensions
-          None => type_.find(&search_dir, &target_name)?,
+          None => runtime.find(&search_dir, &target_name)?,
         };
 
-        Some(type_.task(&script.to_str().unwrap(), &vars))
+        Some(runtime.task(&script.to_str().unwrap(), &vars, &work_dir))
       }
+
       Recipe::Script(target) => {
         // what the interpreter is for this recipe
-        let type_ = self.find_type(&target.type_)?;
+        let runtime = self.find_runtime(&target.runtime)?;
 
         // locate a file to write the script to
         let mut temp_file = self.script_dir.join(util::hash_string(&target.script));
-        if let Some(x) = type_.extensions.get(0) {
+        if let Some(x) = runtime.extensions.get(0) {
           temp_file.set_extension(&x);
         }
 
         fs::write(&temp_file, &target.script)?;
 
-        Some(type_.task(&temp_file.to_str().unwrap(), &vars))
+        Some(runtime.task(&temp_file.to_str().unwrap(), &vars, &work_dir))
       }
-      Recipe::Group(_) => {
+
+      Recipe::Module(_) => {
         // this is kinda hacky, but... whatever. it should probably
         // somehow map into a Task instead, but this is good enough.
-        let group_name = format!("{}/", target_name);
-        let group = self.open_group(target_name)?;
-        group.help_prefixed(&group_name)?;
+        let module_name = format!("{}/", target_name);
+        let module = self.open_module(target_name)?;
+        module.help_prefixed(&module_name)?;
         None
       }
     };
@@ -717,7 +752,7 @@ impl Mold {
       let colored_name = match recipe {
         Recipe::Command(_) => name.yellow(),
         Recipe::File(_) => name.cyan(),
-        Recipe::Group(_) => format!("{}/", name).magenta(),
+        Recipe::Module(_) => format!("{}/", name).magenta(),
         Recipe::Script(_) => name.yellow(),
       };
 
@@ -789,21 +824,21 @@ impl Mold {
 }
 
 impl Moldfile {
-  /// Merges any types or recipes from `other` that aren't in `self`
+  /// Merges any runtimes or recipes from `other` that aren't in `self`
   pub fn merge_absent(&mut self, other: Mold) {
-    for (type_name, type_) in other.data.types {
-      self.types.entry(type_name).or_insert(type_);
+    for (runtime_name, runtime) in other.data.runtimes {
+      self.runtimes.entry(runtime_name).or_insert(runtime);
     }
 
     for (recipe_name, mut recipe) in other.data.recipes {
-      recipe.set_root(Some(other.dir.clone()));
+      recipe.set_search_dir(Some(other.dir.clone()));
       self.recipes.entry(recipe_name).or_insert(recipe);
     }
   }
 }
 
 impl Include {
-  /// Return this group's folder name in the format hash(url@ref)
+  /// Return this module's folder name in the format hash(url@ref)
   fn folder_name(&self) -> String {
     util::hash_url_ref(&self.url, &self.ref_)
   }
@@ -859,9 +894,9 @@ impl FromStr for Include {
   }
 }
 
-impl Type {
+impl Runtime {
   /// Create a Task ready to execute a script
-  fn task(&self, script: &str, vars: &VarMap) -> Task {
+  fn task(&self, script: &str, vars: &VarMap, work_dir: &PathBuf) -> Task {
     let args: Vec<_> = self
       .command
       .iter()
@@ -870,6 +905,7 @@ impl Type {
 
     Task {
       args,
+      work_dir: work_dir.clone(),
       vars: Some(vars.clone()),
     }
   }
@@ -911,7 +947,7 @@ impl Recipe {
     match self {
       Recipe::Command(c) => &c.base.help,
       Recipe::File(f) => &f.base.help,
-      Recipe::Group(g) => &g.base.help,
+      Recipe::Module(g) => &g.base.help,
       Recipe::Script(s) => &s.base.help,
     }
   }
@@ -922,7 +958,7 @@ impl Recipe {
       Recipe::File(f) => &f.base.variables,
       Recipe::Command(c) => &c.base.variables,
       Recipe::Script(s) => &s.base.variables,
-      Recipe::Group(g) => &g.base.variables,
+      Recipe::Module(g) => &g.base.variables,
     }
   }
 
@@ -932,7 +968,7 @@ impl Recipe {
       Recipe::File(f) => &f.base.environments,
       Recipe::Command(c) => &c.base.environments,
       Recipe::Script(s) => &s.base.environments,
-      Recipe::Group(g) => &g.base.environments,
+      Recipe::Module(g) => &g.base.environments,
     }
   }
 
@@ -950,16 +986,39 @@ impl Recipe {
     vars
   }
 
-  /// Set this recipe's root
-  fn set_root(&mut self, to: Option<PathBuf>) {
-    if let Recipe::File(s) = self {
-      s.root = to;
+  /// Return this recipe's working directory
+  fn work_dir(&self) -> &Option<PathBuf> {
+    match self {
+      Recipe::File(f) => &f.base.work_dir,
+      Recipe::Command(c) => &c.base.work_dir,
+      Recipe::Script(s) => &s.base.work_dir,
+      Recipe::Module(g) => &g.base.work_dir,
+    }
+  }
+
+  /// Set this recipe's search directory
+  fn set_search_dir(&mut self, to: Option<PathBuf>) {
+    match self {
+      Recipe::File(f) => f.base.search_dir = to,
+      Recipe::Command(c) => c.base.search_dir = to,
+      Recipe::Script(s) => s.base.search_dir = to,
+      Recipe::Module(m) => m.base.search_dir = to,
+    }
+  }
+
+  /// Return this recipe's search directory
+  fn search_dir(&self) -> &Option<PathBuf> {
+    match self {
+      Recipe::File(f) => &f.base.search_dir,
+      Recipe::Command(c) => &c.base.search_dir,
+      Recipe::Script(s) => &s.base.search_dir,
+      Recipe::Module(g) => &g.base.search_dir,
     }
   }
 }
 
-impl Group {
-  /// Return this group's folder name in the format hash(url@ref)
+impl Module {
+  /// Return this module's folder name in the format hash(url@ref)
   fn folder_name(&self) -> String {
     util::hash_url_ref(&self.url, &self.ref_)
   }
@@ -974,6 +1033,7 @@ impl Task {
 
     let mut command = process::Command::new(&self.args[0]);
     command.args(&self.args[1..]);
+    command.current_dir(&self.work_dir);
 
     if let Some(vars) = &self.vars {
       command.envs(vars);
@@ -1011,10 +1071,11 @@ impl Task {
   }
 
   /// Create a Task from a Vec of strings
-  fn from_args(args: &[String], vars: Option<&VarMap>) -> Task {
+  fn from_args(args: &[String], vars: Option<&VarMap>, work_dir: &PathBuf) -> Task {
     Task {
       args: args.into(),
       vars: vars.map(std::clone::Clone::clone),
+      work_dir: work_dir.clone(),
     }
   }
 }
