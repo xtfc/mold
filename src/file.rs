@@ -94,7 +94,7 @@ pub struct Runtime {
   pub extensions: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecipeBase {
   /// A short description of the module's contents
   #[serde(default)]
@@ -126,7 +126,7 @@ pub struct RecipeBase {
   pub search_dir: Option<PathBuf>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Recipe {
   // apparently the order here matters?
@@ -136,7 +136,7 @@ pub enum Recipe {
   Command(Command),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Module {
   /// Base data
   #[serde(flatten)]
@@ -147,7 +147,7 @@ pub struct Module {
   pub remote: Remote,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct File {
   /// Base data
   #[serde(flatten)]
@@ -170,7 +170,7 @@ pub struct File {
   pub file: Option<PathBuf>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Script {
   /// Base data
   #[serde(flatten)]
@@ -189,7 +189,7 @@ pub struct Script {
   pub script: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Command {
   /// Base data
   #[serde(flatten)]
