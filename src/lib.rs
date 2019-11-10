@@ -229,13 +229,35 @@ impl Mold {
     self.envs.push(env.into());
   }
 
-  /// Find a Recipe by name
-  fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
+  /// Find a recipe in the top level map
+  fn root_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
     self
       .data
       .recipes
       .get(target_name)
       .ok_or_else(|| failure::format_err!("Couldn't locate target '{}'", target_name.red()))
+  }
+
+  /// Recursively find a Recipe by name
+  fn find_recipe(&self, target_name: &str) -> Result<Recipe, Error> {
+    if target_name.contains('/') {
+      let splits: Vec<_> = target_name.splitn(2, '/').collect();
+      let module_name = splits[0];
+      let recipe_name = splits[1];
+
+      let recipe = self.root_recipe(module_name)?;
+      let module = match recipe {
+        Recipe::Module(module) => Ok(module),
+        _ => Err(failure::format_err!(
+          "Target '{}' is not a module",
+          module_name.red()
+        )),
+      }?;
+      let file = self.open_remote(&module.remote)?;
+      return Ok(file.find_recipe(recipe_name)?.clone());
+    }
+
+    Ok(self.root_recipe(target_name)?.clone())
   }
 
   /// Find a Runtime by name
@@ -245,23 +267,6 @@ impl Mold {
       .runtimes
       .get(runtime_name)
       .ok_or_else(|| failure::format_err!("Couldn't locate runtime '{}'", runtime_name.red()))
-  }
-
-  /// Find a Recipe by name and attempt to unwrap it to a Module
-  fn find_module(&self, module_name: &str) -> Result<&Module, Error> {
-    // unwrap the module or quit
-    match self.find_recipe(module_name)? {
-      Recipe::Command(_) => Err(failure::err_msg("Requested recipe is a command")),
-      Recipe::File(_) => Err(failure::err_msg("Requested recipe is a file")),
-      Recipe::Module(target) => Ok(target),
-      Recipe::Script(_) => Err(failure::err_msg("Requested recipe is a script")),
-    }
-  }
-
-  fn open_module(&self, module_name: &str) -> Result<Mold, Error> {
-    let target = self.find_module(module_name)?;
-    let mold = self.open_remote(&target.remote)?;
-    Ok(mold)
   }
 
   fn open_remote(&self, target: &Remote) -> Result<Mold, Error> {
