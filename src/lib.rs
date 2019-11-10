@@ -1,12 +1,11 @@
 pub mod expr;
-pub mod remote;
 pub mod file;
+pub mod remote;
 pub mod util;
 
 use colored::*;
 use failure::Error;
 use file::EnvMap;
-use file::MOLD_FILES;
 use file::Module;
 use file::Moldfile;
 use file::Recipe;
@@ -14,6 +13,7 @@ use file::Remote;
 use file::Runtime;
 use file::TaskSet;
 use file::VarMap;
+use file::DEFAULT_FILES;
 use semver::Version;
 use semver::VersionReq;
 use std::collections::HashSet;
@@ -156,15 +156,15 @@ impl Mold {
 
   /// Try to locate and open a moldfile by directory
   ///
-  /// Checks for MOLD_FILES
+  /// Checks for DEFAULT_FILES
   fn discover_dir(name: &Path) -> Result<Mold, Error> {
-    let path = MOLD_FILES
+    let path = DEFAULT_FILES
       .iter()
       .find_map(|file| Self::locate_file(&name.join(file)).ok())
       .ok_or_else(|| {
         failure::format_err!(
           "Cannot locate moldfile, tried the following:\n{}",
-          MOLD_FILES.join(" ").red()
+          DEFAULT_FILES.join(" ").red()
         )
       })?;
     Self::open(&path)
@@ -325,11 +325,7 @@ impl Mold {
   /// * track it as visited
   /// * fetch / checkout
   /// * recurse into it
-  fn update_remote(
-    &self,
-    remote: &Remote,
-    updated: &mut HashSet<PathBuf>,
-  ) -> Result<(), Error> {
+  fn update_remote(&self, remote: &Remote, updated: &mut HashSet<PathBuf>) -> Result<(), Error> {
     let path = self.clone_dir.join(remote.folder_name());
     if path.is_dir() && !updated.contains(&path) {
       updated.insert(path.clone());

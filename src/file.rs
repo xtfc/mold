@@ -1,6 +1,5 @@
 /// This module contains all the associated structs for serializing and
 /// deserializing a moldfile.
-
 use indexmap::IndexMap;
 use indexmap::IndexSet;
 use serde_derive::Deserialize;
@@ -18,7 +17,7 @@ pub type EnvMap = IndexMap<String, VarMap>;
 pub type RecipeMap = BTreeMap<String, Recipe>; // sorted alphabetically
 pub type RuntimeMap = BTreeMap<String, Runtime>; // sorted alphabetically
 
-pub const MOLD_FILES: &[&str] = &["mold.yaml", "mold.yml", "moldfile", "Moldfile"];
+pub const DEFAULT_FILES: &[&str] = &["mold.yaml", "mold.yml", "moldfile", "Moldfile"];
 
 fn default_recipe_dir() -> PathBuf {
   "./mold".into()
