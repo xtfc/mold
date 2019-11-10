@@ -15,23 +15,11 @@ pub struct Args {
   #[structopt(long = "file", short = "f")]
   pub file: Option<PathBuf>,
 
-  /// Print the parsed moldfile before processing it
-  #[structopt(long = "debug", short = "d")]
-  pub debug: bool,
-
-  /// Don't actually execute any commands
-  #[structopt(long = "dry")]
-  pub dry: bool,
-
-  /// Additional mold repositories to include
-  #[structopt(long = "include", short = "i")]
-  pub includes: Vec<Include>,
-
   /// Comma-separated list of mold environments to activate
   #[structopt(long = "env", short = "e", env = "MOLDENV")]
   pub env: Option<String>,
 
-  /// An extra environment to append
+  /// Single mold environment to append to list of active environments
   #[structopt(long = "add", short = "a", number_of_values = 1)]
   pub add_envs: Vec<String>,
 
@@ -51,15 +39,6 @@ pub struct Args {
   pub targets: Vec<String>,
 }
 
-fn main() -> Result<(), ExitFailure> {
-  let args = Args::from_args();
-  env_logger::init();
-
-  run(args)?;
-
-  Ok(())
-}
-
 fn run(args: Args) -> Result<(), Error> {
   // load the moldfile
   let mut mold = Mold::discover(&Path::new("."), args.file.clone())?;
@@ -71,32 +50,11 @@ fn run(args: Args) -> Result<(), Error> {
     return mold.clean_all();
   }
 
-  // early return if we passed a --debug
-  if args.debug {
-    dbg!(&mold);
-    return Ok(());
-  }
-
-  // we'll actually be doing something if we get this far, so we want to make
-  // sure we have all of the Groups and Includes cloned before proceeding
+  // clone all Modules and Includes before proceeding
   mold.clone_all()?;
-
-  for include in &args.includes {
-    mold.clone_include(include)?;
-  }
 
   // merge all Includes
   mold.process_includes()?;
-
-  // merge all CLI includes
-  for include in &args.includes {
-    mold.process_include(&include)?;
-  }
-
-  // early return if we passed a --clone
-  if args.clone {
-    return Ok(());
-  }
 
   // early return if we passed a --update
   if args.update {
@@ -108,31 +66,16 @@ fn run(args: Args) -> Result<(), Error> {
     return mold.help();
   }
 
-  // find all recipes to run, including all dependencies
-  let targets_set: TaskSet = args
-    .targets
-    .iter()
-    .map(std::string::ToString::to_string)
-    .collect();
-  let targets = mold.find_all_dependencies(&targets_set)?;
+  dbg!(&mold);
 
-  // generate a Task for each target
-  let mut tasks = vec![];
-  for target_name in &targets {
-    if let Some(task) = mold.find_task(&target_name, &mold.env_vars())? {
-      tasks.push(task);
-    }
-  }
+  Ok(())
+}
 
-  // execute the collected Tasks
-  for task in &tasks {
-    task.print_cmd();
-    if args.dry {
-      task.print_vars();
-    } else {
-      task.exec()?;
-    }
-  }
+fn main() -> Result<(), ExitFailure> {
+  let args = Args::from_args();
+  env_logger::init();
+
+  run(args)?;
 
   Ok(())
 }
