@@ -936,9 +936,10 @@ impl Recipe {
   /// Return this recipe's dependencies
   fn deps(&self) -> Vec<String> {
     match self {
-      Recipe::File(s) => s.deps.clone(),
+      Recipe::File(f) => f.deps.clone(),
       Recipe::Command(c) => c.deps.clone(),
-      _ => vec![],
+      Recipe::Script(s) => s.deps.clone(),
+      Recipe::Module(m) => vec![],
     }
   }
 
@@ -947,7 +948,7 @@ impl Recipe {
     match self {
       Recipe::Command(c) => &c.base.help,
       Recipe::File(f) => &f.base.help,
-      Recipe::Module(g) => &g.base.help,
+      Recipe::Module(m) => &m.base.help,
       Recipe::Script(s) => &s.base.help,
     }
   }
