@@ -1,12 +1,21 @@
+pub mod expr;
+pub mod remote;
+pub mod file;
+pub mod util;
+
 use colored::*;
 use failure::Error;
-use indexmap::IndexMap;
-use indexmap::IndexSet;
+use file::EnvMap;
+use file::MOLD_FILES;
+use file::Module;
+use file::Moldfile;
+use file::Recipe;
+use file::Remote;
+use file::Runtime;
+use file::TaskSet;
+use file::VarMap;
 use semver::Version;
 use semver::VersionReq;
-use serde_derive::Deserialize;
-use serde_derive::Serialize;
-use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::fs;
 use std::io::prelude::*;
@@ -15,36 +24,12 @@ use std::path::PathBuf;
 use std::process;
 use std::string::ToString;
 
-pub mod expr;
-pub mod remote;
-pub mod util;
-
-// sorted by insertion order
-pub type IncludeVec = Vec<Remote>;
-pub type TaskSet = IndexSet<String>;
-pub type VarMap = IndexMap<String, String>; // TODO maybe down the line this should allow nulls to `unset` a variable
-pub type EnvMap = IndexMap<String, VarMap>;
-
-// sorted alphabetically
-pub type RecipeMap = BTreeMap<String, Recipe>; // sorted alphabetically
-pub type RuntimeMap = BTreeMap<String, Runtime>; // sorted alphabetically
-
-const MOLD_FILES: &[&str] = &["mold.yaml", "mold.yml", "moldfile", "Moldfile"];
-
-fn default_recipe_dir() -> PathBuf {
-  "./mold".into()
-}
-
-fn default_git_ref() -> String {
-  "master".into()
-}
-
 /// Generate a list of all active environments
 ///
 /// Environment map keys are parsed as test expressions and evaluated against
 /// the list of environments. Environments that evaluate to true are added to
 /// the returned list; environments that evaluate to false are ignored.
-fn active_envs(env_map: &EnvMap, envs: &[String]) -> Vec<String> {
+fn active_envs(env_map: &file::EnvMap, envs: &[String]) -> Vec<String> {
   let mut result = vec![];
   for (test, _) in env_map {
     match expr::compile(&test) {
@@ -81,184 +66,7 @@ pub struct Mold {
   envs: Vec<String>,
 
   /// the parsed moldfile data
-  data: Moldfile,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Moldfile {
-  /// Version of mold required to run this Moldfile
-  pub version: Option<String>,
-
-  /// The directory that recipe scripts can be found in
-  #[serde(default = "default_recipe_dir")]
-  pub recipe_dir: PathBuf,
-
-  /// A map of includes
-  #[serde(default)]
-  pub includes: IncludeVec,
-
-  /// A map of recipes
-  #[serde(default)]
-  pub recipes: RecipeMap,
-
-  /// A map of interpreter runtimes and characteristics
-  ///
-  /// BREAKING: Renamed from `types` in 0.4.0
-  #[serde(default)]
-  pub runtimes: RuntimeMap,
-
-  /// A list of environment variables used to parametrize recipes
-  ///
-  /// BREAKING: Renamed from `environment` in 0.3.0
-  #[serde(default)]
-  pub variables: VarMap,
-
-  /// A map of environment names to variable maps used to parametrize recipes
-  ///
-  /// ADDED: 0.3.0
-  #[serde(default)]
-  pub environments: EnvMap,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Remote {
-  /// Git URL of a remote repo
-  pub url: String,
-
-  /// Git ref to keep up with
-  #[serde(alias = "ref", default = "default_git_ref")]
-  pub ref_: String,
-
-  /// Moldfile to look at
-  pub file: Option<PathBuf>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Runtime {
-  /// A list of arguments used as a shell command
-  ///
-  /// Any element "?" will be / replaced with the desired script when
-  /// executing. eg:
-  ///   ["python", "-m", "?"]
-  /// will produce the shell command when .exec("foo") is called:
-  ///   $ python -m foo
-  pub command: Vec<String>,
-
-  /// A list of extensions used to search for the script name
-  ///
-  /// These should omit the leading dot.
-  #[serde(default)]
-  pub extensions: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RecipeBase {
-  /// A short description of the module's contents
-  #[serde(default)]
-  pub help: String,
-
-  /// A list of environment variables that overrides the base environment
-  ///
-  /// BREAKING: Renamed from `environment` in 0.3.0
-  #[serde(default)]
-  pub variables: VarMap,
-
-  /// A map of environment names to variable maps used to parametrize recipes
-  ///
-  /// ADDED: 0.3.0
-  #[serde(default)]
-  pub environments: EnvMap,
-
-  /// The working directory relative to the calling Moldfile's root_dir
-  ///
-  /// ADDED: 0.4.0
-  #[serde(default)]
-  pub work_dir: Option<PathBuf>,
-
-  /// The actual search_dir of this recipe
-  ///
-  /// This is used for Includes, where the command may be lifted up to the
-  /// top-level, but the search_dir is located in a different location
-  #[serde(skip)]
-  pub search_dir: Option<PathBuf>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Recipe {
-  // apparently the order here matters?
-  Module(Module),
-  Script(Script),
-  File(File),
-  Command(Command),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Module {
-  /// Base data
-  #[serde(flatten)]
-  pub base: RecipeBase,
-
-  /// Remote data
-  #[serde(flatten)]
-  pub remote: Remote,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct File {
-  /// Base data
-  #[serde(flatten)]
-  pub base: RecipeBase,
-
-  /// A list of pre-execution dependencies
-  #[serde(default)]
-  pub deps: Vec<String>,
-
-  /// Which interpreter should be used to execute this script
-  ///
-  /// BREAKING: Renamed from `type` in 0.4.0
-  pub runtime: String,
-
-  /// The script file name
-  ///
-  /// If left undefined, Mold will attempt to discover the recipe name by
-  /// searching the recipe_dir for any files that start with the recipe name and
-  /// have an appropriate extension for the specified interpreter runtime.
-  pub file: Option<PathBuf>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Script {
-  /// Base data
-  #[serde(flatten)]
-  pub base: RecipeBase,
-
-  /// A list of pre-execution dependencies
-  #[serde(default)]
-  pub deps: Vec<String>,
-
-  /// Which interpreter should be used to execute this script
-  ///
-  /// BREAKING: Renamed from `type` in 0.4.0
-  pub runtime: String,
-
-  /// The script contents as a multiline string
-  pub script: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Command {
-  /// Base data
-  #[serde(flatten)]
-  pub base: RecipeBase,
-
-  /// A list of pre-execution dependencies
-  #[serde(default)]
-  pub deps: Vec<String>,
-
-  /// A list of command arguments
-  #[serde(default)]
-  pub command: Vec<String>,
+  data: file::Moldfile,
 }
 
 #[derive(Debug)]
@@ -463,6 +271,75 @@ impl Mold {
     Ok(mold)
   }
 
+  /// Clone a single remote reference and then recursively clone subremotes
+  fn clone(
+    &self,
+    folder_name: &str,
+    url: &str,
+    ref_: &str,
+    file: Option<PathBuf>,
+  ) -> Result<(), Error> {
+    let path = self.clone_dir.join(folder_name);
+    if !path.is_dir() {
+      remote::clone(&format!("https://{}", url), &path).or_else(|_| remote::clone(url, &path))?;
+      remote::checkout(&path, ref_)?;
+
+      // open it and recursively clone its remotes
+      Self::discover(&path, file.clone())?
+        .adopt(self)
+        .clone_all()?;
+    }
+
+    Ok(())
+  }
+
+  /// Clone a single remote
+  pub fn clone_remote(&self, include: &Remote) -> Result<(), Error> {
+    self.clone(
+      &include.folder_name(),
+      &include.url,
+      &include.ref_,
+      include.file.clone(),
+    )
+  }
+
+  /// Recursively all Includes and Modules
+  pub fn clone_all(&self) -> Result<(), Error> {
+    for recipe in self.data.recipes.values() {
+      if let Recipe::Module(module) = recipe {
+        self.clone_remote(&module.remote)?;
+      }
+    }
+
+    for include in &self.data.includes {
+      self.clone_remote(&include)?;
+    }
+
+    Ok(())
+  }
+
+  /// Update a single remote
+  ///
+  /// * find the expected path
+  /// * make sure it exists (ie, is cloned) and hasn't been visited
+  /// * track it as visited
+  /// * fetch / checkout
+  /// * recurse into it
+  fn update_remote(
+    &self,
+    remote: &Remote,
+    updated: &mut HashSet<PathBuf>,
+  ) -> Result<(), Error> {
+    let path = self.clone_dir.join(remote.folder_name());
+    if path.is_dir() && !updated.contains(&path) {
+      updated.insert(path.clone());
+      remote::checkout(&path, &remote.ref_)?;
+      self.open_remote(remote)?.update_all_track(updated)?;
+    }
+
+    Ok(())
+  }
+
   /// Recursively fetch/checkout for all modules that have already been cloned
   pub fn update_all(&self) -> Result<(), Error> {
     self.update_all_track(&mut HashSet::new())
@@ -484,75 +361,6 @@ impl Mold {
     // find all Includes that have already been cloned and update them
     for include in &self.data.includes {
       self.update_remote(&include, updated)?;
-    }
-
-    Ok(())
-  }
-
-  /// Update a single remote
-  ///
-  /// * find the expected path
-  /// * make sure it exists (ie, is cloned) and hasn't been visited
-  /// * track it as visited
-  /// * fetch / checkout
-  /// * recurse into it
-  pub fn update_remote(
-    &self,
-    remote: &Remote,
-    updated: &mut HashSet<PathBuf>,
-  ) -> Result<(), Error> {
-    let path = self.clone_dir.join(remote.folder_name());
-    if path.is_dir() && !updated.contains(&path) {
-      updated.insert(path.clone());
-      remote::checkout(&path, &remote.ref_)?;
-      self.open_remote(remote)?.update_all_track(updated)?;
-    }
-
-    Ok(())
-  }
-
-  /// Recursively all Includes and Modules
-  pub fn clone_all(&self) -> Result<(), Error> {
-    for recipe in self.data.recipes.values() {
-      if let Recipe::Module(module) = recipe {
-        self.clone_remote(&module.remote)?;
-      }
-    }
-
-    for include in &self.data.includes {
-      self.clone_remote(&include)?;
-    }
-
-    Ok(())
-  }
-
-  /// Clone a single remote
-  pub fn clone_remote(&self, include: &Remote) -> Result<(), Error> {
-    self.clone(
-      &include.folder_name(),
-      &include.url,
-      &include.ref_,
-      include.file.clone(),
-    )
-  }
-
-  /// Clone a single remote reference and then recursively clone subremotes
-  fn clone(
-    &self,
-    folder_name: &str,
-    url: &str,
-    ref_: &str,
-    file: Option<PathBuf>,
-  ) -> Result<(), Error> {
-    let path = self.clone_dir.join(folder_name);
-    if !path.is_dir() {
-      remote::clone(&format!("https://{}", url), &path).or_else(|_| remote::clone(url, &path))?;
-      remote::checkout(&path, ref_)?;
-
-      // open it and recursively clone + merge
-      Self::discover(&path, file.clone())?
-        .adopt(self)
-        .clone_all()?;
     }
 
     Ok(())
@@ -773,31 +581,20 @@ impl Mold {
     // merge all Includes into the current Mold. everything needs to be stuffed
     // into a vector because merging is a mutating action and `self` can't be
     // mutated while iterating through one of its fields.
-    let mut merges = vec![];
+    let mut others = vec![];
     for include in &self.data.includes {
       let path = self.clone_dir.join(include.folder_name());
-      let mut merge = Self::discover(&path, include.file.clone())?.adopt(self);
+      let mut other = Self::discover(&path, include.file.clone())?.adopt(self);
 
       // recursively merge
-      merge.process_includes()?;
-      merges.push(merge);
+      other.process_includes()?;
+      others.push(other);
     }
 
-    for merge in merges {
-      self.data.merge_absent(merge);
+    for other in others {
+      self.data.merge(other);
     }
 
-    Ok(())
-  }
-
-  /// Merge a single Include into `self`
-  pub fn process_include(&mut self, include: &Remote) -> Result<(), Error> {
-    let path = self.clone_dir.join(include.folder_name());
-    let mut merge = Self::discover(&path, include.file.clone())?.adopt(self);
-
-    // recursively merge
-    merge.process_includes()?;
-    self.data.merge_absent(merge);
     Ok(())
   }
 
@@ -812,7 +609,7 @@ impl Mold {
 
 impl Moldfile {
   /// Merges any runtimes or recipes from `other` that aren't in `self`
-  pub fn merge_absent(&mut self, other: Mold) {
+  pub fn merge(&mut self, other: Mold) {
     for (runtime_name, runtime) in other.data.runtimes {
       self.runtimes.entry(runtime_name).or_insert(runtime);
     }
