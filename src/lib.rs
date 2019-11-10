@@ -13,7 +13,6 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;
-use std::str::FromStr;
 use std::string::ToString;
 
 pub mod expr;
@@ -21,7 +20,7 @@ pub mod remote;
 pub mod util;
 
 // sorted by insertion order
-pub type IncludeVec = Vec<Include>;
+pub type IncludeVec = Vec<Remote>;
 pub type TaskSet = IndexSet<String>;
 pub type VarMap = IndexMap<String, String>; // TODO maybe down the line this should allow nulls to `unset` a variable
 pub type EnvMap = IndexMap<String, VarMap>;
@@ -122,7 +121,7 @@ pub struct Moldfile {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Include {
+pub struct Remote {
   /// Git URL of a remote repo
   pub url: String,
 
@@ -200,15 +199,9 @@ pub struct Module {
   #[serde(flatten)]
   pub base: RecipeBase,
 
-  /// Git URL of a remote repo
-  pub url: String,
-
-  /// Git ref to keep up with
-  #[serde(alias = "ref", default = "default_git_ref")]
-  pub ref_: String,
-
-  /// Moldfile to look at
-  pub file: Option<PathBuf>,
+  /// Remote data
+  #[serde(flatten)]
+  pub remote: Remote,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -459,15 +452,14 @@ impl Mold {
 
   fn open_module(&self, module_name: &str) -> Result<Mold, Error> {
     let target = self.find_module(module_name)?;
-    let path = self.clone_dir.join(&target.folder_name());
-    let mut mold = Self::discover(&path, target.file.clone())?.adopt(self);
-    mold.process_includes()?;
+    let mold = self.open_remote(&target.remote)?;
     Ok(mold)
   }
 
-  fn open_include(&self, target: &Include) -> Result<Mold, Error> {
+  fn open_remote(&self, target: &Remote) -> Result<Mold, Error> {
     let path = self.clone_dir.join(&target.folder_name());
-    let mold = Self::discover(&path, target.file.clone())?.adopt(self);
+    let mut mold = Self::discover(&path, target.file.clone())?.adopt(self);
+    mold.process_includes()?;
     Ok(mold)
   }
 
@@ -482,33 +474,38 @@ impl Mold {
     // `updated` contains all of the directories that have been, well, updated.
     // it *needs* to be passed to recursive calls.
 
-    // both loops iterate through their respective items:
-    // * find the expected path
-    // * make sure it exists (ie, is cloned) and hasn't been visited
-    // * track it as visited
-    // * fetch / checkout
-    // * recurse into it
-
     // find all modules that have already been cloned and update them
-    for (name, recipe) in &self.data.recipes {
+    for (_, recipe) in &self.data.recipes {
       if let Recipe::Module(module) = recipe {
-        let path = self.clone_dir.join(module.folder_name());
-        if path.is_dir() && !updated.contains(&path) {
-          updated.insert(path.clone());
-          remote::checkout(&path, &module.ref_)?;
-          self.open_module(name)?.update_all_track(updated)?;
-        }
+        self.update_remote(&module.remote, updated)?;
       }
     }
 
     // find all Includes that have already been cloned and update them
     for include in &self.data.includes {
-      let path = self.clone_dir.join(include.folder_name());
-      if path.is_dir() && !updated.contains(&path) {
-        updated.insert(path.clone());
-        remote::checkout(&path, &include.ref_)?;
-        self.open_include(&include)?.update_all_track(updated)?;
-      }
+      self.update_remote(&include, updated)?;
+    }
+
+    Ok(())
+  }
+
+  /// Update a single remote
+  ///
+  /// * find the expected path
+  /// * make sure it exists (ie, is cloned) and hasn't been visited
+  /// * track it as visited
+  /// * fetch / checkout
+  /// * recurse into it
+  pub fn update_remote(
+    &self,
+    remote: &Remote,
+    updated: &mut HashSet<PathBuf>,
+  ) -> Result<(), Error> {
+    let path = self.clone_dir.join(remote.folder_name());
+    if path.is_dir() && !updated.contains(&path) {
+      updated.insert(path.clone());
+      remote::checkout(&path, &remote.ref_)?;
+      self.open_remote(remote)?.update_all_track(updated)?;
     }
 
     Ok(())
@@ -518,29 +515,19 @@ impl Mold {
   pub fn clone_all(&self) -> Result<(), Error> {
     for recipe in self.data.recipes.values() {
       if let Recipe::Module(module) = recipe {
-        self.clone_module(&module)?;
+        self.clone_remote(&module.remote)?;
       }
     }
 
     for include in &self.data.includes {
-      self.clone_include(&include)?;
+      self.clone_remote(&include)?;
     }
 
     Ok(())
   }
 
-  /// Clone a single remote module
-  fn clone_module(&self, module: &Module) -> Result<(), Error> {
-    self.clone(
-      &module.folder_name(),
-      &module.url,
-      &module.ref_,
-      module.file.clone(),
-    )
-  }
-
-  /// Clone a single remote include
-  pub fn clone_include(&self, include: &Include) -> Result<(), Error> {
+  /// Clone a single remote
+  pub fn clone_remote(&self, include: &Remote) -> Result<(), Error> {
     self.clone(
       &include.folder_name(),
       &include.url,
@@ -804,7 +791,7 @@ impl Mold {
   }
 
   /// Merge a single Include into `self`
-  pub fn process_include(&mut self, include: &Include) -> Result<(), Error> {
+  pub fn process_include(&mut self, include: &Remote) -> Result<(), Error> {
     let path = self.clone_dir.join(include.folder_name());
     let mut merge = Self::discover(&path, include.file.clone())?.adopt(self);
 
@@ -837,60 +824,10 @@ impl Moldfile {
   }
 }
 
-impl Include {
+impl Remote {
   /// Return this module's folder name in the format hash(url@ref)
   fn folder_name(&self) -> String {
     util::hash_url_ref(&self.url, &self.ref_)
-  }
-
-  /// Parse a string into an Include
-  ///
-  /// The format is roughly: url[#[ref][/file]], eg:
-  ///   https://foo.com/mold.git -> ref = master, file = None
-  ///   https://foo.com/mold.git#dev -> ref = dev, file = None
-  ///   https://foo.com/mold.git#dev/dev.yaml, ref = dev, file = dev.yaml
-  ///   https://foo.com/mold.git#/dev.yaml -> ref = master, file = dev.yaml
-  fn parse(url: &str) -> Self {
-    match url.find('#') {
-      Some(idx) => {
-        let (url, frag) = url.split_at(idx);
-        let frag = frag.trim_start_matches('#');
-
-        let (ref_, file) = match frag.find('/') {
-          Some(idx) => {
-            let (ref_, file) = frag.split_at(idx);
-            let file = file.trim_start_matches('/');
-
-            let ref_ = match ref_ {
-              "" => default_git_ref(),
-              _ => ref_.into(),
-            };
-
-            (ref_, Some(file.into()))
-          }
-          None => (frag.into(), None),
-        };
-
-        Self {
-          url: url.into(),
-          ref_,
-          file,
-        }
-      }
-      None => Self {
-        url: url.into(),
-        ref_: default_git_ref(),
-        file: None,
-      },
-    }
-  }
-}
-
-impl FromStr for Include {
-  type Err = Error;
-
-  fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(Self::parse(s))
   }
 }
 
@@ -939,7 +876,7 @@ impl Recipe {
       Recipe::File(f) => f.deps.clone(),
       Recipe::Command(c) => c.deps.clone(),
       Recipe::Script(s) => s.deps.clone(),
-      Recipe::Module(m) => vec![],
+      Recipe::Module(_m) => vec![],
     }
   }
 
@@ -1015,13 +952,6 @@ impl Recipe {
       Recipe::Script(s) => &s.base.search_dir,
       Recipe::Module(g) => &g.base.search_dir,
     }
-  }
-}
-
-impl Module {
-  /// Return this module's folder name in the format hash(url@ref)
-  fn folder_name(&self) -> String {
-    util::hash_url_ref(&self.url, &self.ref_)
   }
 }
 

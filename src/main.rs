@@ -1,8 +1,6 @@
 use exitfailure::ExitFailure;
 use failure::Error;
-use mold::Include;
 use mold::Mold;
-use mold::TaskSet;
 use std::path::Path;
 use std::path::PathBuf;
 use structopt::StructOpt;
