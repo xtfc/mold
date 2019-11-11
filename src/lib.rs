@@ -9,6 +9,7 @@ use file::EnvMap;
 use file::Module;
 use file::Moldfile;
 use file::Recipe;
+use file::RecipeBase;
 use file::Remote;
 use file::Runtime;
 use file::TargetSet;
@@ -260,8 +261,11 @@ impl Mold {
           module_name.red()
         )),
       }?;
+
       let file = self.open_remote(&module.remote)?;
-      return Ok(file.find_recipe(recipe_name)?.clone());
+      let mut recipe = file.find_recipe(recipe_name)?.clone();
+      recipe.add_origin(module.clone());
+      return Ok(recipe);
     }
 
     Ok(self.root_recipe(target_name)?.clone())
@@ -287,7 +291,19 @@ impl Mold {
     let mut new_targets = TargetSet::new();
 
     for target_name in targets {
-      new_targets.extend(self.find_dependencies(target_name)?);
+      // we need to ensure that any dependencies are local to the target's module
+      if target_name.contains('/') {
+        let split: Vec<_> = target_name.rsplitn(2, '/').collect();
+        new_targets.extend(
+          self
+            .find_dependencies(target_name)?
+            .iter()
+            .map(|x| format!("{}/{}", split[1], x)),
+        );
+      } else {
+        new_targets.extend(self.find_dependencies(target_name)?);
+      };
+
       new_targets.insert(target_name.clone());
     }
 
@@ -380,7 +396,7 @@ impl Mold {
     // it *needs* to be passed to recursive calls.
 
     // find all modules that have already been cloned and update them
-    for (_, recipe) in &self.data.recipes {
+    for recipe in self.data.recipes.values() {
       if let Recipe::Module(module) = recipe {
         self.update_remote(&module.remote, updated)?;
       }
@@ -500,6 +516,16 @@ impl Remote {
   }
 }
 
+impl ToString for Remote {
+  fn to_string(&self) -> String {
+    if let Some(file) = &self.file {
+      format!("{} @ {} /{}", self.url, self.ref_, file.display())
+    } else {
+      format!("{} @ {}", self.url, self.ref_)
+    }
+  }
+}
+
 impl Runtime {
   /// Create a Task ready to execute a script
   fn task(&self, script: &str, vars: &VarMap, work_dir: &PathBuf) -> Task {
@@ -539,6 +565,34 @@ impl Runtime {
 }
 
 impl Recipe {
+  /// Print an explanation of what this recipe does
+  ///
+  /// Recipes don't know their own name, though...
+  pub fn explain(&self, name: &str) {
+    let kind = match self {
+      Self::File(_) => "file",
+      Self::Command(_) => "command",
+      Self::Script(_) => "script",
+      Self::Module(_) => "module",
+    };
+    println!("{} ({})", name.cyan(), kind.white());
+    for module in &self.base().mod_list {
+      println!("  ⮤ {}", module.remote.to_string().white());
+    }
+
+    println!();
+    println!("  {}", self.help());
+    println!();
+
+    if !self.deps().is_empty() {
+      println!("  Depends on: {}", self.deps().join(" ").cyan());
+    }
+
+    if let Some(dir) = self.work_dir() {
+      println!("  Working dir: {}", dir.display().to_string().cyan());
+    }
+  }
+
   /// Return this recipe's dependencies
   fn deps(&self) -> Vec<String> {
     match self {
@@ -556,6 +610,16 @@ impl Recipe {
       Recipe::File(f) => &f.base.help,
       Recipe::Module(m) => &m.base.help,
       Recipe::Script(s) => &s.base.help,
+    }
+  }
+
+  /// Return this recipe's variables
+  fn base(&self) -> &RecipeBase {
+    match self {
+      Recipe::File(f) => &f.base,
+      Recipe::Command(c) => &c.base,
+      Recipe::Script(s) => &s.base,
+      Recipe::Module(g) => &g.base,
     }
   }
 
@@ -620,6 +684,16 @@ impl Recipe {
       Recipe::Command(c) => &c.base.search_dir,
       Recipe::Script(s) => &s.base.search_dir,
       Recipe::Module(g) => &g.base.search_dir,
+    }
+  }
+
+  /// Add a module to our origin list
+  fn add_origin(&mut self, module: Module) {
+    match self {
+      Recipe::File(f) => f.base.mod_list.push(module),
+      Recipe::Command(c) => c.base.mod_list.push(module),
+      Recipe::Script(s) => s.base.mod_list.push(module),
+      Recipe::Module(m) => m.base.mod_list.push(module),
     }
   }
 }

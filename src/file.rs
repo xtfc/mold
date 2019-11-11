@@ -124,6 +124,13 @@ pub struct RecipeBase {
   /// top-level, but the search_dir is located in a different location
   #[serde(skip)]
   pub search_dir: Option<PathBuf>,
+
+  /// The module path that led to this recipe existing
+  ///
+  /// This is used for explanations as well as creating the environment
+  /// variables.
+  #[serde(skip)]
+  pub mod_list: Vec<Module>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

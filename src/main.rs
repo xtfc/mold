@@ -33,6 +33,10 @@ pub struct Args {
   #[structopt(long = "clone")]
   pub clone: bool,
 
+  /// Download all remote data
+  #[structopt(long = "explain", short = "x")]
+  pub explain: bool,
+
   /// Which recipe(s) to run
   pub targets: Vec<String>,
 }
@@ -64,6 +68,15 @@ fn run(args: Args) -> Result<(), Error> {
     return mold.help();
   }
 
+  if args.explain {
+    for target_name in &args.targets {
+      let recipe = mold.find_recipe(target_name)?;
+      recipe.explain(target_name);
+    }
+
+    return Ok(());
+  }
+
   let requested_targets = args
     .targets
     .iter()
@@ -73,6 +86,7 @@ fn run(args: Args) -> Result<(), Error> {
 
   for target_name in &targets {
     let recipe = mold.find_recipe(target_name)?;
+    println!("{}", target_name);
     dbg!(recipe);
   }
 
