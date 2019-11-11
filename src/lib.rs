@@ -246,7 +246,7 @@ impl Mold {
   }
 
   /// Recursively find a Recipe by name
-  fn find_recipe(&self, target_name: &str) -> Result<Recipe, Error> {
+  pub fn find_recipe(&self, target_name: &str) -> Result<Recipe, Error> {
     if target_name.contains('/') {
       let splits: Vec<_> = target_name.splitn(2, '/').collect();
       let module_name = splits[0];

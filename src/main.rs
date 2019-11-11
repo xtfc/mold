@@ -64,13 +64,17 @@ fn run(args: Args) -> Result<(), Error> {
     return mold.help();
   }
 
-  let targets = args
+  let requested_targets = args
     .targets
     .iter()
     .map(std::string::ToString::to_string)
     .collect();
-  let deps = mold.find_all_dependencies(&targets)?;
-  dbg!(deps);
+  let targets = mold.find_all_dependencies(&requested_targets)?;
+
+  for target_name in &targets {
+    let recipe = mold.find_recipe(target_name)?;
+    dbg!(recipe);
+  }
 
   Ok(())
 }
