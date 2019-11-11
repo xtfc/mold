@@ -486,8 +486,79 @@ impl Mold {
             .iter()
             .map(|x| format!("{}{}", prefix, x))
             .collect::<Vec<_>>()
-            .join(" ").cyan()
+            .join(" ")
+            .cyan()
         );
+      }
+    }
+
+    Ok(())
+  }
+
+  /// Print an explanation of what a recipe does
+  pub fn explain(&self, target_name: &str) -> Result<(), Error> {
+    let recipe = self.find_recipe(target_name)?;
+    let kind = match recipe {
+      Recipe::File(_) => "file",
+      Recipe::Command(_) => "command",
+      Recipe::Script(_) => "script",
+      Recipe::Module(_) => "module",
+    };
+
+    println!("{} is a {}", target_name.cyan(), kind.white());
+    for module in &recipe.base().mod_list {
+      println!("  ⮤ {}", module.remote.to_string().white());
+    }
+
+    if !recipe.help().is_empty() {
+      println!("  {}", recipe.help());
+    }
+
+    if !recipe.deps().is_empty() {
+      println!("  Depends on: {}", recipe.deps().join(" ").cyan());
+    }
+
+    if let Some(dir) = recipe.work_dir() {
+      println!("  Working dir: {}", dir.display().to_string().cyan());
+    }
+
+    let search_dir = recipe
+      .search_dir()
+      .clone()
+      .unwrap_or_else(|| self.dir.clone());
+
+    match recipe {
+      Recipe::File(target) => {
+        let runtime = self.find_runtime(&target.runtime)?;
+
+        let script = match &target.file {
+          Some(x) => search_dir.join(x),
+          None => runtime.find(&search_dir, &target_name)?,
+        };
+
+        let command = runtime.command(script.to_str().unwrap());
+        println!("{} {}", "$".green(), command.join(" "));
+
+        // FIXME print file
+      }
+      Recipe::Script(target) => {
+        let runtime = self.find_runtime(&target.runtime)?;
+
+        let mut script = self.script_dir.join(util::hash_string(&target.script));
+        if let Some(x) = runtime.extensions.get(0) {
+          script.set_extension(&x);
+        }
+
+        let command = runtime.command(script.to_str().unwrap());
+        println!("{} {}", "$".green(), command.join(" "));
+
+        // FIXME print file
+      }
+      Recipe::Module(target) => {
+        println!("  Source: {}", target.remote.to_string());
+      }
+      Recipe::Command(target) => {
+        println!("{} {}", "$".green(), target.command.join(" "));
       }
     }
 
@@ -527,13 +598,17 @@ impl ToString for Remote {
 }
 
 impl Runtime {
-  /// Create a Task ready to execute a script
-  fn task(&self, script: &str, vars: &VarMap, work_dir: &PathBuf) -> Task {
-    let args: Vec<_> = self
+  fn command(&self, file: &str) -> Vec<String> {
+    self
       .command
       .iter()
-      .map(|x| if x == "?" { script.into() } else { x.clone() })
-      .collect();
+      .map(|x| if x == "?" { file.into() } else { x.clone() })
+      .collect()
+  }
+
+  /// Create a Task ready to execute a script
+  fn task(&self, file: &str, vars: &VarMap, work_dir: &PathBuf) -> Task {
+    let args = self.command(file);
 
     Task {
       args,
@@ -565,32 +640,6 @@ impl Runtime {
 }
 
 impl Recipe {
-  /// Print an explanation of what this recipe does
-  ///
-  /// Recipes don't know their own name, though...
-  pub fn explain(&self, name: &str) {
-    let kind = match self {
-      Self::File(_) => "file",
-      Self::Command(_) => "command",
-      Self::Script(_) => "script",
-      Self::Module(_) => "module",
-    };
-    println!("{} ({})", name.cyan(), kind.white());
-    for module in &self.base().mod_list {
-      println!("  ⮤ {}", module.remote.to_string().white());
-    }
-
-    println!("  {}", self.help());
-
-    if !self.deps().is_empty() {
-      println!("  Depends on: {}", self.deps().join(" ").cyan());
-    }
-
-    if let Some(dir) = self.work_dir() {
-      println!("  Working dir: {}", dir.display().to_string().cyan());
-    }
-  }
-
   /// Return this recipe's dependencies
   fn deps(&self) -> Vec<String> {
     match self {

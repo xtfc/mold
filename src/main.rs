@@ -68,10 +68,10 @@ fn run(args: Args) -> Result<(), Error> {
     return mold.help();
   }
 
+  // explain all of the given targets rather than executing them
   if args.explain {
     for target_name in &args.targets {
-      let recipe = mold.find_recipe(target_name)?;
-      recipe.explain(target_name);
+      mold.explain(target_name)?;
     }
 
     return Ok(());
