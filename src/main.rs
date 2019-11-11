@@ -64,7 +64,13 @@ fn run(args: Args) -> Result<(), Error> {
     return mold.help();
   }
 
-  dbg!(&mold);
+  let targets = args
+    .targets
+    .iter()
+    .map(std::string::ToString::to_string)
+    .collect();
+  let deps = mold.find_all_dependencies(&targets)?;
+  dbg!(deps);
 
   Ok(())
 }

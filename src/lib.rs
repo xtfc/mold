@@ -282,6 +282,23 @@ impl Mold {
     mold.process_includes()?;
     Ok(mold)
   }
+
+  pub fn find_all_dependencies(&self, targets: &TargetSet) -> Result<TargetSet, Error> {
+    let mut new_targets = TargetSet::new();
+
+    for target_name in targets {
+      new_targets.extend(self.find_dependencies(target_name)?);
+      new_targets.insert(target_name.clone());
+    }
+
+    Ok(new_targets)
+  }
+
+  fn find_dependencies(&self, target_name: &str) -> Result<TargetSet, Error> {
+    let recipe = self.find_recipe(target_name)?;
+    let deps = recipe.deps().iter().map(ToString::to_string).collect();
+    self.find_all_dependencies(&deps)
+  }
 }
 
 // dealing with remotes
