@@ -69,7 +69,7 @@ pub struct Remote {
   pub url: String,
 
   /// Git ref to keep up with
-  #[serde(alias = "ref", default = "default_git_ref")]
+  #[serde(rename = "ref", default = "default_git_ref")]
   pub ref_: String,
 
   /// Moldfile to look at
