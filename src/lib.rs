@@ -463,10 +463,10 @@ impl Mold {
   fn help_prefixed(&self, prefix: &str) -> Result<(), Error> {
     for (name, recipe) in &self.data.recipes {
       let colored_name = match recipe {
-        Recipe::Command(_) => name.yellow(),
+        Recipe::Command(_) => name.cyan(),
         Recipe::File(_) => name.cyan(),
-        Recipe::Module(_) => format!("{}/", name).magenta(),
-        Recipe::Script(_) => name.yellow(),
+        Recipe::Module(_) => format!("{}/", name).cyan(),
+        Recipe::Script(_) => name.cyan(),
       };
 
       // this is supposed to be 12 character padded, but after all the
@@ -486,7 +486,7 @@ impl Mold {
             .iter()
             .map(|x| format!("{}{}", prefix, x))
             .collect::<Vec<_>>()
-            .join(", ")
+            .join(" ").cyan()
         );
       }
     }
@@ -580,9 +580,7 @@ impl Recipe {
       println!("  ⮤ {}", module.remote.to_string().white());
     }
 
-    println!();
     println!("  {}", self.help());
-    println!();
 
     if !self.deps().is_empty() {
       println!("  Depends on: {}", self.deps().join(" ").cyan());
