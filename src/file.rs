@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 // sorted by insertion order
 pub type IncludeVec = Vec<Remote>;
-pub type TaskSet = IndexSet<String>;
+pub type TargetSet = IndexSet<String>;
 pub type VarMap = IndexMap<String, String>; // TODO maybe down the line this should allow nulls to `unset` a variable
 pub type EnvMap = IndexMap<String, VarMap>;
 
@@ -63,7 +63,7 @@ pub struct Moldfile {
   pub environments: EnvMap,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Remote {
   /// Git URL of a remote repo
   pub url: String,

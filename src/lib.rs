@@ -11,7 +11,7 @@ use file::Moldfile;
 use file::Recipe;
 use file::Remote;
 use file::Runtime;
-use file::TaskSet;
+use file::TargetSet;
 use file::VarMap;
 use file::DEFAULT_FILES;
 use semver::Version;
@@ -76,6 +76,7 @@ pub struct Task {
   work_dir: PathBuf,
 }
 
+// dealing with opening moldfiles
 impl Mold {
   /// Open a moldfile and load it
   pub fn open(path: &Path) -> Result<Mold, Error> {
@@ -186,7 +187,10 @@ impl Mold {
       None => Self::discover_dir(dir),
     }
   }
+}
 
+// dealing with environments
+impl Mold {
   /// Return this moldfile's variables with activated environments
   ///
   /// This also inserts a few special mold variables
@@ -228,7 +232,10 @@ impl Mold {
   pub fn add_env(&mut self, env: &str) {
     self.envs.push(env.into());
   }
+}
 
+// dealing with recipes
+impl Mold {
   /// Find a recipe in the top level map
   fn root_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
     self
@@ -275,7 +282,10 @@ impl Mold {
     mold.process_includes()?;
     Ok(mold)
   }
+}
 
+// dealing with remotes
+impl Mold {
   /// Clone a single remote reference and then recursively clone subremotes
   fn clone(
     &self,
@@ -378,165 +388,39 @@ impl Mold {
     Ok(())
   }
 
-  /// Find all dependencies for a given *set* of tasks
-  pub fn find_all_dependencies(&self, targets: &TaskSet) -> Result<TaskSet, Error> {
-    let mut new_targets = TaskSet::new();
+  /// Merge every Include'd Mold into `self`
+  pub fn process_includes(&mut self) -> Result<(), Error> {
+    // merge all Includes into the current Mold. everything needs to be stuffed
+    // into a vector because merging is a mutating action and `self` can't be
+    // mutated while iterating through one of its fields.
+    let mut others = vec![];
+    for include in &self.data.includes {
+      let path = self.clone_dir.join(include.folder_name());
+      let mut other = Self::discover(&path, include.file.clone())?.adopt(self);
 
-    for target_name in targets {
-      new_targets.extend(self.find_task_dependencies(target_name)?);
-      new_targets.insert(target_name.clone());
+      // recursively merge
+      other.process_includes()?;
+      others.push(other);
     }
 
-    Ok(new_targets)
-  }
-
-  /// Find all dependencies for a *single* task
-  fn find_task_dependencies(&self, target: &str) -> Result<TaskSet, Error> {
-    // check if this is a nested subrecipe that we'll have to recurse into
-    if target.contains('/') {
-      let splits: Vec<_> = target.splitn(2, '/').collect();
-      let module_name = splits[0];
-      let recipe_name = splits[1];
-
-      let module = self.open_module(module_name)?;
-      let deps = module.find_task_dependencies(recipe_name)?;
-      let full_deps = module.find_all_dependencies(&deps)?;
-      return Ok(
-        full_deps
-          .iter()
-          .map(|x| format!("{}/{}", module_name, x))
-          .collect(),
-      );
+    for other in others {
+      self.data.merge(other);
     }
 
-    // ...not a subrecipe
-    let recipe = self.find_recipe(target)?;
-    let deps = recipe.deps().iter().map(ToString::to_string).collect();
-    self.find_all_dependencies(&deps)
+    Ok(())
   }
 
-  /// Find a Task object for a given recipe name
-  ///
-  /// This entails recursing through various modules to find the the appropriate
-  /// Task.
-  pub fn find_task(&self, target_name: &str, prev_vars: &VarMap) -> Result<Option<Task>, Error> {
-    // check if we're executing a nested subrecipe that we'll have to recurse into
-    if target_name.contains('/') {
-      let splits: Vec<_> = target_name.splitn(2, '/').collect();
-      let module_name = splits[0];
-      let recipe_name = splits[1];
-      let recipe = self.find_recipe(module_name)?;
-      let module = self.open_module(module_name)?;
-
-      // merge this moldfile's variables with its parent, ie the caller.
-      // the parent has priority and overrides this moldfile because it's called recursively:
-      //   $ mold foo/bar/baz
-      // will call bar/baz with foo as the parent, which will call baz with bar as
-      // the parent. we want foo's moldfile to override bar's moldfile to override
-      // baz's moldfile, because baz should be the least specialized.
-      let mut vars = module.env_vars().clone();
-      vars.extend(prev_vars.iter().map(|(k, v)| (k.clone(), v.clone())));
-
-      let mut task = module.find_task(recipe_name, &vars)?;
-      if let Some(task) = &mut task {
-        // not sure if this is the right ordering to update variables in, but
-        // it's done here so that parent module's configuration can override one
-        // of the subrecipes in the module
-        if let Some(vars) = &mut task.vars {
-          vars.extend(
-            recipe
-              .env_vars(&self.envs)
-              .iter()
-              .map(|(k, v)| (k.clone(), v.clone())),
-          );
-        }
-      }
-
-      return Ok(task);
-    }
-
-    // ...not executing subrecipe, so look up the top-level recipe
-    let recipe = self.find_recipe(target_name)?;
-
-    // extend the variables with the recipe's variables
-    let mut vars = prev_vars.clone();
-    vars.extend(
-      recipe
-        .env_vars(&self.envs)
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone())),
-    );
-
-    // use the target's search_dir, but fall back to our own
-    // (feels like I shouldn't have to clone these, though...)
-    let search_dir = recipe
-      .search_dir()
-      .clone()
-      .unwrap_or_else(|| self.dir.clone());
-
-    // join the target's work_dir to our root_dir, or just pick our root_dir
-    let work_dir = match recipe.work_dir() {
-      None => self.root_dir.clone(),
-      Some(val) => self.root_dir.join(val),
-    };
-
-    vars.insert(
-      "MOLD_MODULE_ROOT".into(),
-      self.root_dir.to_str().unwrap().into(),
-    );
-    vars.insert(
-      "MOLD_SEARCH_DIR".into(),
-      search_dir.to_str().unwrap().into(),
-    );
-
-    vars.insert("MOLD_WORK_DIR".into(), work_dir.to_str().unwrap().into());
-
-    let task = match recipe {
-      Recipe::Command(target) => Some(Task::from_args(&target.command, Some(&vars), &work_dir)),
-
-      Recipe::File(target) => {
-        // what the interpreter is for this recipe
-        let runtime = self.find_runtime(&target.runtime)?;
-
-        // find the script file to execute
-        let script = match &target.file {
-          Some(x) => search_dir.join(x),
-
-          // we need to look it up based on our interpreter's known extensions
-          None => runtime.find(&search_dir, &target_name)?,
-        };
-
-        Some(runtime.task(&script.to_str().unwrap(), &vars, &work_dir))
-      }
-
-      Recipe::Script(target) => {
-        // what the interpreter is for this recipe
-        let runtime = self.find_runtime(&target.runtime)?;
-
-        // locate a file to write the script to
-        let mut temp_file = self.script_dir.join(util::hash_string(&target.script));
-        if let Some(x) = runtime.extensions.get(0) {
-          temp_file.set_extension(&x);
-        }
-
-        fs::write(&temp_file, &target.script)?;
-
-        Some(runtime.task(&temp_file.to_str().unwrap(), &vars, &work_dir))
-      }
-
-      Recipe::Module(_) => {
-        // this is kinda hacky, but... whatever. it should probably
-        // somehow map into a Task instead, but this is good enough.
-        let module_name = format!("{}/", target_name);
-        let module = self.open_module(target_name)?;
-        module.help_prefixed(&module_name)?;
-        None
-      }
-    };
-
-    Ok(task)
+  /// Adopt any attributes from the parent that should be shared
+  fn adopt(mut self, parent: &Self) -> Self {
+    self.clone_dir = parent.clone_dir.clone();
+    self.script_dir = parent.script_dir.clone();
+    self.envs = parent.envs.clone();
+    self
   }
+}
 
+// help functions
+impl Mold {
   /// Print a description of all recipes in this moldfile
   pub fn help(&self) -> Result<(), Error> {
     self.help_prefixed("")
@@ -575,36 +459,6 @@ impl Mold {
     }
 
     Ok(())
-  }
-
-  /// Merge every Include'd Mold into `self`
-  pub fn process_includes(&mut self) -> Result<(), Error> {
-    // merge all Includes into the current Mold. everything needs to be stuffed
-    // into a vector because merging is a mutating action and `self` can't be
-    // mutated while iterating through one of its fields.
-    let mut others = vec![];
-    for include in &self.data.includes {
-      let path = self.clone_dir.join(include.folder_name());
-      let mut other = Self::discover(&path, include.file.clone())?.adopt(self);
-
-      // recursively merge
-      other.process_includes()?;
-      others.push(other);
-    }
-
-    for other in others {
-      self.data.merge(other);
-    }
-
-    Ok(())
-  }
-
-  /// Adopt any attributes from the parent that should be shared
-  fn adopt(mut self, parent: &Self) -> Self {
-    self.clone_dir = parent.clone_dir.clone();
-    self.script_dir = parent.script_dir.clone();
-    self.envs = parent.envs.clone();
-    self
   }
 }
 
