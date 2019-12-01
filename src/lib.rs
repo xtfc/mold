@@ -5,7 +5,6 @@ pub mod util;
 
 use colored::*;
 use failure::Error;
-use file::EnvMap;
 use file::Module;
 use file::Moldfile;
 use file::Recipe;
@@ -68,13 +67,6 @@ pub struct Mold {
 
   /// the parsed moldfile data
   data: file::Moldfile,
-}
-
-#[derive(Debug)]
-pub struct Task {
-  args: Vec<String>,
-  vars: Option<VarMap>,
-  work_dir: PathBuf,
 }
 
 // dealing with opening moldfiles
@@ -316,6 +308,70 @@ impl Mold {
     let recipe = self.find_recipe(target_name)?;
     let deps = recipe.deps().iter().map(ToString::to_string).collect();
     self.find_all_dependencies(&deps)
+  }
+
+  /// Execute a recipe
+  pub fn execute(&self, target_name: &str) -> Result<(), Error> {
+    let recipe = self.find_recipe(target_name)?;
+    let vars = self.env_vars();
+    let search_dir = recipe
+      .search_dir()
+      .clone()
+      .unwrap_or_else(|| self.dir.clone());
+
+    let command = match &recipe {
+      Recipe::File(target) => {
+        let runtime = self.find_runtime(&target.runtime)?;
+
+        let script = match &target.file {
+          Some(x) => search_dir.join(x),
+          None => runtime.find(&search_dir, &target_name)?,
+        };
+
+        let args = runtime.command(script.to_str().unwrap());
+        let mut command = process::Command::new(&args[0]);
+        command.args(&args[1..]);
+        Some(command)
+      }
+
+      Recipe::Script(target) => {
+        let runtime = self.find_runtime(&target.runtime)?;
+
+        let mut script = self.script_dir.join(util::hash_string(&target.script));
+        if let Some(x) = runtime.extensions.get(0) {
+          script.set_extension(&x);
+        }
+
+        let args = runtime.command(script.to_str().unwrap());
+        let mut command = process::Command::new(&args[0]);
+        command.args(&args[1..]);
+        Some(command)
+      }
+
+      Recipe::Module(_) => None,
+
+      Recipe::Command(target) => {
+        let mut command = process::Command::new(&target.command[0]);
+        command.args(&target.command[1..]);
+        Some(command)
+      }
+    };
+
+    if let Some(mut command) = command {
+      command.envs(vars);
+
+      if let Some(dir) = recipe.work_dir() {
+        command.current_dir(dir);
+      }
+
+      let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
+
+      if !exit_status.success() {
+        return Err(failure::err_msg("recipe returned non-zero exit status"));
+      }
+    }
+
+    Ok(())
   }
 }
 
@@ -683,17 +739,6 @@ impl Runtime {
       .collect()
   }
 
-  /// Create a Task ready to execute a script
-  fn task(&self, file: &str, vars: &VarMap, work_dir: &PathBuf) -> Task {
-    let args = self.command(file);
-
-    Task {
-      args,
-      work_dir: work_dir.clone(),
-      vars: Some(vars.clone()),
-    }
-  }
-
   /// Attempt to discover an appropriate script in a recipe directory
   fn find(&self, dir: &Path, name: &str) -> Result<PathBuf, Error> {
     // set up the pathbuf to look for dir/name
@@ -794,62 +839,6 @@ impl Recipe {
       Recipe::Command(c) => c.base.mod_list.push(module),
       Recipe::Script(s) => s.base.mod_list.push(module),
       Recipe::Module(m) => m.base.mod_list.push(module),
-    }
-  }
-}
-
-impl Task {
-  /// Execute the task
-  pub fn exec(&self) -> Result<(), Error> {
-    if self.args.is_empty() {
-      return Ok(());
-    }
-
-    let mut command = process::Command::new(&self.args[0]);
-    command.args(&self.args[1..]);
-    command.current_dir(&self.work_dir);
-
-    if let Some(vars) = &self.vars {
-      command.envs(vars);
-    }
-
-    let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
-
-    if !exit_status.success() {
-      return Err(failure::err_msg("recipe exited with non-zero code"));
-    }
-
-    Ok(())
-  }
-
-  /// Print the command to be executed
-  pub fn print_cmd(&self) {
-    if self.args.is_empty() {
-      return;
-    }
-
-    println!("{} {}", "$".green(), self.args.join(" "));
-  }
-
-  /// Print the environment that will be used
-  pub fn print_vars(&self) {
-    if self.args.is_empty() {
-      return;
-    }
-
-    if let Some(vars) = &self.vars {
-      for (name, value) in vars {
-        println!("  {} = \"{}\"", format!("${}", name).bright_cyan(), value);
-      }
-    }
-  }
-
-  /// Create a Task from a Vec of strings
-  fn from_args(args: &[String], vars: Option<&VarMap>, work_dir: &PathBuf) -> Task {
-    Task {
-      args: args.into(),
-      vars: vars.map(std::clone::Clone::clone),
-      work_dir: work_dir.clone(),
     }
   }
 }

@@ -113,7 +113,6 @@ pub struct RecipeBase {
   // ADDED: 0.3.0
   // REMOVED: 0.5.0
   // pub environments: EnvMap,
-
   /// The working directory relative to the calling Moldfile's root_dir
   ///
   /// ADDED: 0.4.0

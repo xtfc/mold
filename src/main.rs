@@ -87,9 +87,7 @@ fn run(args: Args) -> Result<(), Error> {
   let targets = mold.find_all_dependencies(&requested_targets)?;
 
   for target_name in &targets {
-    let recipe = mold.find_recipe(target_name)?;
-    println!("{}", target_name);
-    dbg!(recipe);
+    mold.execute(target_name)?;
   }
 
   Ok(())
