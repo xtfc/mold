@@ -1,3 +1,4 @@
+use colored::*;
 use exitfailure::ExitFailure;
 use failure::Error;
 use mold::Mold;
@@ -87,6 +88,20 @@ fn run(args: Args) -> Result<(), Error> {
   let targets = mold.find_all_dependencies(&requested_targets)?;
 
   for target_name in &targets {
+    if let Some(args) = mold.recipe_args(target_name)? {
+      println!(
+        "{} {} {} {}",
+        "mold".white(),
+        target_name.cyan(),
+        "$".green(),
+        args.join(" ")
+      );
+    } else {
+      return Err(failure::format_err!(
+        "Cannot execute module {}",
+        target_name.red(),
+      ));
+    }
     mold.execute(target_name)?;
   }
 

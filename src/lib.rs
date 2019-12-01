@@ -312,54 +312,12 @@ impl Mold {
 
   /// Execute a recipe
   pub fn execute(&self, target_name: &str) -> Result<(), Error> {
-    let recipe = self.find_recipe(target_name)?;
     let vars = self.env_vars();
-    let search_dir = recipe
-      .search_dir()
-      .clone()
-      .unwrap_or_else(|| self.dir.clone());
+    let recipe = self.find_recipe(target_name)?;
 
-    let command = match &recipe {
-      Recipe::File(target) => {
-        let runtime = self.find_runtime(&target.runtime)?;
-
-        let script = match &target.file {
-          Some(x) => search_dir.join(x),
-          None => runtime.find(&search_dir, &target_name)?,
-        };
-
-        let args = runtime.command(script.to_str().unwrap());
-        let mut command = process::Command::new(&args[0]);
-        command.args(&args[1..]);
-        Some(command)
-      }
-
-      Recipe::Script(target) => {
-        let runtime = self.find_runtime(&target.runtime)?;
-
-        let mut script = self.script_dir.join(util::hash_string(&target.script));
-        if let Some(x) = runtime.extensions.get(0) {
-          script.set_extension(&x);
-        }
-
-        fs::write(&script, &target.script)?;
-
-        let args = runtime.command(script.to_str().unwrap());
-        let mut command = process::Command::new(&args[0]);
-        command.args(&args[1..]);
-        Some(command)
-      }
-
-      Recipe::Module(_) => None,
-
-      Recipe::Command(target) => {
-        let mut command = process::Command::new(&target.command[0]);
-        command.args(&target.command[1..]);
-        Some(command)
-      }
-    };
-
-    if let Some(mut command) = command {
+    if let Some(args) = self.recipe_args(target_name)? {
+      let mut command = process::Command::new(&args[0]);
+      command.args(&args[1..]);
       command.envs(vars);
 
       if let Some(dir) = recipe.work_dir() {
@@ -374,6 +332,45 @@ impl Mold {
     }
 
     Ok(())
+  }
+
+  /// Return a list of arguments to pass to Command
+  pub fn recipe_args(&self, target_name: &str) -> Result<Option<Vec<String>>, Error> {
+    let recipe = self.find_recipe(target_name)?;
+    let search_dir = recipe
+      .search_dir()
+      .clone()
+      .unwrap_or_else(|| self.dir.clone());
+
+    match recipe {
+      Recipe::File(target) => {
+        let runtime = self.find_runtime(&target.runtime)?;
+
+        let script = match &target.file {
+          Some(x) => search_dir.join(x),
+          None => runtime.find(&search_dir, &target_name)?,
+        };
+
+        Ok(Some(runtime.command(script.to_str().unwrap())))
+      }
+
+      Recipe::Script(target) => {
+        let runtime = self.find_runtime(&target.runtime)?;
+
+        let mut script = self.script_dir.join(util::hash_string(&target.script));
+        if let Some(x) = runtime.extensions.get(0) {
+          script.set_extension(&x);
+        }
+
+        fs::write(&script, &target.script)?;
+
+        Ok(Some(runtime.command(script.to_str().unwrap())))
+      }
+
+      Recipe::Module(_) => Ok(None),
+
+      Recipe::Command(target) => Ok(Some(target.command)),
+    }
   }
 }
 
@@ -635,51 +632,14 @@ impl Mold {
       );
     }
 
-    let search_dir = recipe
-      .search_dir()
-      .clone()
-      .unwrap_or_else(|| self.dir.clone());
-
     match recipe {
       Recipe::File(target) => {
-        let runtime = self.find_runtime(&target.runtime)?;
-
-        let script = match &target.file {
-          Some(x) => search_dir.join(x),
-          None => runtime.find(&search_dir, &target_name)?,
-        };
-
-        let command = runtime.command(script.to_str().unwrap());
         println!("{:12} {}", "runtime:".white(), target.runtime);
-        println!(
-          "{:12} {} {}",
-          "executes:".white(),
-          "$".green(),
-          command.join(" ")
-        );
-
         // FIXME print file
       }
 
       Recipe::Script(target) => {
-        let runtime = self.find_runtime(&target.runtime)?;
-
-        let mut script = self.script_dir.join(util::hash_string(&target.script));
-        if let Some(x) = runtime.extensions.get(0) {
-          script.set_extension(&x);
-        }
-
-        fs::write(&script, &target.script)?;
-
-        let command = runtime.command(script.to_str().unwrap());
         println!("{:12} {}", "runtime:".white(), target.runtime);
-        println!(
-          "{:12} {} {}",
-          "executes:".white(),
-          "$".green(),
-          command.join(" ")
-        );
-
         // FIXME print file
       }
 
@@ -687,14 +647,16 @@ impl Mold {
         println!("{:12} {}", "source:".white(), target.remote.to_string());
       }
 
-      Recipe::Command(target) => {
-        println!(
-          "{:12} {} {}",
-          "executes:".white(),
-          "$".green(),
-          target.command.join(" ")
-        );
-      }
+      Recipe::Command(_) => {}
+    }
+
+    if let Some(args) = self.recipe_args(target_name)? {
+      println!(
+        "{:12} {} {}",
+        "executes:".white(),
+        "$".green(),
+        args.join(" ")
+      );
     }
 
     println!();
