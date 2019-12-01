@@ -499,27 +499,27 @@ impl Mold {
   pub fn explain(&self, target_name: &str) -> Result<(), Error> {
     let recipe = self.find_recipe(target_name)?;
     let kind = match recipe {
-      Recipe::File(_) => "file",
+      Recipe::File(_) => "external script",
       Recipe::Command(_) => "command",
-      Recipe::Script(_) => "script",
+      Recipe::Script(_) => "inline script",
       Recipe::Module(_) => "module",
     };
 
-    println!("{} is a {}", target_name.cyan(), kind.white());
+    println!("{:12}  {}", target_name.cyan(), kind);
     for module in &recipe.base().mod_list {
-      println!("  ⮤ {}", module.remote.to_string().white());
+      println!("{:>12}: {}", "from".white(), module.remote.to_string());
     }
 
     if !recipe.help().is_empty() {
-      println!("  {}", recipe.help());
+      println!("{:>12}: {}", "help".white(), recipe.help());
     }
 
     if !recipe.deps().is_empty() {
-      println!("  Depends on: {}", recipe.deps().join(" ").cyan());
+      println!("{:>12}: {}", "depends on".white(), recipe.deps().join(" ").cyan());
     }
 
     if let Some(dir) = recipe.work_dir() {
-      println!("  Working dir: {}", dir.display().to_string().cyan());
+      println!("{:>12}: {}", "working dir".white(), dir.display().to_string().cyan());
     }
 
     let search_dir = recipe
@@ -537,10 +537,12 @@ impl Mold {
         };
 
         let command = runtime.command(script.to_str().unwrap());
-        println!("{} {}", "$".green(), command.join(" "));
+        println!("{:>12}: {}", "runtime".white(), target.runtime);
+        println!("{:>12}: {} {}", "executes".white(), "$".green(), command.join(" "));
 
         // FIXME print file
       }
+
       Recipe::Script(target) => {
         let runtime = self.find_runtime(&target.runtime)?;
 
@@ -550,17 +552,22 @@ impl Mold {
         }
 
         let command = runtime.command(script.to_str().unwrap());
-        println!("{} {}", "$".green(), command.join(" "));
+        println!("{:>12}: {}", "runtime".white(), target.runtime);
+        println!("{:>12}: {} {}", "executes".white(), "$".green(), command.join(" "));
 
         // FIXME print file
       }
+
       Recipe::Module(target) => {
-        println!("  Source: {}", target.remote.to_string());
+        println!("{:>12}: {}", "source".white(), target.remote.to_string());
       }
+
       Recipe::Command(target) => {
-        println!("{} {}", "$".green(), target.command.join(" "));
+        println!("{:>12}: {} {}", "executes".white(), "$".green(), target.command.join(" "));
       }
     }
+
+    println!();
 
     Ok(())
   }
