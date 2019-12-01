@@ -70,6 +70,8 @@ fn run(args: Args) -> Result<(), Error> {
 
   // explain all of the given targets rather than executing them
   if args.explain {
+    mold.explain_self()?;
+
     for target_name in &args.targets {
       mold.explain(target_name)?;
     }

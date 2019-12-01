@@ -198,6 +198,7 @@ impl Mold {
   pub fn env_vars(&self) -> VarMap {
     let active = active_envs(&self.data.environments, &self.envs);
     let mut vars = self.data.variables.clone();
+
     // this is not very ergonomic and can panic. oh well.
     vars.insert("MOLD_ROOT".into(), self.root_dir.to_str().unwrap().into());
     vars.insert("MOLD_FILE".into(), self.file.to_str().unwrap().into());
@@ -216,6 +217,7 @@ impl Mold {
         vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
       }
     }
+
     vars
   }
 
@@ -495,6 +497,46 @@ impl Mold {
     Ok(())
   }
 
+  /// Print an explanation of global settings for this Moldfile
+  pub fn explain_self(&self) -> Result<(), Error> {
+    println!("{:>12}: {}", "environments".white(), self.envs.join(" "));
+    println!("{:>12}:", "conditionals".white());
+
+    let active = active_envs(&self.data.environments, &self.envs);
+
+    for (cond, map) in &self.data.environments {
+      let cond_disp = if active.contains(cond) {
+        cond.green()
+      } else {
+        cond.blue()
+      };
+
+      println!("              {}:", cond_disp);
+      for (key, val) in map {
+        println!(
+          "                {:16} = {}",
+          format!("${}", key).bright_cyan(),
+          val
+        );
+      }
+    }
+
+    let vars = self.env_vars();
+    println!("{:>12}:", "variables".white());
+
+    for (key, val) in &vars {
+      println!(
+        "              {:16} = {}",
+        format!("${}", key).bright_cyan(),
+        val
+      );
+    }
+
+    println!();
+
+    Ok(())
+  }
+
   /// Print an explanation of what a recipe does
   pub fn explain(&self, target_name: &str) -> Result<(), Error> {
     let recipe = self.find_recipe(target_name)?;
@@ -515,11 +557,19 @@ impl Mold {
     }
 
     if !recipe.deps().is_empty() {
-      println!("{:>12}: {}", "depends on".white(), recipe.deps().join(" ").cyan());
+      println!(
+        "{:>12}: {}",
+        "depends on".white(),
+        recipe.deps().join(" ").cyan()
+      );
     }
 
     if let Some(dir) = recipe.work_dir() {
-      println!("{:>12}: {}", "working dir".white(), dir.display().to_string().cyan());
+      println!(
+        "{:>12}: {}",
+        "working dir".white(),
+        dir.display().to_string().cyan()
+      );
     }
 
     let search_dir = recipe
@@ -538,7 +588,12 @@ impl Mold {
 
         let command = runtime.command(script.to_str().unwrap());
         println!("{:>12}: {}", "runtime".white(), target.runtime);
-        println!("{:>12}: {} {}", "executes".white(), "$".green(), command.join(" "));
+        println!(
+          "{:>12}: {} {}",
+          "executes".white(),
+          "$".green(),
+          command.join(" ")
+        );
 
         // FIXME print file
       }
@@ -553,7 +608,12 @@ impl Mold {
 
         let command = runtime.command(script.to_str().unwrap());
         println!("{:>12}: {}", "runtime".white(), target.runtime);
-        println!("{:>12}: {} {}", "executes".white(), "$".green(), command.join(" "));
+        println!(
+          "{:>12}: {} {}",
+          "executes".white(),
+          "$".green(),
+          command.join(" ")
+        );
 
         // FIXME print file
       }
@@ -563,7 +623,12 @@ impl Mold {
       }
 
       Recipe::Command(target) => {
-        println!("{:>12}: {} {}", "executes".white(), "$".green(), target.command.join(" "));
+        println!(
+          "{:>12}: {} {}",
+          "executes".white(),
+          "$".green(),
+          target.command.join(" ")
+        );
       }
     }
 
