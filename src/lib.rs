@@ -342,6 +342,8 @@ impl Mold {
           script.set_extension(&x);
         }
 
+        fs::write(&script, &target.script)?;
+
         let args = runtime.command(script.to_str().unwrap());
         let mut command = process::Command::new(&args[0]);
         command.args(&args[1..]);
@@ -666,6 +668,8 @@ impl Mold {
         if let Some(x) = runtime.extensions.get(0) {
           script.set_extension(&x);
         }
+
+        fs::write(&script, &target.script)?;
 
         let command = runtime.command(script.to_str().unwrap());
         println!("{:12} {}", "runtime:".white(), target.runtime);
