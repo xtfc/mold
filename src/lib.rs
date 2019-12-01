@@ -499,8 +499,8 @@ impl Mold {
 
   /// Print an explanation of global settings for this Moldfile
   pub fn explain_self(&self) -> Result<(), Error> {
-    println!("{:>12}: {}", "environments".white(), self.envs.join(" "));
-    println!("{:>12}:", "conditionals".white());
+    println!("{:12} {}", "environments:".white(), self.envs.join(" "));
+    println!("{:12}", "conditionals:".white());
 
     let active = active_envs(&self.data.environments, &self.envs);
 
@@ -511,25 +511,17 @@ impl Mold {
         cond.blue()
       };
 
-      println!("              {}:", cond_disp);
+      println!("  {}:", cond_disp);
       for (key, val) in map {
-        println!(
-          "                {:16} = {}",
-          format!("${}", key).bright_cyan(),
-          val
-        );
+        println!("    {:16} = {}", format!("${}", key).bright_cyan(), val);
       }
     }
 
     let vars = self.env_vars();
-    println!("{:>12}:", "variables".white());
+    println!("{:12}", "variables:".white());
 
     for (key, val) in &vars {
-      println!(
-        "              {:16} = {}",
-        format!("${}", key).bright_cyan(),
-        val
-      );
+      println!("  {:16} = {}", format!("${}", key).bright_cyan(), val);
     }
 
     println!();
@@ -549,25 +541,38 @@ impl Mold {
 
     println!("{:12}  {}", target_name.cyan(), kind);
     for module in &recipe.base().mod_list {
-      println!("{:>12}: {}", "from".white(), module.remote.to_string());
+      println!("{:12} {}", "from:".white(), module.remote.to_string());
     }
 
     if !recipe.help().is_empty() {
-      println!("{:>12}: {}", "help".white(), recipe.help());
+      println!("{:12} {}", "help:".white(), recipe.help());
+    }
+
+    if !recipe.vars_help().is_empty() {
+      println!("{:12}", "variables:".white());
+
+      for (name, desc) in recipe.vars_help() {
+        println!(
+          "  {}{} {}",
+          format!("${}", name).bright_cyan(),
+          ":".white(),
+          desc
+        );
+      }
     }
 
     if !recipe.deps().is_empty() {
       println!(
-        "{:>12}: {}",
-        "depends on".white(),
+        "{:12} {}",
+        "depends on:".white(),
         recipe.deps().join(" ").cyan()
       );
     }
 
     if let Some(dir) = recipe.work_dir() {
       println!(
-        "{:>12}: {}",
-        "working dir".white(),
+        "{:12} {}",
+        "working dir:".white(),
         dir.display().to_string().cyan()
       );
     }
@@ -587,10 +592,10 @@ impl Mold {
         };
 
         let command = runtime.command(script.to_str().unwrap());
-        println!("{:>12}: {}", "runtime".white(), target.runtime);
+        println!("{:12} {}", "runtime:".white(), target.runtime);
         println!(
-          "{:>12}: {} {}",
-          "executes".white(),
+          "{:12} {} {}",
+          "executes:".white(),
           "$".green(),
           command.join(" ")
         );
@@ -607,10 +612,10 @@ impl Mold {
         }
 
         let command = runtime.command(script.to_str().unwrap());
-        println!("{:>12}: {}", "runtime".white(), target.runtime);
+        println!("{:12} {}", "runtime:".white(), target.runtime);
         println!(
-          "{:>12}: {} {}",
-          "executes".white(),
+          "{:12} {} {}",
+          "executes:".white(),
           "$".green(),
           command.join(" ")
         );
@@ -619,13 +624,13 @@ impl Mold {
       }
 
       Recipe::Module(target) => {
-        println!("{:>12}: {}", "source".white(), target.remote.to_string());
+        println!("{:12} {}", "source:".white(), target.remote.to_string());
       }
 
       Recipe::Command(target) => {
         println!(
-          "{:>12}: {} {}",
-          "executes".white(),
+          "{:12} {} {}",
+          "executes:".white(),
           "$".green(),
           target.command.join(" ")
         );
