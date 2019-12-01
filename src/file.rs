@@ -102,15 +102,17 @@ pub struct RecipeBase {
 
   /// A list of environment variables that overrides the base environment
   ///
-  /// BREAKING: Renamed from `environment` in 0.3.0
+  /// BREAKING: 0.3.0: Renamed from `environment`
+  /// BREAKING: 0.5.0: Functionality changed from a map of (key, value) pairs to
+  /// a map of (key, description) pairs for documentation.
   #[serde(default)]
   pub variables: VarMap,
 
-  /// A map of environment names to variable maps used to parametrize recipes
-  ///
-  /// ADDED: 0.3.0
-  #[serde(default)]
-  pub environments: EnvMap,
+  // A map of environment names to variable maps used to parametrize recipes
+  //
+  // ADDED: 0.3.0
+  // REMOVED: 0.5.0
+  // pub environments: EnvMap,
 
   /// The working directory relative to the calling Moldfile's root_dir
   ///

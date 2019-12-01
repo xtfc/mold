@@ -743,37 +743,13 @@ impl Recipe {
   }
 
   /// Return this recipe's variables
-  fn vars(&self) -> &VarMap {
+  fn vars_help(&self) -> &VarMap {
     match self {
       Recipe::File(f) => &f.base.variables,
       Recipe::Command(c) => &c.base.variables,
       Recipe::Script(s) => &s.base.variables,
       Recipe::Module(g) => &g.base.variables,
     }
-  }
-
-  /// Return this recipe's environments
-  fn env_maps(&self) -> &EnvMap {
-    match self {
-      Recipe::File(f) => &f.base.environments,
-      Recipe::Command(c) => &c.base.environments,
-      Recipe::Script(s) => &s.base.environments,
-      Recipe::Module(g) => &g.base.environments,
-    }
-  }
-
-  /// Return this recipe's variables with activated environments
-  pub fn env_vars(&self, envs: &[String]) -> VarMap {
-    let env_maps = self.env_maps();
-    let active = active_envs(&env_maps, envs);
-    let mut vars = self.vars().clone();
-
-    for env_name in active {
-      if let Some(env) = env_maps.get(&env_name) {
-        vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
-      }
-    }
-    vars
   }
 
   /// Return this recipe's working directory
