@@ -31,7 +31,7 @@ fn default_git_ref() -> String {
 #[serde(deny_unknown_fields)]
 pub struct Moldfile {
   /// Version of mold required to run this Moldfile
-  pub version: Option<String>,
+  pub version: String,
 
   /// The directory that recipe scripts can be found in
   #[serde(default = "default_recipe_dir")]
