@@ -79,10 +79,7 @@ impl Mold {
 
     let data: Moldfile = serde_yaml::from_str(&contents)?;
     let self_version = Version::parse(clap::crate_version!())?;
-    let target_version = match data.version {
-      Some(ref version) => VersionReq::parse(&version)?,
-      None => VersionReq::parse(clap::crate_version!())?,
-    };
+    let target_version = VersionReq::parse(&data.version)?;
 
     if !target_version.matches(&self_version) {
       return Err(failure::format_err!(
