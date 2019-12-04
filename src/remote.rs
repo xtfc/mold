@@ -27,9 +27,7 @@ struct State<'a> {
 
 fn print_progress(state: &mut State) {
   let duration = (Instant::now() - state.start).as_millis() as usize;
-  let dotlist = [
-    "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
-  ];
+  let dotlist = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   if duration > 33 {
     state.start = Instant::now();
     state.dots = (state.dots + 1) % dotlist.len();
