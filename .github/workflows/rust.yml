@@ -1,19 +1,19 @@
-name: Rust
+name: "Rust"
 
-on: [push]
+on: ["push"]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: "ubuntu-latest"
     steps:
-    - uses: actions/checkout@v1
-    - name: Versions
-      run: rustc --version && cargo --version && rustup --version
-    - name: Build
-      run: ./mold.sh build
-    - name: Check formatting
-      run: ./mold.sh fmtcheck
-    - name: Lint
-      run: ./mold.sh lint
-    - name: Test
-      run: ./mold.sh test
+    - uses: "actions/checkout@v1"
+    - name: "Versions"
+      run: "rustc --version && cargo --version && rustup --version"
+    - name: "Build"
+      run: "cargo build" # this could be cargo run -- build, but... lol?
+    - name: "Check formatting"
+      run: "cargo run -- fmtcheck"
+    - name: "Lint"
+      run: "cargo run -- lint"
+    - name: "Test"
+      run: "cargo run -- test"
