@@ -313,8 +313,13 @@ impl Mold {
     let recipe = self.find_recipe(target_name)?;
 
     if let Some(args) = self.recipe_args(target_name)? {
+      if args.is_empty() {
+        return Err(failure::err_msg("empty command cannot be executed"));
+      }
+
       let mut command = process::Command::new(&args[0]);
       command.args(&args[1..]);
+
       command.envs(vars);
 
       if let Some(dir) = recipe.work_dir() {

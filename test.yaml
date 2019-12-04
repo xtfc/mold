@@ -56,6 +56,14 @@ recipes:
     script: |
       echo "Hello, world!"
 
+  empty:
+    help: "Empty command"
+    command: []
+
+  onearg:
+    help: "One argument command"
+    command: ["ls"]
+
   cargo:
     help: "Included remote utilities"
     url: "github.com/xtfc/cargo.mold"
