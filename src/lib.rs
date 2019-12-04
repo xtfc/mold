@@ -339,6 +339,31 @@ impl Mold {
   /// Return a list of arguments to pass to Command
   pub fn recipe_args(&self, target_name: &str) -> Result<Option<Vec<String>>, Error> {
     let recipe = self.find_recipe(target_name)?;
+
+    match recipe {
+      Recipe::File(target) => {
+        // unwrap should be safe because script_name only returns Some(...) on File and Script
+        let script = self.script_name(target_name)?.unwrap();
+        let runtime = self.find_runtime(&target.runtime)?;
+        Ok(Some(runtime.command(script.to_str().unwrap())))
+      }
+
+      Recipe::Script(target) => {
+        // unwrap should be safe because script_name only returns Some(...) on File and Script
+        let script = self.script_name(target_name)?.unwrap();
+        let runtime = self.find_runtime(&target.runtime)?;
+        Ok(Some(runtime.command(script.to_str().unwrap())))
+      }
+
+      Recipe::Command(target) => Ok(Some(target.command)),
+
+      Recipe::Module(_) => Ok(None),
+    }
+  }
+
+  /// Return a list of arguments to pass to Command
+  pub fn script_name(&self, target_name: &str) -> Result<Option<PathBuf>, Error> {
+    let recipe = self.find_recipe(target_name)?;
     let search_dir = recipe
       .search_dir()
       .clone()
@@ -353,7 +378,7 @@ impl Mold {
           None => runtime.find(&search_dir, &target_name)?,
         };
 
-        Ok(Some(runtime.command(script.to_str().unwrap())))
+        Ok(Some(script))
       }
 
       Recipe::Script(target) => {
@@ -366,12 +391,11 @@ impl Mold {
 
         fs::write(&script, &target.script)?;
 
-        Ok(Some(runtime.command(script.to_str().unwrap())))
+        Ok(Some(script))
       }
 
       Recipe::Module(_) => Ok(None),
-
-      Recipe::Command(target) => Ok(Some(target.command)),
+      Recipe::Command(_) => Ok(None),
     }
   }
 }
@@ -637,12 +661,10 @@ impl Mold {
     match recipe {
       Recipe::File(target) => {
         println!("{:12} {}", "runtime:".white(), target.runtime);
-        // FIXME print file
       }
 
       Recipe::Script(target) => {
         println!("{:12} {}", "runtime:".white(), target.runtime);
-        // FIXME print file
       }
 
       Recipe::Module(target) => {
@@ -659,6 +681,11 @@ impl Mold {
         "$".green(),
         args.join(" ")
       );
+    }
+
+    // display contents of script file
+    if let Some(script) = self.script_name(target_name)? {
+      util::cat(script)?;
     }
 
     println!();
