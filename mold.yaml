@@ -1,10 +1,10 @@
-version: "0.4"
+version: "0.5"
 
 includes:
   - url: "github.com/xtfc/std.mold"
-    ref: "0.4"
+    ref: "0.5"
   - url: "github.com/xtfc/cargo.mold"
-    ref: "v3"
+    ref: "v4"
 
 recipes:
   staticbuild:
