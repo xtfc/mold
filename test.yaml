@@ -1,0 +1,62 @@
+version: "0.5"
+
+includes:
+  - url: "github.com/xtfc/std.mold"
+    ref: "0.5"
+
+variables:
+  NAME: "no one"
+  BAR: "always"
+
+environments:
+  ci:
+    ENV: "ci"
+    NAME: "Otto"
+  ~ci:
+    ENV: "local"
+    NAME: "Manny"
+
+runtimes:
+  python:
+    command: ["python", "?"]
+    extensions: ["py"]
+
+recipes:
+  python:
+    help: "Hello world external Python"
+    variables:
+      NAME: "Recipient of greeting."
+    runtime: "python"
+
+  python-file:
+    help: "Aliased external Python"
+    runtime: "python"
+    file: "python.py"
+
+  python-script:
+    help: "Hello world inline Python"
+    runtime: "python"
+    script: |
+      print("Hello, world!")
+
+  shell:
+    help: "Hello world external shell"
+    runtime: "sh"
+    variables:
+      NAME: "Recipient of greeting."
+
+  shell-file:
+    help: "Aliased external shell"
+    runtime: "sh"
+    file: "shell.sh"
+
+  shell-script:
+    help: "Hello world inline shell"
+    runtime: "sh"
+    script: |
+      echo "Hello, world!"
+
+  cargo:
+    help: "Included remote utilities"
+    url: "github.com/xtfc/cargo.mold"
+    ref: "v4"
