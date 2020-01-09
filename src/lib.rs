@@ -259,7 +259,9 @@ impl Mold {
       return Ok(recipe);
     }
 
-    Ok(self.root_recipe(target_name)?.clone())
+    let mut recipe = self.root_recipe(target_name)?.clone();
+    recipe.set_search_dir(Some(self.dir.clone()));
+    Ok(recipe)
   }
 
   /// Find a Runtime by name
@@ -364,6 +366,9 @@ impl Mold {
   /// Return a list of arguments to pass to Command
   pub fn script_name(&self, target_name: &str) -> Result<Option<PathBuf>, Error> {
     let recipe = self.find_recipe(target_name)?;
+    let splits: Vec<_> = target_name.rsplitn(2, '/').collect();
+    let script_name = splits[0];
+
     let search_dir = recipe
       .search_dir()
       .clone()
@@ -375,7 +380,7 @@ impl Mold {
 
         let script = match &target.file {
           Some(x) => search_dir.join(x),
-          None => runtime.find(&search_dir, &target_name)?,
+          None => runtime.find(&search_dir, &script_name)?,
         };
 
         Ok(Some(script))
@@ -752,7 +757,11 @@ impl Runtime {
       return Ok(path);
     }
 
-    Err(failure::err_msg("Couldn't find a file"))
+    Err(failure::format_err!(
+      "Couldn't find {} in {}",
+      name.red(),
+      dir.to_str().unwrap().red()
+    ))
   }
 }
 
