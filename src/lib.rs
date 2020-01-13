@@ -625,7 +625,7 @@ impl Mold {
       Recipe::Module(_) => "module",
     };
 
-    println!("{:12}  {}", target_name.cyan(), kind);
+    println!("{:12} {}", target_name.cyan(), kind);
     for module in &recipe.base().mod_list {
       println!("{:12} {}", "from:".white(), module.remote.to_string());
     }
