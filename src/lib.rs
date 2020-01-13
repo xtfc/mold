@@ -674,6 +674,9 @@ impl Mold {
 
       Recipe::Module(target) => {
         println!("{:12} {}", "source:".white(), target.remote.to_string());
+
+        // print subrecipes
+        self.open_remote(&target.remote)?.help()?;
       }
 
       Recipe::Command(_) => {}
