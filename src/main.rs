@@ -98,8 +98,10 @@ fn run(args: Args) -> Result<(), Error> {
       );
     } else {
       return Err(failure::format_err!(
-        "Cannot execute module {}",
+        "Cannot execute module {}. Use {} {} to list available subrecipes.",
         target_name.red(),
+        "--explain".yellow(),
+        target_name.yellow()
       ));
     }
     mold.execute(target_name)?;
