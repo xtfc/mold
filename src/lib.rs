@@ -14,6 +14,7 @@ use file::Runtime;
 use file::TargetSet;
 use file::VarMap;
 use file::DEFAULT_FILES;
+use indexmap::IndexMap;
 use semver::Version;
 use semver::VersionReq;
 use std::collections::HashSet;
@@ -186,19 +187,19 @@ impl Mold {
   /// This also inserts a few special mold variables
   pub fn env_vars(&self) -> VarMap {
     let active = active_envs(&self.data.environments, &self.envs);
-    let mut vars = self.data.variables.clone();
 
-    // this is not very ergonomic and can panic. oh well.
-    vars.insert("MOLD_ROOT".into(), self.root_dir.to_str().unwrap().into());
-    vars.insert("MOLD_FILE".into(), self.file.to_str().unwrap().into());
-    vars.insert("MOLD_DIR".into(), self.dir.to_str().unwrap().into());
-    vars.insert(
-      "MOLD_CLONE_DIR".into(),
-      self.clone_dir.to_str().unwrap().into(),
-    );
-    vars.insert(
-      "MOLD_SCRIPT_DIR".into(),
-      self.script_dir.to_str().unwrap().into(),
+    let mut mold_vars = IndexMap::new(); //<&str, &str>;
+    mold_vars.insert("MOLD_ROOT", self.root_dir.to_string_lossy());
+    mold_vars.insert("MOLD_FILE", self.file.to_string_lossy());
+    mold_vars.insert("MOLD_DIR", self.dir.to_string_lossy());
+    mold_vars.insert("MOLD_CLONE_DIR", self.clone_dir.to_string_lossy());
+    mold_vars.insert("MOLD_SCRIPT_DIR", self.script_dir.to_string_lossy());
+
+    let mut vars = self.data.variables.clone();
+    vars.extend(
+      mold_vars
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string())),
     );
 
     for env_name in active {
