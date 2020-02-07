@@ -69,7 +69,7 @@ pub struct Mold {
   data: file::Moldfile,
 }
 
-// dealing with opening moldfiles
+// Moldfiles
 impl Mold {
   /// Open a moldfile and load it
   pub fn open(path: &Path) -> Result<Mold, Error> {
@@ -179,7 +179,7 @@ impl Mold {
   }
 }
 
-// dealing with environments
+// Environments
 impl Mold {
   /// Return this moldfile's variables with activated environments
   ///
@@ -213,7 +213,7 @@ impl Mold {
   }
 }
 
-// dealing with recipes
+// Recipes
 impl Mold {
   /// Find a recipe in the top level map
   fn root_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
@@ -387,7 +387,7 @@ impl Mold {
   }
 }
 
-// dealing with remotes
+// Remotes
 impl Mold {
   /// Clone a single remote reference and then recursively clone subremotes
   fn clone(
@@ -522,7 +522,7 @@ impl Mold {
   }
 }
 
-// help functions
+// Help
 impl Mold {
   /// Print a description of all recipes in this moldfile
   pub fn help(&self) -> Result<(), Error> {
