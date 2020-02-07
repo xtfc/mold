@@ -21,7 +21,7 @@ recipes:
 
   python-script:
     help: "Hello world inline Python"
-    shell: "echo foo"
+    shell: "python $MOLD_SCRIPT"
     script: |
       print("Hello, world!")
 
@@ -33,7 +33,7 @@ recipes:
 
   shell-script:
     help: "Hello world inline shell"
-    shell: "echo foo"
+    shell: "sh $MOLD_SCRIPT"
     script: |
       echo "Hello, world!"
 

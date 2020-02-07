@@ -187,7 +187,7 @@ impl Mold {
   pub fn env_vars(&self) -> VarMap {
     let active = active_envs(&self.data.environments, &self.envs);
 
-    let mut mold_vars = IndexMap::new(); //<&str, &str>;
+    let mut mold_vars = IndexMap::new();
     mold_vars.insert("MOLD_ROOT", self.root_dir.to_string_lossy());
     mold_vars.insert("MOLD_FILE", self.file.to_string_lossy());
     mold_vars.insert("MOLD_DIR", self.dir.to_string_lossy());
@@ -301,8 +301,10 @@ impl Mold {
 
   /// Execute a recipe
   pub fn execute(&self, target_name: &str) -> Result<(), Error> {
-    let vars = self.env_vars();
     let recipe = self.find_recipe(target_name)?;
+
+    let mut vars = self.env_vars();
+    vars.extend(self.build_vars(target_name)?);
 
     if let Some(args) = self.build_args(target_name)? {
       if args.is_empty() {
@@ -311,7 +313,6 @@ impl Mold {
 
       let mut command = process::Command::new(&args[0]);
       command.args(&args[1..]);
-
       command.envs(vars);
 
       // FIXME this should be relative to root, no?
@@ -352,6 +353,17 @@ impl Mold {
 
       Recipe::Module(_) => Ok(None),
     }
+  }
+
+  /// Return a list of arguments to pass to Command
+  pub fn build_vars(&self, target_name: &str) -> Result<VarMap, Error> {
+    let mut vars = IndexMap::new();
+
+    if let Some(script) =  self.script_name(target_name)? {
+        vars.insert("MOLD_SCRIPT".into(), script.to_string_lossy().into());
+    }
+
+    Ok(vars)
   }
 
   /// Return a list of arguments to pass to Command
