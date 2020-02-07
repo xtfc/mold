@@ -327,14 +327,6 @@ impl Mold {
     let recipe = self.find_recipe(target_name)?;
 
     match recipe {
-      Recipe::Script(target) => {
-        // unwrap is safe because script_name only returns Some(...) for
-        // Scripts
-        // FIXME this needs to know how to locate that script?
-        // FIXME this should use $SHELL
-        Ok(Some(vec!["sh".into(), "-c".into(), target.shell]))
-      }
-
       Recipe::Shell(target) => {
         // FIXME this should use $SHELL
         Ok(Some(vec!["sh".into(), "-c".into(), target.shell]))
@@ -374,15 +366,18 @@ impl Mold {
   pub fn script_name(&self, target_name: &str) -> Result<Option<PathBuf>, Error> {
     let recipe = self.find_recipe(target_name)?;
     match recipe {
-      Recipe::Script(target) => {
-        let script = self.script_dir.join(util::hash_string(&target.script));
-        fs::write(&script, &target.script)?;
-        Ok(Some(script))
+      Recipe::Shell(target) => {
+        if let Some(script) = target.script {
+          let file = self.script_dir.join(util::hash_string(&script));
+          fs::write(&file, &script)?;
+          Ok(Some(file))
+        } else {
+          Ok(None)
+        }
       }
 
       Recipe::Command(_) => Ok(None),
       Recipe::Module(_) => Ok(None),
-      Recipe::Shell(_) => Ok(None),
     }
   }
 }
@@ -535,7 +530,6 @@ impl Mold {
       let colored_name = match recipe {
         Recipe::Command(_) => name.cyan(),
         Recipe::Module(_) => format!("{}/", name).cyan(),
-        Recipe::Script(_) => name.cyan(),
         Recipe::Shell(_) => name.cyan(),
       };
 
@@ -603,8 +597,7 @@ impl Mold {
     let kind = match recipe {
       Recipe::Command(_) => "command",
       Recipe::Module(_) => "module",
-      Recipe::Script(_) => "inline script",
-      Recipe::Shell(_) => "shell command",
+      Recipe::Shell(_) => "script",
     };
 
     println!("{:12} {}", target_name.cyan(), kind);
@@ -646,10 +639,6 @@ impl Mold {
     }
 
     match recipe {
-      Recipe::Script(target) => {
-        println!("{:12} {}", "command:".white(), target.shell.to_string());
-      }
-
       Recipe::Shell(target) => {
         println!("{:12} {}", "command:".white(), target.shell.to_string());
       }
@@ -716,7 +705,6 @@ impl Recipe {
     match self {
       Recipe::Command(c) => c.deps.clone(),
       Recipe::Module(_) => vec![],
-      Recipe::Script(s) => s.deps.clone(),
       Recipe::Shell(s) => s.deps.clone(),
     }
   }
@@ -726,7 +714,6 @@ impl Recipe {
     match self {
       Recipe::Command(c) => &c.base.help,
       Recipe::Module(m) => &m.base.help,
-      Recipe::Script(s) => &s.base.help,
       Recipe::Shell(s) => &s.base.help,
     }
   }
@@ -736,7 +723,6 @@ impl Recipe {
     match self {
       Recipe::Command(c) => &c.base,
       Recipe::Module(g) => &g.base,
-      Recipe::Script(s) => &s.base,
       Recipe::Shell(s) => &s.base,
     }
   }
@@ -746,7 +732,6 @@ impl Recipe {
     match self {
       Recipe::Command(c) => &c.base.variables,
       Recipe::Module(g) => &g.base.variables,
-      Recipe::Script(s) => &s.base.variables,
       Recipe::Shell(s) => &s.base.variables,
     }
   }
@@ -756,7 +741,6 @@ impl Recipe {
     match self {
       Recipe::Command(c) => &c.base.work_dir,
       Recipe::Module(g) => &g.base.work_dir,
-      Recipe::Script(s) => &s.base.work_dir,
       Recipe::Shell(s) => &s.base.work_dir,
     }
   }
@@ -766,7 +750,6 @@ impl Recipe {
     match self {
       Recipe::Command(c) => c.base.mod_list.push(module),
       Recipe::Module(m) => m.base.mod_list.push(module),
-      Recipe::Script(s) => s.base.mod_list.push(module),
       Recipe::Shell(s) => s.base.mod_list.push(module),
     }
   }
