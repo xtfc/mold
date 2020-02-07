@@ -304,7 +304,7 @@ impl Mold {
     let vars = self.env_vars();
     let recipe = self.find_recipe(target_name)?;
 
-    if let Some(args) = self.recipe_args(target_name)? {
+    if let Some(args) = self.build_args(target_name)? {
       if args.is_empty() {
         return Err(failure::err_msg("empty command cannot be executed"));
       }
@@ -330,19 +330,23 @@ impl Mold {
   }
 
   /// Return a list of arguments to pass to Command
-  pub fn recipe_args(&self, target_name: &str) -> Result<Option<Vec<String>>, Error> {
+  pub fn build_args(&self, target_name: &str) -> Result<Option<Vec<String>>, Error> {
     let recipe = self.find_recipe(target_name)?;
 
     match recipe {
       Recipe::Script(target) => {
-        // unwrap should be safe because script_name only returns Some(...) on File and Script
+        // unwrap is safe because script_name only returns Some(...) for
+        // Scripts
         let script = self.script_name(target_name)?.unwrap();
-        // let runtime = self.find_runtime(&target.runtime)?;
-        // Ok(Some(runtime.command(script.to_str().unwrap())))
-        Ok(None)
+        // FIXME this needs to know how to locate that script?
+        // FIXME this should use $SHELL
+        Ok(Some(vec!["sh".into(), "-c".into(), target.shell]))
       }
 
-      Recipe::Shell(_) => Ok(None), // FIXME
+      Recipe::Shell(target) => {
+        // FIXME this should use $SHELL
+        Ok(Some(vec!["sh".into(), "-c".into(), target.shell]))
+      }
 
       Recipe::Command(target) => Ok(Some(target.command)),
 
@@ -644,7 +648,7 @@ impl Mold {
       Recipe::Command(_) => {}
     }
 
-    if let Some(args) = self.recipe_args(target_name)? {
+    if let Some(args) = self.build_args(target_name)? {
       println!(
         "{:12} {} {}",
         "executes:".white(),

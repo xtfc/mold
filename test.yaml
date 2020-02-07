@@ -1,9 +1,5 @@
 version: "0.5"
 
-includes:
-  - url: "github.com/xtfc/std.mold"
-    ref: "0.5"
-
 variables:
   NAME: "no one"
   BAR: "always"
@@ -16,43 +12,28 @@ environments:
     ENV: "local"
     NAME: "Manny"
 
-runtimes:
-  python:
-    command: ["python", "?"]
-    extensions: ["py"]
-
 recipes:
   python:
     help: "Hello world external Python"
+    shell: "python $MOLD_DIR/python.py"
     variables:
       NAME: "Recipient of greeting."
-    runtime: "python"
-
-  python-file:
-    help: "Aliased external Python"
-    runtime: "python"
-    file: "python.py"
 
   python-script:
     help: "Hello world inline Python"
-    runtime: "python"
+    shell: "echo foo"
     script: |
       print("Hello, world!")
 
   shell:
     help: "Hello world external shell"
-    runtime: "sh"
+    shell: "sh $MOLD_DIR/shell.sh"
     variables:
       NAME: "Recipient of greeting."
 
-  shell-file:
-    help: "Aliased external shell"
-    runtime: "sh"
-    file: "shell.sh"
-
   shell-script:
     help: "Hello world inline shell"
-    runtime: "sh"
+    shell: "echo foo"
     script: |
       echo "Hello, world!"
 

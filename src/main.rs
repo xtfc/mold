@@ -93,7 +93,7 @@ fn run(args: Args) -> Result<(), Error> {
   let targets = mold.find_all_dependencies(&requested_targets)?;
 
   for target_name in &targets {
-    if let Some(args) = mold.recipe_args(target_name)? {
+    if let Some(args) = mold.build_args(target_name)? {
       println!(
         "{} {} {} {}",
         "mold".white(),

@@ -58,6 +58,7 @@ pub struct Moldfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Remote {
   /// Git URL of a remote repo
   pub url: String,
@@ -114,13 +115,14 @@ pub struct RecipeBase {
 #[serde(untagged)]
 pub enum Recipe {
   // apparently the order here matters?
-  Command(Command),
-  Module(Module),
   Script(Script),
   Shell(Shell),
+  Command(Command),
+  Module(Module),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Module {
   /// Base data
   #[serde(flatten)]
@@ -132,6 +134,7 @@ pub struct Module {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Script {
   /// Base data
   #[serde(flatten)]
@@ -147,11 +150,11 @@ pub struct Script {
   /// The command to pass to $SHELL to execute this script
   ///
   /// eg: "bash $MOLD_SCRIPT"
-  #[serde(default)]
   pub shell: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Shell {
   /// Base data
   #[serde(flatten)]
@@ -161,15 +164,14 @@ pub struct Shell {
   #[serde(default)]
   pub deps: Vec<String>,
 
-
   /// The command to pass to $SHELL to execute this recipe
   ///
   /// eg: "bash $MOLD_ROOT/foo.sh"
-  #[serde(default)]
   pub shell: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Command {
   /// Base data
   #[serde(flatten)]
@@ -180,6 +182,5 @@ pub struct Command {
   pub deps: Vec<String>,
 
   /// A list of command arguments
-  #[serde(default)]
   pub command: Vec<String>,
 }
