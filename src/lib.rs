@@ -259,8 +259,7 @@ impl Mold {
       return Ok(recipe);
     }
 
-    let mut recipe = self.root_recipe(target_name)?.clone();
-    recipe.set_search_dir(Some(self.dir.clone()));
+    let recipe = self.root_recipe(target_name)?.clone();
     Ok(recipe)
   }
 
@@ -354,14 +353,6 @@ impl Mold {
   /// Return a list of arguments to pass to Command
   pub fn script_name(&self, target_name: &str) -> Result<Option<PathBuf>, Error> {
     let recipe = self.find_recipe(target_name)?;
-    let splits: Vec<_> = target_name.rsplitn(2, '/').collect();
-    let script_name = splits[0];
-
-    let search_dir = recipe
-      .search_dir()
-      .clone()
-      .unwrap_or_else(|| self.dir.clone());
-
     match recipe {
       Recipe::Script(target) => {
         let script = self.script_dir.join(util::hash_string(&target.script));
@@ -676,8 +667,7 @@ impl Mold {
 impl Moldfile {
   /// Merges any recipes from `other` that aren't in `self`
   pub fn merge(&mut self, other: Mold) {
-    for (recipe_name, mut recipe) in other.data.recipes {
-      recipe.set_search_dir(Some(other.dir.clone()));
+    for (recipe_name, recipe) in other.data.recipes {
       self.recipes.entry(recipe_name).or_insert(recipe);
     }
   }
@@ -748,26 +738,6 @@ impl Recipe {
       Recipe::Module(g) => &g.base.work_dir,
       Recipe::Script(s) => &s.base.work_dir,
       Recipe::Shell(s) => &s.base.work_dir,
-    }
-  }
-
-  /// Set this recipe's search directory
-  fn set_search_dir(&mut self, to: Option<PathBuf>) {
-    match self {
-      Recipe::Command(c) => c.base.search_dir = to,
-      Recipe::Module(m) => m.base.search_dir = to,
-      Recipe::Script(s) => s.base.search_dir = to,
-      Recipe::Shell(s) => s.base.search_dir = to,
-    }
-  }
-
-  /// Return this recipe's search directory
-  fn search_dir(&self) -> &Option<PathBuf> {
-    match self {
-      Recipe::Command(c) => &c.base.search_dir,
-      Recipe::Module(g) => &g.base.search_dir,
-      Recipe::Script(s) => &s.base.search_dir,
-      Recipe::Shell(s) => &s.base.search_dir,
     }
   }
 
