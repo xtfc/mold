@@ -315,6 +315,7 @@ impl Mold {
 
       command.envs(vars);
 
+      // FIXME this should be relative to root, no?
       if let Some(dir) = recipe.work_dir() {
         command.current_dir(dir);
       }
@@ -342,6 +343,8 @@ impl Mold {
         Ok(None)
       }
 
+      Recipe::Shell(_) => Ok(None), // FIXME
+
       Recipe::Command(target) => Ok(Some(target.command)),
 
       Recipe::Module(_) => Ok(None),
@@ -361,14 +364,14 @@ impl Mold {
 
     match recipe {
       Recipe::Script(target) => {
-        let mut script = self.script_dir.join(util::hash_string(&target.script));
+        let script = self.script_dir.join(util::hash_string(&target.script));
         fs::write(&script, &target.script)?;
-
         Ok(Some(script))
       }
 
-      Recipe::Module(_) => Ok(None),
       Recipe::Command(_) => Ok(None),
+      Recipe::Module(_) => Ok(None),
+      Recipe::Shell(_) => Ok(None),
     }
   }
 }
@@ -522,6 +525,7 @@ impl Mold {
         Recipe::Command(_) => name.cyan(),
         Recipe::Module(_) => format!("{}/", name).cyan(),
         Recipe::Script(_) => name.cyan(),
+        Recipe::Shell(_) => name.cyan(),
       };
 
       // this is supposed to be 12 character padded, but after all the
@@ -587,8 +591,9 @@ impl Mold {
     let recipe = self.find_recipe(target_name)?;
     let kind = match recipe {
       Recipe::Command(_) => "command",
-      Recipe::Script(_) => "inline script",
       Recipe::Module(_) => "module",
+      Recipe::Script(_) => "inline script",
+      Recipe::Shell(_) => "shell command",
     };
 
     println!("{:12} {}", target_name.cyan(), kind);
@@ -631,7 +636,11 @@ impl Mold {
 
     match recipe {
       Recipe::Script(target) => {
-        println!("{:12} {}", "runtime:".white(), "foo");
+        println!("{:12} {}", "command:".white(), target.shell.to_string());
+      }
+
+      Recipe::Shell(target) => {
+        println!("{:12} {}", "command:".white(), target.shell.to_string());
       }
 
       Recipe::Module(target) => {
@@ -696,8 +705,9 @@ impl Recipe {
   fn deps(&self) -> Vec<String> {
     match self {
       Recipe::Command(c) => c.deps.clone(),
+      Recipe::Module(_) => vec![],
       Recipe::Script(s) => s.deps.clone(),
-      Recipe::Module(_m) => vec![],
+      Recipe::Shell(s) => s.deps.clone(),
     }
   }
 
@@ -707,6 +717,7 @@ impl Recipe {
       Recipe::Command(c) => &c.base.help,
       Recipe::Module(m) => &m.base.help,
       Recipe::Script(s) => &s.base.help,
+      Recipe::Shell(s) => &s.base.help,
     }
   }
 
@@ -714,8 +725,9 @@ impl Recipe {
   fn base(&self) -> &RecipeBase {
     match self {
       Recipe::Command(c) => &c.base,
-      Recipe::Script(s) => &s.base,
       Recipe::Module(g) => &g.base,
+      Recipe::Script(s) => &s.base,
+      Recipe::Shell(s) => &s.base,
     }
   }
 
@@ -723,8 +735,9 @@ impl Recipe {
   fn vars_help(&self) -> &VarMap {
     match self {
       Recipe::Command(c) => &c.base.variables,
-      Recipe::Script(s) => &s.base.variables,
       Recipe::Module(g) => &g.base.variables,
+      Recipe::Script(s) => &s.base.variables,
+      Recipe::Shell(s) => &s.base.variables,
     }
   }
 
@@ -732,8 +745,9 @@ impl Recipe {
   fn work_dir(&self) -> &Option<PathBuf> {
     match self {
       Recipe::Command(c) => &c.base.work_dir,
-      Recipe::Script(s) => &s.base.work_dir,
       Recipe::Module(g) => &g.base.work_dir,
+      Recipe::Script(s) => &s.base.work_dir,
+      Recipe::Shell(s) => &s.base.work_dir,
     }
   }
 
@@ -741,8 +755,9 @@ impl Recipe {
   fn set_search_dir(&mut self, to: Option<PathBuf>) {
     match self {
       Recipe::Command(c) => c.base.search_dir = to,
-      Recipe::Script(s) => s.base.search_dir = to,
       Recipe::Module(m) => m.base.search_dir = to,
+      Recipe::Script(s) => s.base.search_dir = to,
+      Recipe::Shell(s) => s.base.search_dir = to,
     }
   }
 
@@ -750,8 +765,9 @@ impl Recipe {
   fn search_dir(&self) -> &Option<PathBuf> {
     match self {
       Recipe::Command(c) => &c.base.search_dir,
-      Recipe::Script(s) => &s.base.search_dir,
       Recipe::Module(g) => &g.base.search_dir,
+      Recipe::Script(s) => &s.base.search_dir,
+      Recipe::Shell(s) => &s.base.search_dir,
     }
   }
 
@@ -759,8 +775,9 @@ impl Recipe {
   fn add_origin(&mut self, module: Module) {
     match self {
       Recipe::Command(c) => c.base.mod_list.push(module),
-      Recipe::Script(s) => s.base.mod_list.push(module),
       Recipe::Module(m) => m.base.mod_list.push(module),
+      Recipe::Script(s) => s.base.mod_list.push(module),
+      Recipe::Shell(s) => s.base.mod_list.push(module),
     }
   }
 }

@@ -114,9 +114,10 @@ pub struct RecipeBase {
 #[serde(untagged)]
 pub enum Recipe {
   // apparently the order here matters?
+  Command(Command),
   Module(Module),
   Script(Script),
-  Command(Command),
+  Shell(Shell),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,6 +143,30 @@ pub struct Script {
 
   /// The script contents as a multiline string
   pub script: String,
+
+  /// The command to pass to $SHELL to execute this script
+  ///
+  /// eg: "bash $MOLD_SCRIPT"
+  #[serde(default)]
+  pub shell: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Shell {
+  /// Base data
+  #[serde(flatten)]
+  pub base: RecipeBase,
+
+  /// A list of pre-execution dependencies
+  #[serde(default)]
+  pub deps: Vec<String>,
+
+
+  /// The command to pass to $SHELL to execute this recipe
+  ///
+  /// eg: "bash $MOLD_ROOT/foo.sh"
+  #[serde(default)]
+  pub shell: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
