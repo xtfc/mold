@@ -187,20 +187,7 @@ impl Mold {
   pub fn env_vars(&self) -> VarMap {
     let active = active_envs(&self.data.environments, &self.envs);
 
-    let mut mold_vars = IndexMap::new();
-    mold_vars.insert("MOLD_ROOT", self.root_dir.to_string_lossy());
-    mold_vars.insert("MOLD_FILE", self.file.to_string_lossy());
-    mold_vars.insert("MOLD_DIR", self.dir.to_string_lossy());
-    mold_vars.insert("MOLD_CLONE_DIR", self.clone_dir.to_string_lossy());
-    mold_vars.insert("MOLD_SCRIPT_DIR", self.script_dir.to_string_lossy());
-
     let mut vars = self.data.variables.clone();
-    vars.extend(
-      mold_vars
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string())),
-    );
-
     for env_name in active {
       if let Some(env) = self.data.environments.get(&env_name) {
         vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
@@ -304,7 +291,12 @@ impl Mold {
     let recipe = self.find_recipe(target_name)?;
 
     let mut vars = self.env_vars();
-    vars.extend(self.build_vars(target_name)?);
+    vars.extend(
+      self
+        .mold_vars(target_name)?
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string())),
+    );
 
     if let Some(args) = self.build_args(target_name)? {
       if args.is_empty() {
@@ -338,7 +330,6 @@ impl Mold {
       Recipe::Script(target) => {
         // unwrap is safe because script_name only returns Some(...) for
         // Scripts
-        let script = self.script_name(target_name)?.unwrap();
         // FIXME this needs to know how to locate that script?
         // FIXME this should use $SHELL
         Ok(Some(vec!["sh".into(), "-c".into(), target.shell]))
@@ -356,14 +347,27 @@ impl Mold {
   }
 
   /// Return a list of arguments to pass to Command
-  pub fn build_vars(&self, target_name: &str) -> Result<VarMap, Error> {
+  pub fn mold_vars(&self, target_name: &str) -> Result<VarMap, Error> {
     let mut vars = IndexMap::new();
 
-    if let Some(script) =  self.script_name(target_name)? {
-        vars.insert("MOLD_SCRIPT".into(), script.to_string_lossy().into());
+    vars.insert("MOLD_ROOT", self.root_dir.to_string_lossy());
+    vars.insert("MOLD_FILE", self.file.to_string_lossy());
+    vars.insert("MOLD_DIR", self.dir.to_string_lossy());
+    vars.insert("MOLD_CLONE_DIR", self.clone_dir.to_string_lossy());
+    vars.insert("MOLD_SCRIPT_DIR", self.script_dir.to_string_lossy());
+
+    if let Some(script) = self.script_name(target_name)? {
+      // what the fuck is going on here?
+      // PathBuf -> String is such a nightmare.
+      // it seems like the .to_string().into() is needed to satisfy borrowck.
+      vars.insert("MOLD_SCRIPT", script.to_string_lossy().to_string().into());
     }
 
-    Ok(vars)
+    let ret: VarMap = vars
+      .iter()
+      .map(|(k, v)| (k.to_string(), v.to_string()))
+      .collect();
+    Ok(ret)
   }
 
   /// Return a list of arguments to pass to Command
