@@ -328,7 +328,7 @@ impl Mold {
 
     match recipe {
       Recipe::Shell(target) => {
-        let shell = std::env::var("SHELL").unwrap_or("sh".into());
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".into());
         Ok(Some(vec![shell, "-c".into(), target.shell]))
       }
 
