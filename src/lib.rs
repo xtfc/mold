@@ -328,8 +328,8 @@ impl Mold {
 
     match recipe {
       Recipe::Shell(target) => {
-        // FIXME this should use $SHELL
-        Ok(Some(vec!["sh".into(), "-c".into(), target.shell]))
+        let shell = std::env::var("SHELL").unwrap_or("sh".into());
+        Ok(Some(vec![shell, "-c".into(), target.shell]))
       }
 
       Recipe::Command(target) => Ok(Some(target.command)),
