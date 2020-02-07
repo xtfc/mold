@@ -146,9 +146,12 @@ pub struct Shell {
   /// The command to pass to $SHELL to execute this recipe
   ///
   /// eg: "bash $MOLD_ROOT/foo.sh"
+  /// eg: "bash $MOLD_SCRIPT"
   pub shell: String,
 
   /// The script contents as a multiline string
+  ///
+  /// Its contents will be written to a file pointed to by $MOLD_SCRIPT
   pub script: Option<String>,
 }
 
