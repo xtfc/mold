@@ -1,0 +1,15 @@
+name: "Release"
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: "ubuntu-latest"
+    steps:
+    - uses: "actions/checkout@v2"
+    - name: "Release"
+      if: "startsWith(github.event.ref, 'refs/tags')"
+      run: "cargo run -- staticbuild"
