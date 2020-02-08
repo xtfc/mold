@@ -48,6 +48,9 @@ fn run(args: Args) -> Result<(), Error> {
   mold.set_envs(args.env);
   mold.add_envs(args.add_envs);
 
+  mold.add_env(std::env::consts::FAMILY);
+  mold.add_env(std::env::consts::OS);
+
   // early return if we passed a --clean
   if args.clean {
     return mold.clean_all();
