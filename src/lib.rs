@@ -583,7 +583,11 @@ impl Moldfile {
   pub fn merge(&mut self, other: Mold, prefix: &str) {
     for (recipe_name, recipe) in other.data.recipes {
       let mut new_recipe = recipe.clone();
-      new_recipe.deps = new_recipe.deps.iter().map(|x| format!("{}{}", prefix, x)).collect();
+      new_recipe.deps = new_recipe
+        .deps
+        .iter()
+        .map(|x| format!("{}{}", prefix, x))
+        .collect();
 
       self
         .recipes
