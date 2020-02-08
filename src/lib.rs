@@ -233,19 +233,7 @@ impl Mold {
     let mut new_targets = TargetSet::new();
 
     for target_name in targets {
-      // we need to ensure that any dependencies are local to the target's module
-      if target_name.contains('/') {
-        let split: Vec<_> = target_name.rsplitn(2, '/').collect();
-        new_targets.extend(
-          self
-            .find_dependencies(target_name)?
-            .iter()
-            .map(|x| format!("{}/{}", split[1], x)),
-        );
-      } else {
-        new_targets.extend(self.find_dependencies(target_name)?);
-      };
-
+      new_targets.extend(self.find_dependencies(target_name)?);
       new_targets.insert(target_name.clone());
     }
 
@@ -594,10 +582,13 @@ impl Moldfile {
   /// Merges any recipes from `other` that aren't in `self`
   pub fn merge(&mut self, other: Mold, prefix: &str) {
     for (recipe_name, recipe) in other.data.recipes {
+      let mut new_recipe = recipe.clone();
+      new_recipe.deps = new_recipe.deps.iter().map(|x| format!("{}{}", prefix, x)).collect();
+
       self
         .recipes
         .entry(format!("{}{}", prefix, recipe_name))
-        .or_insert(recipe);
+        .or_insert(new_recipe);
     }
   }
 }
