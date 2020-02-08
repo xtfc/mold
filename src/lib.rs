@@ -8,6 +8,7 @@ use failure::Error;
 use file::Moldfile;
 use file::Recipe;
 use file::Remote;
+use file::Shell;
 use file::TargetSet;
 use file::VarMap;
 use file::DEFAULT_FILES;
@@ -270,7 +271,7 @@ impl Mold {
   pub fn build_args(&self, target_name: &str) -> Result<Option<Vec<String>>, Error> {
     let target = self.find_recipe(target_name)?;
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".into());
-    Ok(Some(vec![shell, "-c".into(), target.shell.clone()]))
+    Ok(Some(vec![shell, "-c".into(), target.shell(&self.envs)?]))
   }
 
   /// Return a list of arguments to pass to Command
@@ -532,7 +533,7 @@ impl Mold {
       );
     }
 
-    println!("{:12} {}", "command:".white(), target.shell.to_string());
+    println!("{:12} {}", "command:".white(), target.shell(&self.envs)?);
 
     if let Some(args) = self.build_args(target_name)? {
       println!(
@@ -591,6 +592,28 @@ impl ToString for Remote {
 }
 
 impl Recipe {
+  /// Figure out which command to run for our shell
+  fn shell(&self, envs: &[String]) -> Result<String, Error> {
+    match &self.shell {
+      Shell::Shell(cmd) => return Ok(cmd.into()),
+      Shell::Map(map) => {
+        for (test, cmd) in map {
+          match expr::compile(&test) {
+            Ok(ex) => {
+              if ex.apply(&envs) {
+                return Ok(cmd.into());
+              }
+            }
+            Err(err) => {
+              println!("{}: '{}': {}", "Warning".bright_red(), test, err);
+            }
+          }
+        }
+      }
+    }
+    Err(failure::err_msg("Couldn't select command"))
+  }
+
   /// Return this recipe's dependencies
   fn deps(&self) -> Vec<String> {
     self.deps.clone()

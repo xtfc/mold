@@ -7,14 +7,15 @@ use serde_derive::Serialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-// sorted by insertion order
+// maps sorted by insertion order
 pub type IncludeVec = Vec<Include>;
 pub type TargetSet = IndexSet<String>;
 pub type VarMap = IndexMap<String, String>; // TODO maybe down the line this should allow nulls to `unset` a variable
 pub type EnvMap = IndexMap<String, VarMap>;
+pub type ShellMap = IndexMap<String, String>;
 
-// sorted alphabetically
-pub type RecipeMap = BTreeMap<String, Recipe>; // sorted alphabetically
+// maps sorted alphabetically
+pub type RecipeMap = BTreeMap<String, Recipe>;
 
 pub const DEFAULT_FILES: &[&str] = &["mold.yaml", "mold.yml", "moldfile", "Moldfile"];
 
@@ -76,6 +77,14 @@ pub struct Include {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Shell {
+  Shell(String),
+  Map(ShellMap),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Recipe {
   /// A short description of the module's contents
   #[serde(default)]
@@ -108,7 +117,7 @@ pub struct Recipe {
   ///
   /// eg: "bash $MOLD_ROOT/foo.sh"
   /// eg: "bash $MOLD_SCRIPT"
-  pub shell: String,
+  pub shell: Shell,
 
   /// The script contents as a multiline string
   ///
