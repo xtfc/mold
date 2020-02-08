@@ -10,7 +10,6 @@ use file::Moldfile;
 use file::Recipe;
 use file::RecipeBase;
 use file::Remote;
-use file::Runtime;
 use file::TargetSet;
 use file::VarMap;
 use file::DEFAULT_FILES;
@@ -70,7 +69,7 @@ pub struct Mold {
   data: file::Moldfile,
 }
 
-// dealing with opening moldfiles
+// Moldfiles
 impl Mold {
   /// Open a moldfile and load it
   pub fn open(path: &Path) -> Result<Mold, Error> {
@@ -180,7 +179,7 @@ impl Mold {
   }
 }
 
-// dealing with environments
+// Environments
 impl Mold {
   /// Return this moldfile's variables with activated environments
   ///
@@ -188,20 +187,7 @@ impl Mold {
   pub fn env_vars(&self) -> VarMap {
     let active = active_envs(&self.data.environments, &self.envs);
 
-    let mut mold_vars = IndexMap::new(); //<&str, &str>;
-    mold_vars.insert("MOLD_ROOT", self.root_dir.to_string_lossy());
-    mold_vars.insert("MOLD_FILE", self.file.to_string_lossy());
-    mold_vars.insert("MOLD_DIR", self.dir.to_string_lossy());
-    mold_vars.insert("MOLD_CLONE_DIR", self.clone_dir.to_string_lossy());
-    mold_vars.insert("MOLD_SCRIPT_DIR", self.script_dir.to_string_lossy());
-
     let mut vars = self.data.variables.clone();
-    vars.extend(
-      mold_vars
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string())),
-    );
-
     for env_name in active {
       if let Some(env) = self.data.environments.get(&env_name) {
         vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
@@ -227,7 +213,7 @@ impl Mold {
   }
 }
 
-// dealing with recipes
+// Recipes
 impl Mold {
   /// Find a recipe in the top level map
   fn root_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
@@ -260,18 +246,8 @@ impl Mold {
       return Ok(recipe);
     }
 
-    let mut recipe = self.root_recipe(target_name)?.clone();
-    recipe.set_search_dir(Some(self.dir.clone()));
+    let recipe = self.root_recipe(target_name)?.clone();
     Ok(recipe)
-  }
-
-  /// Find a Runtime by name
-  fn find_runtime(&self, runtime_name: &str) -> Result<&Runtime, Error> {
-    self
-      .data
-      .runtimes
-      .get(runtime_name)
-      .ok_or_else(|| failure::format_err!("Couldn't locate runtime '{}'", runtime_name.red()))
   }
 
   fn open_remote(&self, target: &Remote) -> Result<Mold, Error> {
@@ -312,19 +288,26 @@ impl Mold {
 
   /// Execute a recipe
   pub fn execute(&self, target_name: &str) -> Result<(), Error> {
-    let vars = self.env_vars();
     let recipe = self.find_recipe(target_name)?;
 
-    if let Some(args) = self.recipe_args(target_name)? {
+    let mut vars = self.env_vars();
+    vars.extend(
+      self
+        .mold_vars(target_name)?
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string())),
+    );
+
+    if let Some(args) = self.build_args(target_name)? {
       if args.is_empty() {
         return Err(failure::err_msg("empty command cannot be executed"));
       }
 
       let mut command = process::Command::new(&args[0]);
       command.args(&args[1..]);
-
       command.envs(vars);
 
+      // FIXME this should be relative to root, no?
       if let Some(dir) = recipe.work_dir() {
         command.current_dir(dir);
       }
@@ -340,22 +323,13 @@ impl Mold {
   }
 
   /// Return a list of arguments to pass to Command
-  pub fn recipe_args(&self, target_name: &str) -> Result<Option<Vec<String>>, Error> {
+  pub fn build_args(&self, target_name: &str) -> Result<Option<Vec<String>>, Error> {
     let recipe = self.find_recipe(target_name)?;
 
     match recipe {
-      Recipe::File(target) => {
-        // unwrap should be safe because script_name only returns Some(...) on File and Script
-        let script = self.script_name(target_name)?.unwrap();
-        let runtime = self.find_runtime(&target.runtime)?;
-        Ok(Some(runtime.command(script.to_str().unwrap())))
-      }
-
-      Recipe::Script(target) => {
-        // unwrap should be safe because script_name only returns Some(...) on File and Script
-        let script = self.script_name(target_name)?.unwrap();
-        let runtime = self.find_runtime(&target.runtime)?;
-        Ok(Some(runtime.command(script.to_str().unwrap())))
+      Recipe::Shell(target) => {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".into());
+        Ok(Some(vec![shell, "-c".into(), target.shell]))
       }
 
       Recipe::Command(target) => Ok(Some(target.command)),
@@ -365,48 +339,50 @@ impl Mold {
   }
 
   /// Return a list of arguments to pass to Command
+  pub fn mold_vars(&self, target_name: &str) -> Result<VarMap, Error> {
+    let mut vars = IndexMap::new();
+
+    vars.insert("MOLD_ROOT", self.root_dir.to_string_lossy());
+    vars.insert("MOLD_FILE", self.file.to_string_lossy());
+    vars.insert("MOLD_DIR", self.dir.to_string_lossy());
+    vars.insert("MOLD_CLONE_DIR", self.clone_dir.to_string_lossy());
+    vars.insert("MOLD_SCRIPT_DIR", self.script_dir.to_string_lossy());
+
+    if let Some(script) = self.script_name(target_name)? {
+      // what the fuck is going on here?
+      // PathBuf -> String is such a nightmare.
+      // it seems like the .to_string().into() is needed to satisfy borrowck.
+      vars.insert("MOLD_SCRIPT", script.to_string_lossy().to_string().into());
+    }
+
+    let ret: VarMap = vars
+      .iter()
+      .map(|(k, v)| (k.to_string(), v.to_string()))
+      .collect();
+    Ok(ret)
+  }
+
+  /// Return a list of arguments to pass to Command
   pub fn script_name(&self, target_name: &str) -> Result<Option<PathBuf>, Error> {
     let recipe = self.find_recipe(target_name)?;
-    let splits: Vec<_> = target_name.rsplitn(2, '/').collect();
-    let script_name = splits[0];
-
-    let search_dir = recipe
-      .search_dir()
-      .clone()
-      .unwrap_or_else(|| self.dir.clone());
-
     match recipe {
-      Recipe::File(target) => {
-        let runtime = self.find_runtime(&target.runtime)?;
-
-        let script = match &target.file {
-          Some(x) => search_dir.join(x),
-          None => runtime.find(&search_dir, &script_name)?,
-        };
-
-        Ok(Some(script))
-      }
-
-      Recipe::Script(target) => {
-        let runtime = self.find_runtime(&target.runtime)?;
-
-        let mut script = self.script_dir.join(util::hash_string(&target.script));
-        if let Some(x) = runtime.extensions.get(0) {
-          script.set_extension(&x);
+      Recipe::Shell(target) => {
+        if let Some(script) = target.script {
+          let file = self.script_dir.join(util::hash_string(&script));
+          fs::write(&file, &script)?;
+          Ok(Some(file))
+        } else {
+          Ok(None)
         }
-
-        fs::write(&script, &target.script)?;
-
-        Ok(Some(script))
       }
 
-      Recipe::Module(_) => Ok(None),
       Recipe::Command(_) => Ok(None),
+      Recipe::Module(_) => Ok(None),
     }
   }
 }
 
-// dealing with remotes
+// Remotes
 impl Mold {
   /// Clone a single remote reference and then recursively clone subremotes
   fn clone(
@@ -541,7 +517,7 @@ impl Mold {
   }
 }
 
-// help functions
+// Help
 impl Mold {
   /// Print a description of all recipes in this moldfile
   pub fn help(&self) -> Result<(), Error> {
@@ -553,9 +529,8 @@ impl Mold {
     for (name, recipe) in &self.data.recipes {
       let colored_name = match recipe {
         Recipe::Command(_) => name.cyan(),
-        Recipe::File(_) => name.cyan(),
         Recipe::Module(_) => format!("{}/", name).cyan(),
-        Recipe::Script(_) => name.cyan(),
+        Recipe::Shell(_) => name.cyan(),
       };
 
       // this is supposed to be 12 character padded, but after all the
@@ -620,10 +595,9 @@ impl Mold {
   pub fn explain(&self, target_name: &str) -> Result<(), Error> {
     let recipe = self.find_recipe(target_name)?;
     let kind = match recipe {
-      Recipe::File(_) => "external script",
       Recipe::Command(_) => "command",
-      Recipe::Script(_) => "inline script",
       Recipe::Module(_) => "module",
+      Recipe::Shell(_) => "script",
     };
 
     println!("{:12} {}", target_name.cyan(), kind);
@@ -665,12 +639,8 @@ impl Mold {
     }
 
     match recipe {
-      Recipe::File(target) => {
-        println!("{:12} {}", "runtime:".white(), target.runtime);
-      }
-
-      Recipe::Script(target) => {
-        println!("{:12} {}", "runtime:".white(), target.runtime);
+      Recipe::Shell(target) => {
+        println!("{:12} {}", "command:".white(), target.shell.to_string());
       }
 
       Recipe::Module(target) => {
@@ -683,7 +653,7 @@ impl Mold {
       Recipe::Command(_) => {}
     }
 
-    if let Some(args) = self.recipe_args(target_name)? {
+    if let Some(args) = self.build_args(target_name)? {
       println!(
         "{:12} {} {}",
         "executes:".white(),
@@ -704,14 +674,9 @@ impl Mold {
 }
 
 impl Moldfile {
-  /// Merges any runtimes or recipes from `other` that aren't in `self`
+  /// Merges any recipes from `other` that aren't in `self`
   pub fn merge(&mut self, other: Mold) {
-    for (runtime_name, runtime) in other.data.runtimes {
-      self.runtimes.entry(runtime_name).or_insert(runtime);
-    }
-
-    for (recipe_name, mut recipe) in other.data.recipes {
-      recipe.set_search_dir(Some(other.dir.clone()));
+    for (recipe_name, recipe) in other.data.recipes {
       self.recipes.entry(recipe_name).or_insert(recipe);
     }
   }
@@ -734,49 +699,13 @@ impl ToString for Remote {
   }
 }
 
-impl Runtime {
-  fn command(&self, file: &str) -> Vec<String> {
-    self
-      .command
-      .iter()
-      .map(|x| if x == "?" { file.into() } else { x.clone() })
-      .collect()
-  }
-
-  /// Attempt to discover an appropriate script in a recipe directory
-  fn find(&self, dir: &Path, name: &str) -> Result<PathBuf, Error> {
-    // set up the pathbuf to look for dir/name
-    let mut path = dir.join(name);
-
-    // try all of our known extensions, early returning on the first match
-    for ext in &self.extensions {
-      path.set_extension(ext);
-      if path.is_file() {
-        return Ok(path);
-      }
-    }
-
-    // support no ext
-    if path.is_file() {
-      return Ok(path);
-    }
-
-    Err(failure::format_err!(
-      "Couldn't find {} in {}",
-      name.red(),
-      dir.to_str().unwrap().red()
-    ))
-  }
-}
-
 impl Recipe {
   /// Return this recipe's dependencies
   fn deps(&self) -> Vec<String> {
     match self {
-      Recipe::File(f) => f.deps.clone(),
       Recipe::Command(c) => c.deps.clone(),
-      Recipe::Script(s) => s.deps.clone(),
-      Recipe::Module(_m) => vec![],
+      Recipe::Module(_) => vec![],
+      Recipe::Shell(s) => s.deps.clone(),
     }
   }
 
@@ -784,69 +713,44 @@ impl Recipe {
   fn help(&self) -> &str {
     match self {
       Recipe::Command(c) => &c.base.help,
-      Recipe::File(f) => &f.base.help,
       Recipe::Module(m) => &m.base.help,
-      Recipe::Script(s) => &s.base.help,
+      Recipe::Shell(s) => &s.base.help,
     }
   }
 
   /// Return this recipe's variables
   fn base(&self) -> &RecipeBase {
     match self {
-      Recipe::File(f) => &f.base,
       Recipe::Command(c) => &c.base,
-      Recipe::Script(s) => &s.base,
       Recipe::Module(g) => &g.base,
+      Recipe::Shell(s) => &s.base,
     }
   }
 
   /// Return this recipe's variables
   fn vars_help(&self) -> &VarMap {
     match self {
-      Recipe::File(f) => &f.base.variables,
       Recipe::Command(c) => &c.base.variables,
-      Recipe::Script(s) => &s.base.variables,
       Recipe::Module(g) => &g.base.variables,
+      Recipe::Shell(s) => &s.base.variables,
     }
   }
 
   /// Return this recipe's working directory
   fn work_dir(&self) -> &Option<PathBuf> {
     match self {
-      Recipe::File(f) => &f.base.work_dir,
       Recipe::Command(c) => &c.base.work_dir,
-      Recipe::Script(s) => &s.base.work_dir,
       Recipe::Module(g) => &g.base.work_dir,
-    }
-  }
-
-  /// Set this recipe's search directory
-  fn set_search_dir(&mut self, to: Option<PathBuf>) {
-    match self {
-      Recipe::File(f) => f.base.search_dir = to,
-      Recipe::Command(c) => c.base.search_dir = to,
-      Recipe::Script(s) => s.base.search_dir = to,
-      Recipe::Module(m) => m.base.search_dir = to,
-    }
-  }
-
-  /// Return this recipe's search directory
-  fn search_dir(&self) -> &Option<PathBuf> {
-    match self {
-      Recipe::File(f) => &f.base.search_dir,
-      Recipe::Command(c) => &c.base.search_dir,
-      Recipe::Script(s) => &s.base.search_dir,
-      Recipe::Module(g) => &g.base.search_dir,
+      Recipe::Shell(s) => &s.base.work_dir,
     }
   }
 
   /// Add a module to our origin list
   fn add_origin(&mut self, module: Module) {
     match self {
-      Recipe::File(f) => f.base.mod_list.push(module),
       Recipe::Command(c) => c.base.mod_list.push(module),
-      Recipe::Script(s) => s.base.mod_list.push(module),
       Recipe::Module(m) => m.base.mod_list.push(module),
+      Recipe::Shell(s) => s.base.mod_list.push(module),
     }
   }
 }
