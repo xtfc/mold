@@ -72,7 +72,7 @@ pub struct Remote {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RecipeBase {
+pub struct Recipe {
   /// A short description of the module's contents
   #[serde(default)]
   pub help: String,
@@ -103,42 +103,6 @@ pub struct RecipeBase {
   #[serde(skip)]
   pub search_dir: Option<PathBuf>,
 
-  /// The module path that led to this recipe existing
-  ///
-  /// This is used for explanations as well as creating the environment
-  /// variables.
-  #[serde(skip)]
-  pub mod_list: Vec<Module>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Recipe {
-  // apparently the order here matters?
-  Shell(Shell),
-  Command(Command),
-  Module(Module),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Module {
-  /// Base data
-  #[serde(flatten)]
-  pub base: RecipeBase,
-
-  /// Remote data
-  #[serde(flatten)]
-  pub remote: Remote,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Shell {
-  /// Base data
-  #[serde(flatten)]
-  pub base: RecipeBase,
-
   /// A list of pre-execution dependencies
   #[serde(default)]
   pub deps: Vec<String>,
@@ -153,19 +117,4 @@ pub struct Shell {
   ///
   /// Its contents will be written to a file pointed to by $MOLD_SCRIPT
   pub script: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Command {
-  /// Base data
-  #[serde(flatten)]
-  pub base: RecipeBase,
-
-  /// A list of pre-execution dependencies
-  #[serde(default)]
-  pub deps: Vec<String>,
-
-  /// A list of command arguments
-  pub command: Vec<String>,
 }

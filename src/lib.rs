@@ -5,10 +5,8 @@ pub mod util;
 
 use colored::*;
 use failure::Error;
-use file::Module;
 use file::Moldfile;
 use file::Recipe;
-use file::RecipeBase;
 use file::Remote;
 use file::TargetSet;
 use file::VarMap;
@@ -216,38 +214,12 @@ impl Mold {
 // Recipes
 impl Mold {
   /// Find a recipe in the top level map
-  fn root_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
+  pub fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
     self
       .data
       .recipes
       .get(target_name)
       .ok_or_else(|| failure::format_err!("Couldn't locate target '{}'", target_name.red()))
-  }
-
-  /// Recursively find a Recipe by name
-  pub fn find_recipe(&self, target_name: &str) -> Result<Recipe, Error> {
-    if target_name.contains('/') {
-      let splits: Vec<_> = target_name.splitn(2, '/').collect();
-      let module_name = splits[0];
-      let recipe_name = splits[1];
-
-      let recipe = self.root_recipe(module_name)?;
-      let module = match recipe {
-        Recipe::Module(module) => Ok(module),
-        _ => Err(failure::format_err!(
-          "Target '{}' is not a module",
-          module_name.red()
-        )),
-      }?;
-
-      let file = self.open_remote(&module.remote)?;
-      let mut recipe = file.find_recipe(recipe_name)?.clone();
-      recipe.add_origin(module.clone());
-      return Ok(recipe);
-    }
-
-    let recipe = self.root_recipe(target_name)?.clone();
-    Ok(recipe)
   }
 
   fn open_remote(&self, target: &Remote) -> Result<Mold, Error> {
@@ -324,18 +296,9 @@ impl Mold {
 
   /// Return a list of arguments to pass to Command
   pub fn build_args(&self, target_name: &str) -> Result<Option<Vec<String>>, Error> {
-    let recipe = self.find_recipe(target_name)?;
-
-    match recipe {
-      Recipe::Shell(target) => {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".into());
-        Ok(Some(vec![shell, "-c".into(), target.shell]))
-      }
-
-      Recipe::Command(target) => Ok(Some(target.command)),
-
-      Recipe::Module(_) => Ok(None),
-    }
+    let target = self.find_recipe(target_name)?;
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".into());
+    Ok(Some(vec![shell, "-c".into(), target.shell.clone()]))
   }
 
   /// Return a list of arguments to pass to Command
@@ -364,20 +327,13 @@ impl Mold {
 
   /// Return a list of arguments to pass to Command
   pub fn script_name(&self, target_name: &str) -> Result<Option<PathBuf>, Error> {
-    let recipe = self.find_recipe(target_name)?;
-    match recipe {
-      Recipe::Shell(target) => {
-        if let Some(script) = target.script {
-          let file = self.script_dir.join(util::hash_string(&script));
-          fs::write(&file, &script)?;
-          Ok(Some(file))
-        } else {
-          Ok(None)
-        }
-      }
-
-      Recipe::Command(_) => Ok(None),
-      Recipe::Module(_) => Ok(None),
+    let target = self.find_recipe(target_name)?;
+    if let Some(script) = &target.script {
+      let file = self.script_dir.join(util::hash_string(&script));
+      fs::write(&file, &script)?;
+      Ok(Some(file))
+    } else {
+      Ok(None)
     }
   }
 }
@@ -418,12 +374,6 @@ impl Mold {
 
   /// Recursively all Includes and Modules
   pub fn clone_all(&self) -> Result<(), Error> {
-    for recipe in self.data.recipes.values() {
-      if let Recipe::Module(module) = recipe {
-        self.clone_remote(&module.remote)?;
-      }
-    }
-
     for include in &self.data.includes {
       self.clone_remote(&include)?;
     }
@@ -459,13 +409,6 @@ impl Mold {
   fn update_all_track(&self, updated: &mut HashSet<PathBuf>) -> Result<(), Error> {
     // `updated` contains all of the directories that have been, well, updated.
     // it *needs* to be passed to recursive calls.
-
-    // find all modules that have already been cloned and update them
-    for recipe in self.data.recipes.values() {
-      if let Recipe::Module(module) = recipe {
-        self.update_remote(&module.remote, updated)?;
-      }
-    }
 
     // find all Includes that have already been cloned and update them
     for include in &self.data.includes {
@@ -527,11 +470,7 @@ impl Mold {
   /// Print a description of all recipes in this moldfile
   fn help_prefixed(&self, prefix: &str) -> Result<(), Error> {
     for (name, recipe) in &self.data.recipes {
-      let colored_name = match recipe {
-        Recipe::Command(_) => name.cyan(),
-        Recipe::Module(_) => format!("{}/", name).cyan(),
-        Recipe::Shell(_) => name.cyan(),
-      };
+      let colored_name = name.cyan();
 
       // this is supposed to be 12 character padded, but after all the
       // formatting, we end up with a String instead of a
@@ -593,26 +532,17 @@ impl Mold {
 
   /// Print an explanation of what a recipe does
   pub fn explain(&self, target_name: &str) -> Result<(), Error> {
-    let recipe = self.find_recipe(target_name)?;
-    let kind = match recipe {
-      Recipe::Command(_) => "command",
-      Recipe::Module(_) => "module",
-      Recipe::Shell(_) => "script",
-    };
+    let target = self.find_recipe(target_name)?;
 
-    println!("{:12} {}", target_name.cyan(), kind);
-    for module in &recipe.base().mod_list {
-      println!("{:12} {}", "from:".white(), module.remote.to_string());
+    println!("{:12}", target_name.cyan());
+    if !target.help().is_empty() {
+      println!("{:12} {}", "help:".white(), target.help());
     }
 
-    if !recipe.help().is_empty() {
-      println!("{:12} {}", "help:".white(), recipe.help());
-    }
-
-    if !recipe.vars_help().is_empty() {
+    if !target.vars_help().is_empty() {
       println!("{:12}", "variables:".white());
 
-      for (name, desc) in recipe.vars_help() {
+      for (name, desc) in target.vars_help() {
         println!(
           "  {}{} {}",
           format!("${}", name).bright_cyan(),
@@ -622,15 +552,15 @@ impl Mold {
       }
     }
 
-    if !recipe.deps().is_empty() {
+    if !target.deps().is_empty() {
       println!(
         "{:12} {}",
         "depends on:".white(),
-        recipe.deps().join(" ").cyan()
+        target.deps().join(" ").cyan()
       );
     }
 
-    if let Some(dir) = recipe.work_dir() {
+    if let Some(dir) = target.work_dir() {
       println!(
         "{:12} {}",
         "working dir:".white(),
@@ -638,20 +568,7 @@ impl Mold {
       );
     }
 
-    match recipe {
-      Recipe::Shell(target) => {
-        println!("{:12} {}", "command:".white(), target.shell.to_string());
-      }
-
-      Recipe::Module(target) => {
-        println!("{:12} {}", "source:".white(), target.remote.to_string());
-
-        // print subrecipes
-        self.open_remote(&target.remote)?.help()?;
-      }
-
-      Recipe::Command(_) => {}
-    }
+    println!("{:12} {}", "command:".white(), target.shell.to_string());
 
     if let Some(args) = self.build_args(target_name)? {
       println!(
@@ -702,55 +619,21 @@ impl ToString for Remote {
 impl Recipe {
   /// Return this recipe's dependencies
   fn deps(&self) -> Vec<String> {
-    match self {
-      Recipe::Command(c) => c.deps.clone(),
-      Recipe::Module(_) => vec![],
-      Recipe::Shell(s) => s.deps.clone(),
-    }
+    self.deps.clone()
   }
 
   /// Return this recipe's help string
   fn help(&self) -> &str {
-    match self {
-      Recipe::Command(c) => &c.base.help,
-      Recipe::Module(m) => &m.base.help,
-      Recipe::Shell(s) => &s.base.help,
-    }
-  }
-
-  /// Return this recipe's variables
-  fn base(&self) -> &RecipeBase {
-    match self {
-      Recipe::Command(c) => &c.base,
-      Recipe::Module(g) => &g.base,
-      Recipe::Shell(s) => &s.base,
-    }
+    &self.help
   }
 
   /// Return this recipe's variables
   fn vars_help(&self) -> &VarMap {
-    match self {
-      Recipe::Command(c) => &c.base.variables,
-      Recipe::Module(g) => &g.base.variables,
-      Recipe::Shell(s) => &s.base.variables,
-    }
+    &self.variables
   }
 
   /// Return this recipe's working directory
   fn work_dir(&self) -> &Option<PathBuf> {
-    match self {
-      Recipe::Command(c) => &c.base.work_dir,
-      Recipe::Module(g) => &g.base.work_dir,
-      Recipe::Shell(s) => &s.base.work_dir,
-    }
-  }
-
-  /// Add a module to our origin list
-  fn add_origin(&mut self, module: Module) {
-    match self {
-      Recipe::Command(c) => c.base.mod_list.push(module),
-      Recipe::Module(m) => m.base.mod_list.push(module),
-      Recipe::Shell(s) => s.base.mod_list.push(module),
-    }
+    &self.work_dir
   }
 }
