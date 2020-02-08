@@ -8,20 +8,15 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 // sorted by insertion order
-pub type IncludeVec = Vec<Remote>;
+pub type IncludeVec = Vec<Include>;
 pub type TargetSet = IndexSet<String>;
 pub type VarMap = IndexMap<String, String>; // TODO maybe down the line this should allow nulls to `unset` a variable
 pub type EnvMap = IndexMap<String, VarMap>;
 
 // sorted alphabetically
 pub type RecipeMap = BTreeMap<String, Recipe>; // sorted alphabetically
-pub type RuntimeMap = BTreeMap<String, Runtime>; // sorted alphabetically
 
 pub const DEFAULT_FILES: &[&str] = &["mold.yaml", "mold.yml", "moldfile", "Moldfile"];
-
-fn default_recipe_dir() -> PathBuf {
-  "./mold".into()
-}
 
 fn default_git_ref() -> String {
   "master".into()
@@ -33,10 +28,6 @@ pub struct Moldfile {
   /// Version of mold required to run this Moldfile
   pub version: String,
 
-  /// The directory that recipe scripts can be found in
-  #[serde(default = "default_recipe_dir")]
-  pub recipe_dir: PathBuf,
-
   /// A map of includes
   #[serde(default)]
   pub includes: IncludeVec,
@@ -44,12 +35,6 @@ pub struct Moldfile {
   /// A map of recipes
   #[serde(default)]
   pub recipes: RecipeMap,
-
-  /// A map of interpreter runtimes and characteristics
-  ///
-  /// BREAKING: Renamed from `types` in 0.4.0
-  #[serde(default)]
-  pub runtimes: RuntimeMap,
 
   /// A list of environment variables used to parametrize recipes
   ///
@@ -65,6 +50,7 @@ pub struct Moldfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Remote {
   /// Git URL of a remote repo
   pub url: String,
@@ -77,26 +63,20 @@ pub struct Remote {
   pub file: Option<PathBuf>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Runtime {
-  /// A list of arguments used as a shell command
-  ///
-  /// Any element "?" will be / replaced with the desired script when
-  /// executing. eg:
-  ///   ["python", "-m", "?"]
-  /// will produce the shell command when .exec("foo") is called:
-  ///   $ python -m foo
-  pub command: Vec<String>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Include {
+  /// Remote to include
+  #[serde(flatten)]
+  pub remote: Remote,
 
-  /// A list of extensions used to search for the script name
-  ///
-  /// These should omit the leading dot.
+  /// Prefix to prepend
   #[serde(default)]
-  pub extensions: Vec<String>,
+  pub prefix: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RecipeBase {
+pub struct Recipe {
   /// A short description of the module's contents
   #[serde(default)]
   pub help: String,
@@ -120,95 +100,18 @@ pub struct RecipeBase {
   #[serde(default)]
   pub work_dir: Option<PathBuf>,
 
-  /// The actual search_dir of this recipe
-  ///
-  /// This is used for Includes, where the command may be lifted up to the
-  /// top-level, but the search_dir is located in a different location
-  #[serde(skip)]
-  pub search_dir: Option<PathBuf>,
-
-  /// The module path that led to this recipe existing
-  ///
-  /// This is used for explanations as well as creating the environment
-  /// variables.
-  #[serde(skip)]
-  pub mod_list: Vec<Module>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Recipe {
-  // apparently the order here matters?
-  Module(Module),
-  Script(Script),
-  File(File),
-  Command(Command),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Module {
-  /// Base data
-  #[serde(flatten)]
-  pub base: RecipeBase,
-
-  /// Remote data
-  #[serde(flatten)]
-  pub remote: Remote,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct File {
-  /// Base data
-  #[serde(flatten)]
-  pub base: RecipeBase,
-
   /// A list of pre-execution dependencies
   #[serde(default)]
   pub deps: Vec<String>,
 
-  /// Which interpreter should be used to execute this script
+  /// The command to pass to $SHELL to execute this recipe
   ///
-  /// BREAKING: Renamed from `type` in 0.4.0
-  pub runtime: String,
-
-  /// The script file name
-  ///
-  /// If left undefined, Mold will attempt to discover the recipe name by
-  /// searching the recipe_dir for any files that start with the recipe name and
-  /// have an appropriate extension for the specified interpreter runtime.
-  pub file: Option<PathBuf>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Script {
-  /// Base data
-  #[serde(flatten)]
-  pub base: RecipeBase,
-
-  /// A list of pre-execution dependencies
-  #[serde(default)]
-  pub deps: Vec<String>,
-
-  /// Which interpreter should be used to execute this script
-  ///
-  /// BREAKING: Renamed from `type` in 0.4.0
-  pub runtime: String,
+  /// eg: "bash $MOLD_ROOT/foo.sh"
+  /// eg: "bash $MOLD_SCRIPT"
+  pub shell: String,
 
   /// The script contents as a multiline string
-  pub script: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Command {
-  /// Base data
-  #[serde(flatten)]
-  pub base: RecipeBase,
-
-  /// A list of pre-execution dependencies
-  #[serde(default)]
-  pub deps: Vec<String>,
-
-  /// A list of command arguments
-  #[serde(default)]
-  pub command: Vec<String>,
+  ///
+  /// Its contents will be written to a file pointed to by $MOLD_SCRIPT
+  pub script: Option<String>,
 }
