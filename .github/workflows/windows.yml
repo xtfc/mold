@@ -1,0 +1,84 @@
+name: "Windows"
+
+on: ["push"]
+
+jobs:
+  build:
+    name: "Standard Build"
+    runs-on: "windows-latest"
+    steps:
+    - uses: "actions/checkout@v2"
+
+    - name: "Print versions"
+      run: "rustc --version && cargo --version && rustup --version"
+
+    - name: "Build"
+      run: "cargo build" # this could be cargo run -- build, but... lol?
+
+  quality:
+    name: "Code Quality"
+    runs-on: "windows-latest"
+    steps:
+    - uses: "actions/checkout@v2"
+
+    - name: "Check formatting"
+      run: "cargo run -- c/fmtcheck"
+
+    - name: "Check linting"
+      run: "cargo run -- c/lint"
+
+    - name: "Run tests"
+      run: "cargo run -- c/test"
+
+  static:
+    name: "Static Build"
+    runs-on: "windows-latest"
+    steps:
+    - uses: "actions/checkout@v2"
+
+    - name: "Build static binary"
+      run: "cargo run -- staticbuild"
+
+    - name: "Upload artifact"
+      uses: "actions/upload-artifact@v1"
+      with:
+        name: "mold"
+        path: "moldy"
+
+  release:
+    name: "Publish Release"
+    runs-on: "windows-latest"
+    if: "startsWith(github.ref, 'refs/tags')"
+    needs: ["build", "quality", "static"]
+    steps:
+
+    - name: "Get version"
+      id: "get_version"
+      run: 'echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}'
+
+    - name: "Download artifact"
+      uses: "actions/download-artifact@v1"
+      with:
+        name: "mold"
+
+    - name: "Create release"
+      uses: "actions/create-release@v1"
+      id: "create_release"
+      env:
+        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"  # do I need this?
+      with:
+        tag_name: "${{ steps.get_version.outputs.VERSION }}"  # seems wrong
+        release_name: "${{ steps.get_version.outputs.VERSION }}"  # seems wrong
+        draft: true
+        prerelease: false
+
+    - name: "Upload release binary"
+      id: "upload_binary"
+      uses: "actions/upload-release-asset@v1.0.1"
+      env:
+        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+      with:
+        upload_url: "${{ steps.create_release.outputs.upload_url }}"
+        asset_path: "mold/moldy"
+        asset_name: "${{ format('mold-windows-{0}', steps.get_version.outputs.VERSION) }}"
+        asset_content_type: "application/octet-stream"
