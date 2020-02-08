@@ -375,7 +375,7 @@ impl Mold {
   /// Recursively all Includes and Modules
   pub fn clone_all(&self) -> Result<(), Error> {
     for include in &self.data.includes {
-      self.clone_remote(&include)?;
+      self.clone_remote(&include.remote)?;
     }
 
     Ok(())
@@ -412,7 +412,7 @@ impl Mold {
 
     // find all Includes that have already been cloned and update them
     for include in &self.data.includes {
-      self.update_remote(&include, updated)?;
+      self.update_remote(&include.remote, updated)?;
     }
 
     Ok(())
@@ -436,16 +436,16 @@ impl Mold {
     // mutated while iterating through one of its fields.
     let mut others = vec![];
     for include in &self.data.includes {
-      let path = self.clone_dir.join(include.folder_name());
-      let mut other = Self::discover(&path, include.file.clone())?.adopt(self);
+      let path = self.clone_dir.join(include.remote.folder_name());
+      let mut other = Self::discover(&path, include.remote.file.clone())?.adopt(self);
 
       // recursively merge
       other.process_includes()?;
-      others.push(other);
+      others.push((other, include.prefix.clone()));
     }
 
-    for other in others {
-      self.data.merge(other);
+    for (data, prefix) in others {
+      self.data.merge(data, &prefix);
     }
 
     Ok(())
@@ -592,9 +592,12 @@ impl Mold {
 
 impl Moldfile {
   /// Merges any recipes from `other` that aren't in `self`
-  pub fn merge(&mut self, other: Mold) {
+  pub fn merge(&mut self, other: Mold, prefix: &str) {
     for (recipe_name, recipe) in other.data.recipes {
-      self.recipes.entry(recipe_name).or_insert(recipe);
+      self
+        .recipes
+        .entry(format!("{}{}", prefix, recipe_name))
+        .or_insert(recipe);
     }
   }
 }

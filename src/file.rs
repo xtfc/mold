@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 // sorted by insertion order
-pub type IncludeVec = Vec<Remote>;
+pub type IncludeVec = Vec<Include>;
 pub type TargetSet = IndexSet<String>;
 pub type VarMap = IndexMap<String, String>; // TODO maybe down the line this should allow nulls to `unset` a variable
 pub type EnvMap = IndexMap<String, VarMap>;
@@ -69,6 +69,18 @@ pub struct Remote {
 
   /// Moldfile to look at
   pub file: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Include {
+  /// Remote to include
+  #[serde(flatten)]
+  pub remote: Remote,
+
+  /// Prefix to prepend
+  #[serde(default)]
+  pub prefix: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
