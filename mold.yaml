@@ -1,12 +1,11 @@
-version: "0.5"
+version: "0.6"
 
 includes:
-  - url: "github.com/xtfc/std.mold"
-    ref: "0.5"
   - url: "github.com/xtfc/cargo.mold"
-    ref: "v4"
+    ref: "dev"
+    prefix: "c/"
 
 recipes:
   staticbuild:
     help: "Build a static MUSL binary using Docker"
-    runtime: "sh"
+    shell: "$SHELL $MOLD_DIR/staticbuild.sh"
