@@ -18,10 +18,6 @@ pub type RecipeMap = BTreeMap<String, Recipe>; // sorted alphabetically
 
 pub const DEFAULT_FILES: &[&str] = &["mold.yaml", "mold.yml", "moldfile", "Moldfile"];
 
-fn default_recipe_dir() -> PathBuf {
-  "./mold".into()
-}
-
 fn default_git_ref() -> String {
   "master".into()
 }
@@ -31,10 +27,6 @@ fn default_git_ref() -> String {
 pub struct Moldfile {
   /// Version of mold required to run this Moldfile
   pub version: String,
-
-  /// The directory that recipe scripts can be found in
-  #[serde(default = "default_recipe_dir")]
-  pub recipe_dir: PathBuf,
 
   /// A map of includes
   #[serde(default)]
@@ -107,13 +99,6 @@ pub struct Recipe {
   /// ADDED: 0.4.0
   #[serde(default)]
   pub work_dir: Option<PathBuf>,
-
-  /// The actual search_dir of this recipe
-  ///
-  /// This is used for Includes, where the command may be lifted up to the
-  /// top-level, but the search_dir is located in a different location
-  #[serde(skip)]
-  pub search_dir: Option<PathBuf>,
 
   /// A list of pre-execution dependencies
   #[serde(default)]

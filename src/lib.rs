@@ -48,17 +48,11 @@ pub struct Mold {
   /// path to the moldfile
   file: PathBuf,
 
-  /// path to the recipe scripts
-  dir: PathBuf,
-
   /// (derived) root directory that the file sits in
   root_dir: PathBuf,
 
-  /// (derived) path to the cloned repos
-  clone_dir: PathBuf,
-
-  /// (derived) path to the generated scripts
-  script_dir: PathBuf,
+  /// (derived) path to the cloned repos and generated scripts
+  mold_dir: PathBuf,
 
   /// which environments to use in the environment
   envs: Vec<String>,
@@ -88,27 +82,17 @@ impl Mold {
       ));
     }
 
-    let dir = path.with_file_name(&data.recipe_dir);
-    let root_dir = dir.parent().unwrap_or(&Path::new("/")).to_path_buf();
-    let clone_dir = dir.join(".clones");
-    let script_dir = dir.join(".scripts");
+    let root_dir = path.parent().unwrap_or(&Path::new("/")).to_path_buf();
+    let mold_dir = root_dir.join(".mold");
 
-    if !dir.is_dir() {
-      fs::create_dir(&dir)?;
-    }
-    if !clone_dir.is_dir() {
-      fs::create_dir(&clone_dir)?;
-    }
-    if !script_dir.is_dir() {
-      fs::create_dir(&script_dir)?;
+    if !mold_dir.is_dir() {
+      fs::create_dir(&mold_dir)?;
     }
 
     Ok(Mold {
       file: fs::canonicalize(path)?,
-      dir: fs::canonicalize(dir)?,
       root_dir: fs::canonicalize(root_dir)?,
-      clone_dir: fs::canonicalize(clone_dir)?,
-      script_dir: fs::canonicalize(script_dir)?,
+      mold_dir: fs::canonicalize(mold_dir)?,
       envs: vec![],
       data,
     })
@@ -223,7 +207,7 @@ impl Mold {
   }
 
   fn open_remote(&self, target: &Remote) -> Result<Mold, Error> {
-    let path = self.clone_dir.join(&target.folder_name());
+    let path = self.mold_dir.join(&target.folder_name());
     let mut mold = Self::discover(&path, target.file.clone())?.adopt(self);
     mold.process_includes()?;
     Ok(mold)
@@ -295,9 +279,7 @@ impl Mold {
 
     vars.insert("MOLD_ROOT", self.root_dir.to_string_lossy());
     vars.insert("MOLD_FILE", self.file.to_string_lossy());
-    vars.insert("MOLD_DIR", self.dir.to_string_lossy());
-    vars.insert("MOLD_CLONE_DIR", self.clone_dir.to_string_lossy());
-    vars.insert("MOLD_SCRIPT_DIR", self.script_dir.to_string_lossy());
+    vars.insert("MOLD_DIR", self.mold_dir.to_string_lossy());
 
     if let Some(script) = self.script_name(target_name)? {
       // what the fuck is going on here?
@@ -317,7 +299,7 @@ impl Mold {
   pub fn script_name(&self, target_name: &str) -> Result<Option<PathBuf>, Error> {
     let target = self.find_recipe(target_name)?;
     if let Some(script) = &target.script {
-      let file = self.script_dir.join(util::hash_string(&script));
+      let file = self.mold_dir.join(util::hash_string(&script));
       fs::write(&file, &script)?;
       Ok(Some(file))
     } else {
@@ -336,7 +318,7 @@ impl Mold {
     ref_: &str,
     file: Option<PathBuf>,
   ) -> Result<(), Error> {
-    let path = self.clone_dir.join(folder_name);
+    let path = self.mold_dir.join(folder_name);
     if !path.is_dir() {
       remote::clone(&format!("https://{}", url), &path).or_else(|_| remote::clone(url, &path))?;
       remote::checkout(&path, ref_)?;
@@ -375,7 +357,7 @@ impl Mold {
   /// * fetch / checkout
   /// * recurse into it
   fn update_remote(&self, remote: &Remote, updated: &mut HashSet<PathBuf>) -> Result<(), Error> {
-    let path = self.clone_dir.join(remote.folder_name());
+    let path = self.mold_dir.join(remote.folder_name());
     if path.is_dir() && !updated.contains(&path) {
       updated.insert(path.clone());
       remote::checkout(&path, &remote.ref_)?;
@@ -407,11 +389,8 @@ impl Mold {
   /// Delete all cloned top-level targets
   pub fn clean_all(&self) -> Result<(), Error> {
     // no point in checking if it exists, because Mold::open creates it
-    fs::remove_dir_all(&self.clone_dir)?;
-    println!("{:>12} {}", "Deleted".red(), self.clone_dir.display());
-
-    fs::remove_dir_all(&self.script_dir)?;
-    println!("{:>12} {}", "Deleted".red(), self.script_dir.display());
+    fs::remove_dir_all(&self.mold_dir)?;
+    println!("{:>12} {}", "Deleted".red(), self.mold_dir.display());
     Ok(())
   }
 
@@ -422,7 +401,7 @@ impl Mold {
     // mutated while iterating through one of its fields.
     let mut others = vec![];
     for include in &self.data.includes {
-      let path = self.clone_dir.join(include.remote.folder_name());
+      let path = self.mold_dir.join(include.remote.folder_name());
       let mut other = Self::discover(&path, include.remote.file.clone())?.adopt(self);
 
       // recursively merge
@@ -439,8 +418,7 @@ impl Mold {
 
   /// Adopt any attributes from the parent that should be shared
   fn adopt(mut self, parent: &Self) -> Self {
-    self.clone_dir = parent.clone_dir.clone();
-    self.script_dir = parent.script_dir.clone();
+    self.mold_dir = parent.mold_dir.clone();
     self.envs = parent.envs.clone();
     self
   }
