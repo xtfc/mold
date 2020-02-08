@@ -6,14 +6,14 @@ jobs:
   build:
     runs-on: "ubuntu-latest"
     steps:
-    - uses: "actions/checkout@v1"
+    - uses: "actions/checkout@v2"
     - name: "Versions"
       run: "rustc --version && cargo --version && rustup --version"
     - name: "Build"
       run: "cargo build" # this could be cargo run -- build, but... lol?
     - name: "Check formatting"
-      run: "cargo run -- fmtcheck"
+      run: "cargo run -- c/fmtcheck"
     - name: "Lint"
-      run: "cargo run -- lint"
+      run: "cargo run -- c/lint"
     - name: "Test"
-      run: "cargo run -- test"
+      run: "cargo run -- c/test"
