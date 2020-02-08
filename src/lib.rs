@@ -48,9 +48,6 @@ pub struct Mold {
   /// path to the moldfile
   file: PathBuf,
 
-  /// path to the recipe scripts
-  dir: PathBuf,
-
   /// (derived) root directory that the file sits in
   root_dir: PathBuf,
 
@@ -88,13 +85,13 @@ impl Mold {
       ));
     }
 
-    let dir = path.with_file_name(&data.recipe_dir);
-    let root_dir = dir.parent().unwrap_or(&Path::new("/")).to_path_buf();
-    let clone_dir = dir.join(".clones");
-    let script_dir = dir.join(".scripts");
+    let root_dir = path.parent().unwrap_or(&Path::new("/")).to_path_buf();
+    let mold_dir = root_dir.join(".mold");
+    let clone_dir = mold_dir.join("clones");
+    let script_dir = mold_dir.join("scripts");
 
-    if !dir.is_dir() {
-      fs::create_dir(&dir)?;
+    if !mold_dir.is_dir() {
+      fs::create_dir(&mold_dir)?;
     }
     if !clone_dir.is_dir() {
       fs::create_dir(&clone_dir)?;
@@ -105,7 +102,6 @@ impl Mold {
 
     Ok(Mold {
       file: fs::canonicalize(path)?,
-      dir: fs::canonicalize(dir)?,
       root_dir: fs::canonicalize(root_dir)?,
       clone_dir: fs::canonicalize(clone_dir)?,
       script_dir: fs::canonicalize(script_dir)?,
@@ -295,7 +291,6 @@ impl Mold {
 
     vars.insert("MOLD_ROOT", self.root_dir.to_string_lossy());
     vars.insert("MOLD_FILE", self.file.to_string_lossy());
-    vars.insert("MOLD_DIR", self.dir.to_string_lossy());
     vars.insert("MOLD_CLONE_DIR", self.clone_dir.to_string_lossy());
     vars.insert("MOLD_SCRIPT_DIR", self.script_dir.to_string_lossy());
 
