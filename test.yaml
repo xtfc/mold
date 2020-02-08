@@ -1,4 +1,4 @@
-version: "0.5"
+version: "0.6"
 
 variables:
   NAME: "no one"
@@ -13,9 +13,15 @@ environments:
     NAME: "Manny"
 
 recipes:
+  foo:
+    help: "Hello world inline shell"
+    shell:
+      unix: "echo 'this is running in a unix world'"
+      windows: "echo 'this is running in a windows world'"
+
   python:
     help: "Hello world external Python"
-    shell: "python $MOLD_DIR/python.py"
+    shell: "python $MOLD_ROOT/mold/python.py"
     variables:
       NAME: "Recipient of greeting."
 
@@ -27,7 +33,7 @@ recipes:
 
   shell:
     help: "Hello world external shell"
-    shell: "sh $MOLD_DIR/shell.sh"
+    shell: "sh $MOLD_ROOT/mold/shell.sh"
     variables:
       NAME: "Recipient of greeting."
 
@@ -36,16 +42,3 @@ recipes:
     shell: "sh $MOLD_SCRIPT"
     script: |
       echo "Hello, world!"
-
-  empty:
-    help: "Empty command"
-    command: []
-
-  onearg:
-    help: "One argument command"
-    command: ["ls"]
-
-  cargo:
-    help: "Included remote utilities"
-    url: "github.com/xtfc/cargo.mold"
-    ref: "v4"
