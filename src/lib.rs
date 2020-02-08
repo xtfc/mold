@@ -308,7 +308,7 @@ impl Mold {
 
     let ret: VarMap = vars
       .iter()
-      .map(|(k, v)| (k.to_string(), v.to_string()))
+      .map(|(k, v)| ((*k).to_string(), v.to_string()))
       .collect();
     Ok(ret)
   }
@@ -342,9 +342,7 @@ impl Mold {
       remote::checkout(&path, ref_)?;
 
       // open it and recursively clone its remotes
-      Self::discover(&path, file.clone())?
-        .adopt(self)
-        .clone_all()?;
+      Self::discover(&path, file)?.adopt(self).clone_all()?;
     }
 
     Ok(())
