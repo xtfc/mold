@@ -8,4 +8,4 @@ includes:
 recipes:
   staticbuild:
     help: "Build a static MUSL binary using Docker"
-    shell: "$SHELL $MOLD_ROOT/mold/staticbuild.sh"
+    shell: "sh $MOLD_ROOT/mold/staticbuild.sh"
