@@ -4,16 +4,19 @@ on: ["push"]
 
 jobs:
   build:
-    name: "Standard Build"
+    name: "Standard Linux Build"
     runs-on: "ubuntu-latest"
     steps:
     - uses: "actions/checkout@v2"
 
     - name: "Print versions"
-      run: "rustc --version && cargo --version && rustup --version"
+      run: |
+        rustc --version
+        cargo --version
+        rustup --version
 
     - name: "Build"
-      run: "cargo build" # this could be cargo run -- build, but... lol?
+      run: "cargo build"
 
   quality:
     name: "Code Quality"
@@ -30,8 +33,8 @@ jobs:
     - name: "Run tests"
       run: "cargo run -- c/test"
 
-  static:
-    name: "Static Build"
+  linux:
+    name: "Static Linux Build"
     runs-on: "ubuntu-latest"
     steps:
     - uses: "actions/checkout@v2"
@@ -42,24 +45,80 @@ jobs:
     - name: "Upload artifact"
       uses: "actions/upload-artifact@v1"
       with:
-        name: "mold"
+        name: "linux"
         path: "moldy"
+
+  # does this actually statically build?
+  # I have no idea and no machine to test on!
+  windows:
+    name: "Static Windows Build"
+    runs-on: "windows-latest"
+    steps:
+    - uses: "actions/checkout@v2"
+
+    - name: "Print versions"
+      run: |
+        rustc --version
+        cargo --version
+        rustup --version
+
+    - name: "Build"
+      run: "cargo build --release"
+
+    - name: "Upload artifact"
+      uses: "actions/upload-artifact@v1"
+      with:
+        name: "windows"
+        path: "target/release/mold.exe"
+
+  # does this actually statically build?
+  # I have no idea and no machine to test on!
+  mac:
+    name: "Static Mac OS Build"
+    runs-on: "macos-latest"
+    steps:
+    - uses: "actions/checkout@v2"
+
+    - name: "Print versions"
+      run: |
+        rustc --version
+        cargo --version
+        rustup --version
+
+    - name: "Build"
+      run: "cargo build --release"
+
+    - name: "Upload artifact"
+      uses: "actions/upload-artifact@v1"
+      with:
+        name: "mac"
+        path: "target/release/mold"
 
   release:
     name: "Publish Release"
     runs-on: "ubuntu-latest"
     if: "startsWith(github.ref, 'refs/tags')"
-    needs: ["build", "quality", "static"]
+    needs: ["build", "quality", "linux", "windows", "mac"]
     steps:
 
     - name: "Get version"
       id: "get_version"
       run: 'echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}'
 
-    - name: "Download artifact"
+    - name: "Download Linux"
       uses: "actions/download-artifact@v1"
       with:
-        name: "mold"
+        name: "linux"
+
+    - name: "Download Mac"
+      uses: "actions/download-artifact@v1"
+      with:
+        name: "mac"
+
+    - name: "Download Windows"
+      uses: "actions/download-artifact@v1"
+      with:
+        name: "windows"
 
     - name: "Create release"
       uses: "actions/create-release@v1"
@@ -67,18 +126,37 @@ jobs:
       env:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"  # do I need this?
       with:
-        tag_name: "${{ steps.get_version.outputs.VERSION }}"  # seems wrong
-        release_name: "${{ steps.get_version.outputs.VERSION }}"  # seems wrong
+        tag_name: "${{ steps.get_version.outputs.VERSION }}"
+        release_name: "${{ steps.get_version.outputs.VERSION }}"
         draft: true
         prerelease: false
 
-    - name: "Upload release binary"
-      id: "upload_binary"
+    - name: "Upload Linux"
       uses: "actions/upload-release-asset@v1.0.1"
       env:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
       with:
         upload_url: "${{ steps.create_release.outputs.upload_url }}"
-        asset_path: "mold/moldy"
-        asset_name: "${{ format('mold-{0}', steps.get_version.outputs.VERSION) }}"
+        asset_path: "linux/moldy"
+        asset_name: "${{ format('mold-{0}-linux', steps.get_version.outputs.VERSION) }}"
+        asset_content_type: "application/octet-stream"
+
+    - name: "Upload Mac"
+      uses: "actions/upload-release-asset@v1.0.1"
+      env:
+        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+      with:
+        upload_url: "${{ steps.create_release.outputs.upload_url }}"
+        asset_path: "mac/mold"
+        asset_name: "${{ format('mold-{0}-mac', steps.get_version.outputs.VERSION) }}"
+        asset_content_type: "application/octet-stream"
+
+    - name: "Upload Windows"
+      uses: "actions/upload-release-asset@v1.0.1"
+      env:
+        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+      with:
+        upload_url: "${{ steps.create_release.outputs.upload_url }}"
+        asset_path: "windows/mold.exe"
+        asset_name: "${{ format('mold-{0}-windows.exe', steps.get_version.outputs.VERSION) }}"
         asset_content_type: "application/octet-stream"

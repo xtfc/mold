@@ -5,7 +5,7 @@
 
 VER="0.6.0"
 EXE="./.mold-$VER"
-URL="https://github.com/xtfc/mold/releases/download/v$VER/mold-$VER"
+URL="https://github.com/xtfc/mold/releases/download/v$VER/mold-$VER-linux"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
