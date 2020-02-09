@@ -43,7 +43,7 @@ pub struct Moldfile {
   #[serde(default)]
   pub variables: VarMap,
 
-  /// A map of environment names to variable maps used to parametrize recipes
+  /// A map of environment expressions to variable maps used to parametrize recipes
   ///
   /// ADDED: 0.3.0
   #[serde(default)]
@@ -115,6 +115,12 @@ pub struct Recipe {
   ///
   /// Its contents will be written to a file pointed to by $MOLD_SCRIPT
   pub script: Option<String>,
+
+  /// A map of environment expressions to variable maps used to parametrize recipes
+  ///
+  /// ADDED: 0.6.0
+  #[serde(default)]
+  pub environments: EnvMap,
 
   /// A vec of additional environments that are active just for this recipe
   #[serde(skip, default)]

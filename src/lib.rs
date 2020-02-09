@@ -199,9 +199,7 @@ impl Mold {
 // Environments
 impl Mold {
   /// Return this moldfile's variables with activated environments
-  ///
-  /// This also inserts a few special mold variables
-  fn env_vars(&self) -> VarMap {
+  pub fn env_vars(&self) -> VarMap {
     let active = active_envs(&self.data.environments, &self.envs);
 
     let mut vars = self.data.variables.clone();
@@ -293,6 +291,8 @@ impl Mold {
   /// Return a list of arguments to pass to Command
   fn build_vars(&self, recipe: &Recipe) -> Result<VarMap, Error> {
     let mut vars = self.env_vars();
+    vars.extend(recipe.env_vars());
+
     vars.extend(
       self
         .mold_vars(recipe)?
@@ -621,6 +621,20 @@ impl Recipe {
       }
     }
     Err(failure::err_msg("Couldn't select command"))
+  }
+
+  /// Return this recipe's variables with activated environments
+  pub fn env_vars(&self) -> VarMap {
+    let active = active_envs(&self.environments, &self.extras);
+
+    let mut vars = VarMap::new();
+    for env_name in active {
+      if let Some(env) = self.environments.get(&env_name) {
+        vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
+      }
+    }
+
+    vars
   }
 
   /// Return this recipe's dependencies
