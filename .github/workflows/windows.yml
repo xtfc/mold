@@ -4,7 +4,7 @@ on: ["push"]
 
 jobs:
   build:
-    name: "Standard Build"
+    name: "Build"
     runs-on: "windows-latest"
     steps:
     - uses: "actions/checkout@v2"
@@ -16,37 +16,13 @@ jobs:
         rustup --version
 
     - name: "Build"
-      run: "cargo build" # this could be cargo run -- build, but... lol?
+      run: "cargo build --release"
 
-  quality:
-    name: "Code Quality"
-    runs-on: "windows-latest"
-    steps:
-    - uses: "actions/checkout@v2"
-
-    - name: "Check formatting"
-      run: "cargo run -- c/fmtcheck"
-
-    - name: "Check linting"
-      run: "cargo run -- c/lint"
-
-    - name: "Run tests"
-      run: "cargo run -- c/test"
-
-  static:
-    name: "Static Build"
-    runs-on: "windows-latest"
-    steps:
-    - uses: "actions/checkout@v2"
-
-    - name: "Build static binary"
-      run: "cargo run -- staticbuild"
-
-    - name: "Upload artifact"
-      uses: "actions/upload-artifact@v1"
-      with:
-        name: "mold"
-        path: "moldy"
+    - name: "Find"
+      run: |
+        dir
+        dir target
+        dir target\release
 
   release:
     name: "Publish Release"
