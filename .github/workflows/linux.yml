@@ -45,7 +45,7 @@ jobs:
     - name: "Upload artifact"
       uses: "actions/upload-artifact@v1"
       with:
-        name: "mold"
+        name: "mold-linux"
         path: "moldy"
 
   release:
@@ -62,7 +62,7 @@ jobs:
     - name: "Download artifact"
       uses: "actions/download-artifact@v1"
       with:
-        name: "mold"
+        name: "mold-linux"
 
     - name: "Create release"
       uses: "actions/create-release@v1"
@@ -82,6 +82,6 @@ jobs:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
       with:
         upload_url: "${{ steps.create_release.outputs.upload_url }}"
-        asset_path: "mold/moldy"
-        asset_name: "${{ format('mold-{0}', steps.get_version.outputs.VERSION) }}"
+        asset_path: "mold-linux/moldy"
+        asset_name: "${{ format('mold-linux-{0}', steps.get_version.outputs.VERSION) }}"
         asset_content_type: "application/octet-stream"
