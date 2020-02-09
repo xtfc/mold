@@ -96,22 +96,14 @@ fn run(args: Args) -> Result<(), Error> {
   let targets = mold.find_all_dependencies(&requested_targets)?;
 
   for target_name in &targets {
-    if let Some(args) = mold.build_args(target_name)? {
-      println!(
-        "{} {} {} {}",
-        "mold".white(),
-        target_name.cyan(),
-        "$".green(),
-        args.join(" ")
-      );
-    } else {
-      return Err(failure::format_err!(
-        "Cannot execute module {}. Use {} {} to list available subrecipes.",
-        target_name.red(),
-        "--explain".yellow(),
-        target_name.yellow()
-      ));
-    }
+    let args = mold.build_args(target_name)?;
+    println!(
+      "{} {} {} {}",
+      "mold".white(),
+      target_name.cyan(),
+      "$".green(),
+      args.join(" ")
+    );
     mold.execute(target_name)?;
   }
 
