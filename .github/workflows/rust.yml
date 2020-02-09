@@ -4,7 +4,7 @@ on: ["push"]
 
 jobs:
   build:
-    name: "Standard Build"
+    name: "Standard Linux Build"
     runs-on: "ubuntu-latest"
     steps:
     - uses: "actions/checkout@v2"
@@ -16,7 +16,7 @@ jobs:
         rustup --version
 
     - name: "Build"
-      run: "cargo build" # this could be cargo run -- build, but... lol?
+      run: "cargo build"
 
   quality:
     name: "Code Quality"
@@ -116,17 +116,14 @@ jobs:
       with:
         name: "windows"
 
-    - name: "Find"
-      run: "find ."
-
     - name: "Create release"
       uses: "actions/create-release@v1"
       id: "create_release"
       env:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"  # do I need this?
       with:
-        tag_name: "${{ steps.get_version.outputs.VERSION }}"  # seems wrong
-        release_name: "${{ steps.get_version.outputs.VERSION }}"  # seems wrong
+        tag_name: "${{ steps.get_version.outputs.VERSION }}"
+        release_name: "${{ steps.get_version.outputs.VERSION }}"
         draft: true
         prerelease: false
 
