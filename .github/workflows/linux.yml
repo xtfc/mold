@@ -1,4 +1,4 @@
-name: "Linux"
+name: "Rust"
 
 on: ["push"]
 
@@ -33,7 +33,7 @@ jobs:
     - name: "Run tests"
       run: "cargo run -- c/test"
 
-  static:
+  linux:
     name: "Static Build"
     runs-on: "ubuntu-latest"
     steps:
@@ -45,24 +45,79 @@ jobs:
     - name: "Upload artifact"
       uses: "actions/upload-artifact@v1"
       with:
-        name: "mold-linux"
+        name: "linux"
         path: "moldy"
+
+  windows:
+    name: "Static Build"
+    runs-on: "windows-latest"
+    steps:
+    - uses: "actions/checkout@v2"
+
+    - name: "Print versions"
+      run: |
+        rustc --version
+        cargo --version
+        rustup --version
+
+    - name: "Build"
+      run: "cargo build --release"
+
+    - name: "Upload artifact"
+      uses: "actions/upload-artifact@v1"
+      with:
+        name: "windows"
+        path: "target/release/mold.exe"
+
+  mac:
+    name: "Static Build"
+    runs-on: "macos-latest"
+    steps:
+    - uses: "actions/checkout@v2"
+
+    - name: "Print versions"
+      run: |
+        rustc --version
+        cargo --version
+        rustup --version
+
+    - name: "Build"
+      run: "cargo build --release"
+
+    - name: "Upload artifact"
+      uses: "actions/upload-artifact@v1"
+      with:
+        name: "mac"
+        path: "target/release/mold"
 
   release:
     name: "Publish Release"
     runs-on: "ubuntu-latest"
     if: "startsWith(github.ref, 'refs/tags')"
-    needs: ["build", "quality", "static"]
+    needs: ["build", "quality", "linux", "windows", "mac"]
     steps:
 
     - name: "Get version"
       id: "get_version"
       run: 'echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}'
 
-    - name: "Download artifact"
+    - name: "Download Linux"
       uses: "actions/download-artifact@v1"
       with:
-        name: "mold-linux"
+        name: "linux"
+
+    - name: "Download Mac"
+      uses: "actions/download-artifact@v1"
+      with:
+        name: "mac"
+
+    - name: "Download Windows"
+      uses: "actions/download-artifact@v1"
+      with:
+        name: "windows"
+
+    - name: "Find"
+      run: "find ."
 
     - name: "Create release"
       uses: "actions/create-release@v1"
@@ -75,13 +130,35 @@ jobs:
         draft: true
         prerelease: false
 
-    - name: "Upload release binary"
+    - name: "Upload Linux"
       id: "upload_binary"
       uses: "actions/upload-release-asset@v1.0.1"
       env:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
       with:
         upload_url: "${{ steps.create_release.outputs.upload_url }}"
-        asset_path: "mold-linux/moldy"
-        asset_name: "${{ format('mold-linux-{0}', steps.get_version.outputs.VERSION) }}"
+        asset_path: "linux/moldy"
+        asset_name: "${{ format('mold-{0}-linux', steps.get_version.outputs.VERSION) }}"
+        asset_content_type: "application/octet-stream"
+
+    - name: "Upload Mac"
+      id: "upload_binary"
+      uses: "actions/upload-release-asset@v1.0.1"
+      env:
+        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+      with:
+        upload_url: "${{ steps.create_release.outputs.upload_url }}"
+        asset_path: "mac/mold"
+        asset_name: "${{ format('mold-{0}-mac', steps.get_version.outputs.VERSION) }}"
+        asset_content_type: "application/octet-stream"
+
+    - name: "Upload Windows"
+      id: "upload_binary"
+      uses: "actions/upload-release-asset@v1.0.1"
+      env:
+        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+      with:
+        upload_url: "${{ steps.create_release.outputs.upload_url }}"
+        asset_path: "windows/mold.exe"
+        asset_name: "${{ format('mold-{0}-windows.exe', steps.get_version.outputs.VERSION) }}"
         asset_content_type: "application/octet-stream"
