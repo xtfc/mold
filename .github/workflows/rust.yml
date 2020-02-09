@@ -131,7 +131,6 @@ jobs:
         prerelease: false
 
     - name: "Upload Linux"
-      id: "upload_binary"
       uses: "actions/upload-release-asset@v1.0.1"
       env:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
@@ -142,7 +141,6 @@ jobs:
         asset_content_type: "application/octet-stream"
 
     - name: "Upload Mac"
-      id: "upload_binary"
       uses: "actions/upload-release-asset@v1.0.1"
       env:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
@@ -153,7 +151,6 @@ jobs:
         asset_content_type: "application/octet-stream"
 
     - name: "Upload Windows"
-      id: "upload_binary"
       uses: "actions/upload-release-asset@v1.0.1"
       env:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
