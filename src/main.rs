@@ -1,6 +1,7 @@
 use colored::*;
 use exitfailure::ExitFailure;
 use failure::Error;
+use mold::file::TargetSet;
 use mold::Mold;
 use std::path::Path;
 use std::path::PathBuf;
@@ -88,16 +89,21 @@ fn run(args: Args) -> Result<(), Error> {
     return Ok(());
   }
 
-  let requested_targets = args
-    .targets
-    .iter()
-    .map(std::string::ToString::to_string)
-    .collect();
+  let mut requested_targets = TargetSet::new();
+  for target in args.targets {
+    // FIXME once stabilized, use `.strip_prefix` instead. way cleaner.
+    // if let Some(env) = target.strip_prefix('+') {
+    if target.starts_with('+') {
+      let env = target.trim_start_matches('+');
+      mold.add_env(env);
+    } else {
+      requested_targets.insert(target.to_string());
+    }
+  }
+
   let all_targets = mold.find_all_dependencies(&requested_targets)?;
-
   for target_name in &all_targets {
-    let task = mold.build_task(target_name)?;
-
+    let args = mold.build_args(target_name)?;
     println!(
       "{} {} {} {}",
       "mold".white(),
