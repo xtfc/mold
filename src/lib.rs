@@ -233,12 +233,20 @@ impl Mold {
 // Recipes
 impl Mold {
   /// Find a recipe in the top level map
-  fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
-    self
+  pub fn find_recipe(&self, full_name: &str) -> Result<Recipe, Error> {
+    let splits: Vec<_> = full_name.split(':').collect();
+    let target_name = splits[0];
+    let mut recipe = self
       .data
       .recipes
       .get(target_name)
-      .ok_or_else(|| failure::format_err!("Couldn't locate target '{}'", target_name.red()))
+      .ok_or_else(|| failure::format_err!("Couldn't locate target '{}'", target_name.red()))?
+      .clone();
+    recipe.extras = splits[1..]
+      .iter()
+      .map(std::string::ToString::to_string)
+      .collect();
+    Ok(recipe)
   }
 
   fn open_remote(&self, target: &Remote) -> Result<Mold, Error> {

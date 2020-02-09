@@ -115,4 +115,8 @@ pub struct Recipe {
   ///
   /// Its contents will be written to a file pointed to by $MOLD_SCRIPT
   pub script: Option<String>,
+
+  /// A vec of additional environments that are active just for this recipe
+  #[serde(skip, default)]
+  pub extras: Vec<String>,
 }
