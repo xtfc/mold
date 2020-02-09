@@ -48,6 +48,8 @@ jobs:
         name: "linux"
         path: "moldy"
 
+  # does this actually statically build?
+  # I have no idea and no machine to test on!
   windows:
     name: "Static Windows Build"
     runs-on: "windows-latest"
@@ -69,6 +71,8 @@ jobs:
         name: "windows"
         path: "target/release/mold.exe"
 
+  # does this actually statically build?
+  # I have no idea and no machine to test on!
   mac:
     name: "Static Mac OS Build"
     runs-on: "macos-latest"
