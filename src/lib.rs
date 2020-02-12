@@ -448,34 +448,13 @@ impl Mold {
 impl Mold {
   /// Print a description of all recipes in this moldfile
   pub fn help(&self) -> Result<(), Error> {
-    self.help_prefixed("")
-  }
-
-  /// Print a description of all recipes in this moldfile
-  fn help_prefixed(&self, prefix: &str) -> Result<(), Error> {
     for (name, recipe) in &self.data.recipes {
-      let colored_name = name.cyan();
-
-      // this is supposed to be 12 character padded, but after all the
-      // formatting, we end up with a String instead of a
-      // colored::ColoredString, so we can't get the padding correct.  but I'm
-      // pretty sure that all the color formatting just adds 18 non-display
-      // characters, so padding to 30 works out?
-      let display_name: String = format!("{}{}", prefix.magenta(), colored_name);
-      println!("{:>30} {}", display_name, recipe.help());
+      println!("{:>12} {}", name.cyan(), recipe.help());
 
       // print dependencies
       let deps = recipe.deps();
       if !deps.is_empty() {
-        println!(
-          "             ⮡ {}",
-          deps
-            .iter()
-            .map(|x| format!("{}{}", prefix, x))
-            .collect::<Vec<_>>()
-            .join(" ")
-            .cyan()
-        );
+        println!("             ⮡ {}", deps.join(" ").cyan());
       }
     }
 
@@ -485,28 +464,34 @@ impl Mold {
   /// Print an explanation of global settings for this Moldfile
   pub fn explain_self(&self) -> Result<(), Error> {
     println!("{:12} {}", "environments:".white(), self.envs.join(" "));
-    println!("{:12}", "conditionals:".white());
 
-    let active = active_envs(&self.data.environments, &self.envs);
+    if !self.data.environments.is_empty() {
+      println!("{:12}", "conditionals:".white());
 
-    for (cond, map) in &self.data.environments {
-      let cond_disp = if active.contains(cond) {
-        cond.green()
-      } else {
-        cond.blue()
-      };
+      let active = active_envs(&self.data.environments, &self.envs);
 
-      println!("  {}:", cond_disp);
-      for (key, val) in map {
-        println!("    {:16} = {}", format!("${}", key).bright_cyan(), val);
+      for (cond, map) in &self.data.environments {
+        let cond_disp = if active.contains(cond) {
+          cond.green()
+        } else {
+          cond.blue()
+        };
+
+        println!("  {}:", cond_disp);
+        for (key, val) in map {
+          println!("    {:16} = {}", format!("${}", key).bright_cyan(), val);
+        }
       }
     }
 
     let vars = self.env_vars();
-    println!("{:12}", "variables:".white());
 
-    for (key, val) in &vars {
-      println!("  {:16} = {}", format!("${}", key).bright_cyan(), val);
+    if !vars.is_empty() {
+      println!("{:12}", "variables:".white());
+
+      for (key, val) in &vars {
+        println!("  {:16} = {}", format!("${}", key).bright_cyan(), val);
+      }
     }
 
     println!();
@@ -516,35 +501,22 @@ impl Mold {
 
   /// Print an explanation of what a recipe does
   pub fn explain(&self, target_name: &str) -> Result<(), Error> {
-    let target = self.find_recipe(target_name)?;
+    let recipe = self.find_recipe(target_name)?;
 
     println!("{:12}", target_name.cyan());
-    if !target.help().is_empty() {
-      println!("{:12} {}", "help:".white(), target.help());
+    if !recipe.help().is_empty() {
+      println!("{:12} {}", "help:".white(), recipe.help());
     }
 
-    if !target.vars_help().is_empty() {
-      println!("{:12}", "variables:".white());
-
-      for (name, desc) in target.vars_help() {
-        println!(
-          "  {}{} {}",
-          format!("${}", name).bright_cyan(),
-          ":".white(),
-          desc
-        );
-      }
-    }
-
-    if !target.deps().is_empty() {
+    if !recipe.deps().is_empty() {
       println!(
         "{:12} {}",
         "depends on:".white(),
-        target.deps().join(" ").cyan()
+        recipe.deps().join(" ").cyan()
       );
     }
 
-    if let Some(dir) = target.work_dir() {
+    if let Some(dir) = recipe.work_dir() {
       println!(
         "{:12} {}",
         "working dir:".white(),
@@ -552,18 +524,29 @@ impl Mold {
       );
     }
 
-    println!("{:12} {}", "command:".white(), target.shell(&self.envs)?);
+    println!("{:12} {}", "command:".white(), recipe.shell(&self.envs)?);
 
-    let args = self.build_args(target)?;
+    let task = self.build_task(target_name)?;
+
+    println!("{:12}", "variables:".white());
+    for (name, desc) in &task.vars {
+      println!(
+        "  {}{} {}",
+        format!("${}", name).bright_cyan(),
+        ":".white(),
+        desc
+      );
+    }
+
     println!(
       "{:12} {} {}",
       "executes:".white(),
       "$".green(),
-      args.join(" ")
+      task.args.join(" ")
     );
 
     // display contents of script file
-    if let Some(script) = self.script_name(target)? {
+    if let Some(script) = self.script_name(recipe)? {
       util::cat(script)?;
     }
 
@@ -640,11 +623,6 @@ impl Recipe {
   /// Return this recipe's help string
   fn help(&self) -> &str {
     &self.help
-  }
-
-  /// Return this recipe's variables
-  fn vars_help(&self) -> &VarMap {
-    &self.variables
   }
 
   /// Return this recipe's working directory
