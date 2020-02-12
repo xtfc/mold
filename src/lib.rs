@@ -6,12 +6,12 @@ pub mod util;
 use colored::*;
 use failure::Error;
 use file::Command;
-use file::DEFAULT_FILES;
 use file::Moldfile;
 use file::Recipe;
 use file::Remote;
 use file::TargetSet;
 use file::VarMap;
+use file::DEFAULT_FILES;
 use indexmap::IndexMap;
 use semver::Version;
 use semver::VersionReq;
@@ -655,9 +655,7 @@ impl Recipe {
 
 impl Task {
   /// Execute a recipe
-  pub fn execute(
-    self,
-  ) -> Result<(), Error> {
+  pub fn execute(self) -> Result<(), Error> {
     if self.args.is_empty() {
       return Err(failure::err_msg("empty command cannot be executed"));
     }
