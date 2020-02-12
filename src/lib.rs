@@ -231,10 +231,15 @@ impl Mold {
     self.find_all_dependencies(&deps)
   }
 
-  /// Execute a recipe
-  pub fn execute(&self, target_name: &str) -> Result<(), Error> {
-    let recipe = self.find_recipe(target_name)?;
+  /// Return a list of arguments to pass to Command
+  pub fn build_args(&self, target_name: &str) -> Result<Vec<String>, Error> {
+    let target = self.find_recipe(target_name)?;
+    let command = target.shell(&self.envs)?;
+    Ok(shell_words::split(&command)?)
+  }
 
+  /// Return a list of arguments to pass to Command
+  pub fn build_vars(&self, target_name: &str) -> Result<VarMap, Error> {
     let mut vars = self.env_vars();
     vars.extend(
       self
@@ -242,35 +247,34 @@ impl Mold {
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string())),
     );
-
-    let args = self.build_args(target_name)?;
-    if args.is_empty() {
-      return Err(failure::err_msg("empty command cannot be executed"));
-    }
-
-    let mut command = process::Command::new(&args[0]);
-    command.args(&args[1..]);
-    command.envs(vars);
-
-    // FIXME this should be relative to root, no?
-    if let Some(dir) = recipe.work_dir() {
-      command.current_dir(dir);
-    }
-
-    let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
-
-    if !exit_status.success() {
-      return Err(failure::err_msg("recipe returned non-zero exit status"));
-    }
-
-    Ok(())
+    Ok(vars)
   }
 
-  /// Return a list of arguments to pass to Command
-  pub fn build_args(&self, target_name: &str) -> Result<Vec<String>, Error> {
-    let target = self.find_recipe(target_name)?;
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".into());
-    Ok(vec![shell, "-c".into(), target.shell(&self.envs)?])
+  /// Do minimal variable expansion
+  ///
+  /// FOO => FOO
+  /// $FOO => value of variable FOO
+  /// $$FOO $FOO
+  /// $$$FOO $$FOO
+  /// ...
+  pub fn sub_vars(&self, args: Vec<String>, vars: &VarMap) -> Result<Vec<String>, Error> {
+    let mut subbed_args = vec![];
+    for arg in args {
+      // FIXME once stabilized, use `.strip_prefix` instead.
+      if arg.starts_with("$$") {
+        subbed_args.push(arg[1..].into());
+      } else if arg.starts_with('$') {
+        if let Some(val) = vars.get(&arg[1..]) {
+          subbed_args.push(val.into());
+        } else if let Ok(val) = std::env::var(&arg[1..]) {
+          subbed_args.push(val);
+        }
+      } else {
+        subbed_args.push(arg);
+      }
+    }
+
+    Ok(subbed_args)
   }
 
   /// Return a list of arguments to pass to Command
@@ -305,6 +309,35 @@ impl Mold {
     } else {
       Ok(None)
     }
+  }
+
+  /// Execute a recipe
+  pub fn execute(
+    &self,
+    args: Vec<String>,
+    vars: VarMap,
+    work_dir: &Option<PathBuf>,
+  ) -> Result<(), Error> {
+    if args.is_empty() {
+      return Err(failure::err_msg("empty command cannot be executed"));
+    }
+
+    let mut command = process::Command::new(&args[0]);
+    command.args(&args[1..]);
+    command.envs(vars);
+
+    // FIXME this should be relative to root, no?
+    if let Some(dir) = work_dir {
+      command.current_dir(dir);
+    }
+
+    let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
+
+    if !exit_status.success() {
+      return Err(failure::err_msg("recipe returned non-zero exit status"));
+    }
+
+    Ok(())
   }
 }
 
@@ -628,7 +661,7 @@ impl Recipe {
   }
 
   /// Return this recipe's working directory
-  fn work_dir(&self) -> &Option<PathBuf> {
+  pub fn work_dir(&self) -> &Option<PathBuf> {
     &self.work_dir
   }
 }

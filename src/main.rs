@@ -96,7 +96,10 @@ fn run(args: Args) -> Result<(), Error> {
   let targets = mold.find_all_dependencies(&requested_targets)?;
 
   for target_name in &targets {
+    let recipe = mold.find_recipe(target_name)?;
     let args = mold.build_args(target_name)?;
+    let vars = mold.build_vars(target_name)?;
+    let args = mold.sub_vars(args, &vars)?;
     println!(
       "{} {} {} {}",
       "mold".white(),
@@ -104,7 +107,7 @@ fn run(args: Args) -> Result<(), Error> {
       "$".green(),
       args.join(" ")
     );
-    mold.execute(target_name)?;
+    mold.execute(args, vars, recipe.work_dir())?;
   }
 
   Ok(())
