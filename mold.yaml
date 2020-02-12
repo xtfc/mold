@@ -8,4 +8,5 @@ includes:
 recipes:
   staticbuild:
     help: "Build a static MUSL binary using Docker"
-    command: "sh $MOLD_ROOT/mold/staticbuild.sh"
+    command: "sh $MOLD_SCRIPT"
+    script: "sh $MOLD_ROOT/mold/staticbuild.sh"  # god this sucks.
