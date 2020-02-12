@@ -243,35 +243,34 @@ impl Mold {
         .map(|(k, v)| (k.to_string(), v.to_string())),
     );
 
-    if let Some(args) = self.build_args(target_name)? {
-      if args.is_empty() {
-        return Err(failure::err_msg("empty command cannot be executed"));
-      }
+    let args = self.build_args(target_name)?;
+    if args.is_empty() {
+      return Err(failure::err_msg("empty command cannot be executed"));
+    }
 
-      let mut command = process::Command::new(&args[0]);
-      command.args(&args[1..]);
-      command.envs(vars);
+    let mut command = process::Command::new(&args[0]);
+    command.args(&args[1..]);
+    command.envs(vars);
 
-      // FIXME this should be relative to root, no?
-      if let Some(dir) = recipe.work_dir() {
-        command.current_dir(dir);
-      }
+    // FIXME this should be relative to root, no?
+    if let Some(dir) = recipe.work_dir() {
+      command.current_dir(dir);
+    }
 
-      let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
+    let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
 
-      if !exit_status.success() {
-        return Err(failure::err_msg("recipe returned non-zero exit status"));
-      }
+    if !exit_status.success() {
+      return Err(failure::err_msg("recipe returned non-zero exit status"));
     }
 
     Ok(())
   }
 
   /// Return a list of arguments to pass to Command
-  pub fn build_args(&self, target_name: &str) -> Result<Option<Vec<String>>, Error> {
+  pub fn build_args(&self, target_name: &str) -> Result<Vec<String>, Error> {
     let target = self.find_recipe(target_name)?;
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".into());
-    Ok(Some(vec![shell, "-c".into(), target.shell(&self.envs)?]))
+    Ok(vec![shell, "-c".into(), target.shell(&self.envs)?])
   }
 
   /// Return a list of arguments to pass to Command
@@ -535,14 +534,13 @@ impl Mold {
 
     println!("{:12} {}", "command:".white(), target.shell(&self.envs)?);
 
-    if let Some(args) = self.build_args(target_name)? {
-      println!(
-        "{:12} {} {}",
-        "executes:".white(),
-        "$".green(),
-        args.join(" ")
-      );
-    }
+    let args = self.build_args(target_name)?;
+    println!(
+      "{:12} {} {}",
+      "executes:".white(),
+      "$".green(),
+      args.join(" ")
+    );
 
     // display contents of script file
     if let Some(script) = self.script_name(target_name)? {
