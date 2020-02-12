@@ -93,18 +93,20 @@ fn run(args: Args) -> Result<(), Error> {
     .iter()
     .map(std::string::ToString::to_string)
     .collect();
-  let targets = mold.find_all_dependencies(&requested_targets)?;
+  let all_targets = mold.find_all_dependencies(&requested_targets)?;
 
-  for target_name in &targets {
-    let args = mold.build_args(target_name)?;
+  for target_name in &all_targets {
+    let task = mold.build_task(target_name)?;
+
     println!(
       "{} {} {} {}",
       "mold".white(),
       target_name.cyan(),
       "$".green(),
-      args.join(" ")
+      shell_words::join(task.args()),
     );
-    mold.execute(target_name)?;
+
+    task.execute()?;
   }
 
   Ok(())

@@ -5,10 +5,10 @@ pub mod util;
 
 use colored::*;
 use failure::Error;
+use file::Command;
 use file::Moldfile;
 use file::Recipe;
 use file::Remote;
-use file::Shell;
 use file::TargetSet;
 use file::VarMap;
 use file::DEFAULT_FILES;
@@ -44,6 +44,33 @@ fn active_envs(env_map: &file::EnvMap, envs: &[String]) -> Vec<String> {
   result
 }
 
+/// Do minimal variable expansion
+///
+/// FOO => FOO
+/// $FOO => value of variable FOO
+/// $$FOO $FOO
+/// $$$FOO $$FOO
+/// ...
+fn sub_vars(args: Vec<String>, vars: &VarMap) -> Result<Vec<String>, Error> {
+  let mut subbed_args = vec![];
+  for arg in args {
+    // FIXME once stabilized, use `.strip_prefix` instead.
+    if arg.starts_with("$$") {
+      subbed_args.push(arg[1..].into());
+    } else if arg.starts_with('$') {
+      if let Some(val) = vars.get(&arg[1..]) {
+        subbed_args.push(val.into());
+      } else if let Ok(val) = std::env::var(&arg[1..]) {
+        subbed_args.push(val);
+      }
+    } else {
+      subbed_args.push(arg);
+    }
+  }
+
+  Ok(subbed_args)
+}
+
 #[derive(Debug)]
 pub struct Mold {
   /// path to the moldfile
@@ -60,6 +87,13 @@ pub struct Mold {
 
   /// the parsed moldfile data
   data: file::Moldfile,
+}
+
+#[derive(Debug)]
+pub struct Task {
+  args: Vec<String>,
+  vars: VarMap,
+  work_dir: Option<PathBuf>,
 }
 
 // Moldfiles
@@ -167,7 +201,7 @@ impl Mold {
   /// Return this moldfile's variables with activated environments
   ///
   /// This also inserts a few special mold variables
-  pub fn env_vars(&self) -> VarMap {
+  fn env_vars(&self) -> VarMap {
     let active = active_envs(&self.data.environments, &self.envs);
 
     let mut vars = self.data.variables.clone();
@@ -199,7 +233,7 @@ impl Mold {
 // Recipes
 impl Mold {
   /// Find a recipe in the top level map
-  pub fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
+  fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
     self
       .data
       .recipes
@@ -231,57 +265,44 @@ impl Mold {
     self.find_all_dependencies(&deps)
   }
 
-  /// Execute a recipe
-  pub fn execute(&self, target_name: &str) -> Result<(), Error> {
+  pub fn build_task(&self, target_name: &str) -> Result<Task, Error> {
     let recipe = self.find_recipe(target_name)?;
+    let vars = self.build_vars(recipe)?;
+    let args = sub_vars(self.build_args(recipe)?, &vars)?;
+    Ok(Task {
+      work_dir: recipe.work_dir.clone(),
+      vars,
+      args,
+    })
+  }
 
+  /// Return a list of arguments to pass to Command
+  fn build_args(&self, recipe: &Recipe) -> Result<Vec<String>, Error> {
+    let command = recipe.shell(&self.envs)?;
+    Ok(shell_words::split(&command)?)
+  }
+
+  /// Return a list of arguments to pass to Command
+  fn build_vars(&self, recipe: &Recipe) -> Result<VarMap, Error> {
     let mut vars = self.env_vars();
     vars.extend(
       self
-        .mold_vars(target_name)?
+        .mold_vars(recipe)?
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string())),
     );
-
-    let args = self.build_args(target_name)?;
-    if args.is_empty() {
-      return Err(failure::err_msg("empty command cannot be executed"));
-    }
-
-    let mut command = process::Command::new(&args[0]);
-    command.args(&args[1..]);
-    command.envs(vars);
-
-    // FIXME this should be relative to root, no?
-    if let Some(dir) = recipe.work_dir() {
-      command.current_dir(dir);
-    }
-
-    let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
-
-    if !exit_status.success() {
-      return Err(failure::err_msg("recipe returned non-zero exit status"));
-    }
-
-    Ok(())
+    Ok(vars)
   }
 
   /// Return a list of arguments to pass to Command
-  pub fn build_args(&self, target_name: &str) -> Result<Vec<String>, Error> {
-    let target = self.find_recipe(target_name)?;
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".into());
-    Ok(vec![shell, "-c".into(), target.shell(&self.envs)?])
-  }
-
-  /// Return a list of arguments to pass to Command
-  pub fn mold_vars(&self, target_name: &str) -> Result<VarMap, Error> {
+  fn mold_vars(&self, recipe: &Recipe) -> Result<VarMap, Error> {
     let mut vars = IndexMap::new();
 
     vars.insert("MOLD_ROOT", self.root_dir.to_string_lossy());
     vars.insert("MOLD_FILE", self.file.to_string_lossy());
     vars.insert("MOLD_DIR", self.mold_dir.to_string_lossy());
 
-    if let Some(script) = self.script_name(target_name)? {
+    if let Some(script) = self.script_name(recipe)? {
       // what the fuck is going on here?
       // PathBuf -> String is such a nightmare.
       // it seems like the .to_string().into() is needed to satisfy borrowck.
@@ -296,9 +317,8 @@ impl Mold {
   }
 
   /// Return a list of arguments to pass to Command
-  pub fn script_name(&self, target_name: &str) -> Result<Option<PathBuf>, Error> {
-    let target = self.find_recipe(target_name)?;
-    if let Some(script) = &target.script {
+  fn script_name(&self, recipe: &Recipe) -> Result<Option<PathBuf>, Error> {
+    if let Some(script) = &recipe.script {
       let file = self.mold_dir.join(util::hash_string(&script));
       fs::write(&file, &script)?;
       Ok(Some(file))
@@ -534,7 +554,7 @@ impl Mold {
 
     println!("{:12} {}", "command:".white(), target.shell(&self.envs)?);
 
-    let args = self.build_args(target_name)?;
+    let args = self.build_args(target)?;
     println!(
       "{:12} {} {}",
       "executes:".white(),
@@ -543,7 +563,7 @@ impl Mold {
     );
 
     // display contents of script file
-    if let Some(script) = self.script_name(target_name)? {
+    if let Some(script) = self.script_name(target)? {
       util::cat(script)?;
     }
 
@@ -592,9 +612,9 @@ impl ToString for Remote {
 impl Recipe {
   /// Figure out which command to run for our shell
   fn shell(&self, envs: &[String]) -> Result<String, Error> {
-    match &self.shell {
-      Shell::Shell(cmd) => return Ok(cmd.into()),
-      Shell::Map(map) => {
+    match &self.command {
+      Command::Shell(cmd) => return Ok(cmd.into()),
+      Command::Map(map) => {
         for (test, cmd) in map {
           match expr::compile(&test) {
             Ok(ex) => {
@@ -630,5 +650,35 @@ impl Recipe {
   /// Return this recipe's working directory
   fn work_dir(&self) -> &Option<PathBuf> {
     &self.work_dir
+  }
+}
+
+impl Task {
+  /// Execute a recipe
+  pub fn execute(self) -> Result<(), Error> {
+    if self.args.is_empty() {
+      return Err(failure::err_msg("empty command cannot be executed"));
+    }
+
+    let mut command = process::Command::new(&self.args[0]);
+    command.args(&self.args[1..]);
+    command.envs(self.vars);
+
+    // FIXME this should be relative to root, no?
+    if let Some(dir) = self.work_dir {
+      command.current_dir(dir);
+    }
+
+    let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
+
+    if !exit_status.success() {
+      return Err(failure::err_msg("recipe returned non-zero exit status"));
+    }
+
+    Ok(())
+  }
+
+  pub fn args(&self) -> &Vec<String> {
+    &self.args
   }
 }

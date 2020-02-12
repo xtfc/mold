@@ -12,7 +12,7 @@ pub type IncludeVec = Vec<Include>;
 pub type TargetSet = IndexSet<String>;
 pub type VarMap = IndexMap<String, String>; // TODO maybe down the line this should allow nulls to `unset` a variable
 pub type EnvMap = IndexMap<String, VarMap>;
-pub type ShellMap = IndexMap<String, String>;
+pub type CommandMap = IndexMap<String, String>;
 
 // maps sorted alphabetically
 pub type RecipeMap = BTreeMap<String, Recipe>;
@@ -78,9 +78,9 @@ pub struct Include {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum Shell {
+pub enum Command {
   Shell(String),
-  Map(ShellMap),
+  Map(CommandMap),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,7 +117,7 @@ pub struct Recipe {
   ///
   /// eg: "bash $MOLD_ROOT/foo.sh"
   /// eg: "bash $MOLD_SCRIPT"
-  pub shell: Shell,
+  pub command: Command,
 
   /// The script contents as a multiline string
   ///
