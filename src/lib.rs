@@ -44,6 +44,33 @@ fn active_envs(env_map: &file::EnvMap, envs: &[String]) -> Vec<String> {
   result
 }
 
+/// Do minimal variable expansion
+///
+/// FOO => FOO
+/// $FOO => value of variable FOO
+/// $$FOO $FOO
+/// $$$FOO $$FOO
+/// ...
+fn sub_vars(args: Vec<String>, vars: &VarMap) -> Result<Vec<String>, Error> {
+  let mut subbed_args = vec![];
+  for arg in args {
+    // FIXME once stabilized, use `.strip_prefix` instead.
+    if arg.starts_with("$$") {
+      subbed_args.push(arg[1..].into());
+    } else if arg.starts_with('$') {
+      if let Some(val) = vars.get(&arg[1..]) {
+        subbed_args.push(val.into());
+      } else if let Ok(val) = std::env::var(&arg[1..]) {
+        subbed_args.push(val);
+      }
+    } else {
+      subbed_args.push(arg);
+    }
+  }
+
+  Ok(subbed_args)
+}
+
 #[derive(Debug)]
 pub struct Mold {
   /// path to the moldfile
@@ -60,6 +87,13 @@ pub struct Mold {
 
   /// the parsed moldfile data
   data: file::Moldfile,
+}
+
+#[derive(Debug)]
+pub struct Task {
+  args: Vec<String>,
+  vars: VarMap,
+  work_dir: Option<PathBuf>,
 }
 
 // Moldfiles
@@ -167,7 +201,7 @@ impl Mold {
   /// Return this moldfile's variables with activated environments
   ///
   /// This also inserts a few special mold variables
-  pub fn env_vars(&self) -> VarMap {
+  fn env_vars(&self) -> VarMap {
     let active = active_envs(&self.data.environments, &self.envs);
 
     let mut vars = self.data.variables.clone();
@@ -199,7 +233,7 @@ impl Mold {
 // Recipes
 impl Mold {
   /// Find a recipe in the top level map
-  pub fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
+  fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
     self
       .data
       .recipes
@@ -231,14 +265,25 @@ impl Mold {
     self.find_all_dependencies(&deps)
   }
 
+  pub fn build_task(&self, target_name: &str) -> Result<Task, Error> {
+    let recipe = self.find_recipe(target_name)?;
+    let vars = self.build_vars(recipe)?;
+    let args = sub_vars(self.build_args(recipe)?, &vars)?;
+    Ok(Task {
+      work_dir: recipe.work_dir.clone(),
+      vars,
+      args,
+    })
+  }
+
   /// Return a list of arguments to pass to Command
-  pub fn build_args(&self, recipe: &Recipe) -> Result<Vec<String>, Error> {
+  fn build_args(&self, recipe: &Recipe) -> Result<Vec<String>, Error> {
     let command = recipe.shell(&self.envs)?;
     Ok(shell_words::split(&command)?)
   }
 
   /// Return a list of arguments to pass to Command
-  pub fn build_vars(&self, recipe: &Recipe) -> Result<VarMap, Error> {
+  fn build_vars(&self, recipe: &Recipe) -> Result<VarMap, Error> {
     let mut vars = self.env_vars();
     vars.extend(
       self
@@ -249,35 +294,8 @@ impl Mold {
     Ok(vars)
   }
 
-  /// Do minimal variable expansion
-  ///
-  /// FOO => FOO
-  /// $FOO => value of variable FOO
-  /// $$FOO $FOO
-  /// $$$FOO $$FOO
-  /// ...
-  pub fn sub_vars(&self, args: Vec<String>, vars: &VarMap) -> Result<Vec<String>, Error> {
-    let mut subbed_args = vec![];
-    for arg in args {
-      // FIXME once stabilized, use `.strip_prefix` instead.
-      if arg.starts_with("$$") {
-        subbed_args.push(arg[1..].into());
-      } else if arg.starts_with('$') {
-        if let Some(val) = vars.get(&arg[1..]) {
-          subbed_args.push(val.into());
-        } else if let Ok(val) = std::env::var(&arg[1..]) {
-          subbed_args.push(val);
-        }
-      } else {
-        subbed_args.push(arg);
-      }
-    }
-
-    Ok(subbed_args)
-  }
-
   /// Return a list of arguments to pass to Command
-  pub fn mold_vars(&self, recipe: &Recipe) -> Result<VarMap, Error> {
+  fn mold_vars(&self, recipe: &Recipe) -> Result<VarMap, Error> {
     let mut vars = IndexMap::new();
 
     vars.insert("MOLD_ROOT", self.root_dir.to_string_lossy());
@@ -299,7 +317,7 @@ impl Mold {
   }
 
   /// Return a list of arguments to pass to Command
-  pub fn script_name(&self, recipe: &Recipe) -> Result<Option<PathBuf>, Error> {
+  fn script_name(&self, recipe: &Recipe) -> Result<Option<PathBuf>, Error> {
     if let Some(script) = &recipe.script {
       let file = self.mold_dir.join(util::hash_string(&script));
       fs::write(&file, &script)?;
@@ -307,35 +325,6 @@ impl Mold {
     } else {
       Ok(None)
     }
-  }
-
-  /// Execute a recipe
-  pub fn execute(
-    &self,
-    args: Vec<String>,
-    vars: VarMap,
-    work_dir: &Option<PathBuf>,
-  ) -> Result<(), Error> {
-    if args.is_empty() {
-      return Err(failure::err_msg("empty command cannot be executed"));
-    }
-
-    let mut command = process::Command::new(&args[0]);
-    command.args(&args[1..]);
-    command.envs(vars);
-
-    // FIXME this should be relative to root, no?
-    if let Some(dir) = work_dir {
-      command.current_dir(dir);
-    }
-
-    let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
-
-    if !exit_status.success() {
-      return Err(failure::err_msg("recipe returned non-zero exit status"));
-    }
-
-    Ok(())
   }
 }
 
@@ -659,7 +648,39 @@ impl Recipe {
   }
 
   /// Return this recipe's working directory
-  pub fn work_dir(&self) -> &Option<PathBuf> {
+  fn work_dir(&self) -> &Option<PathBuf> {
     &self.work_dir
+  }
+}
+
+impl Task {
+  /// Execute a recipe
+  pub fn execute(
+    self,
+  ) -> Result<(), Error> {
+    if self.args.is_empty() {
+      return Err(failure::err_msg("empty command cannot be executed"));
+    }
+
+    let mut command = process::Command::new(&self.args[0]);
+    command.args(&self.args[1..]);
+    command.envs(self.vars);
+
+    // FIXME this should be relative to root, no?
+    if let Some(dir) = self.work_dir {
+      command.current_dir(dir);
+    }
+
+    let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
+
+    if !exit_status.success() {
+      return Err(failure::err_msg("recipe returned non-zero exit status"));
+    }
+
+    Ok(())
+  }
+
+  pub fn args(&self) -> &Vec<String> {
+    &self.args
   }
 }
