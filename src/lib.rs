@@ -5,13 +5,13 @@ pub mod util;
 
 use colored::*;
 use failure::Error;
+use file::Command;
+use file::DEFAULT_FILES;
 use file::Moldfile;
 use file::Recipe;
 use file::Remote;
-use file::Shell;
 use file::TargetSet;
 use file::VarMap;
-use file::DEFAULT_FILES;
 use indexmap::IndexMap;
 use semver::Version;
 use semver::VersionReq;
@@ -612,9 +612,9 @@ impl ToString for Remote {
 impl Recipe {
   /// Figure out which command to run for our shell
   fn shell(&self, envs: &[String]) -> Result<String, Error> {
-    match &self.shell {
-      Shell::Shell(cmd) => return Ok(cmd.into()),
-      Shell::Map(map) => {
+    match &self.command {
+      Command::Shell(cmd) => return Ok(cmd.into()),
+      Command::Map(map) => {
         for (test, cmd) in map {
           match expr::compile(&test) {
             Ok(ex) => {
