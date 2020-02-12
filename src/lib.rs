@@ -448,21 +448,8 @@ impl Mold {
 impl Mold {
   /// Print a description of all recipes in this moldfile
   pub fn help(&self) -> Result<(), Error> {
-    self.help_prefixed("")
-  }
-
-  /// Print a description of all recipes in this moldfile
-  fn help_prefixed(&self, prefix: &str) -> Result<(), Error> {
     for (name, recipe) in &self.data.recipes {
-      let colored_name = name.cyan();
-
-      // this is supposed to be 12 character padded, but after all the
-      // formatting, we end up with a String instead of a
-      // colored::ColoredString, so we can't get the padding correct.  but I'm
-      // pretty sure that all the color formatting just adds 18 non-display
-      // characters, so padding to 30 works out?
-      let display_name: String = format!("{}{}", prefix.magenta(), colored_name);
-      println!("{:>30} {}", display_name, recipe.help());
+      println!("{:>12} {}", name.cyan(), recipe.help());
 
       // print dependencies
       let deps = recipe.deps();
@@ -470,9 +457,6 @@ impl Mold {
         println!(
           "             ⮡ {}",
           deps
-            .iter()
-            .map(|x| format!("{}{}", prefix, x))
-            .collect::<Vec<_>>()
             .join(" ")
             .cyan()
         );
