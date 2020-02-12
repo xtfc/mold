@@ -97,9 +97,9 @@ fn run(args: Args) -> Result<(), Error> {
 
   for target_name in &targets {
     let recipe = mold.find_recipe(target_name)?;
-    let args = mold.build_args(target_name)?;
-    let vars = mold.build_vars(target_name)?;
-    let args = mold.sub_vars(args, &vars)?;
+    let vars = mold.build_vars(recipe)?;
+    let args = mold.sub_vars(mold.build_args(recipe)?, &vars)?;
+
     println!(
       "{} {} {} {}",
       "mold".white(),

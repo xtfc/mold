@@ -232,18 +232,17 @@ impl Mold {
   }
 
   /// Return a list of arguments to pass to Command
-  pub fn build_args(&self, target_name: &str) -> Result<Vec<String>, Error> {
-    let target = self.find_recipe(target_name)?;
-    let command = target.shell(&self.envs)?;
+  pub fn build_args(&self, recipe: &Recipe) -> Result<Vec<String>, Error> {
+    let command = recipe.shell(&self.envs)?;
     Ok(shell_words::split(&command)?)
   }
 
   /// Return a list of arguments to pass to Command
-  pub fn build_vars(&self, target_name: &str) -> Result<VarMap, Error> {
+  pub fn build_vars(&self, recipe: &Recipe) -> Result<VarMap, Error> {
     let mut vars = self.env_vars();
     vars.extend(
       self
-        .mold_vars(target_name)?
+        .mold_vars(recipe)?
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string())),
     );
@@ -278,14 +277,14 @@ impl Mold {
   }
 
   /// Return a list of arguments to pass to Command
-  pub fn mold_vars(&self, target_name: &str) -> Result<VarMap, Error> {
+  pub fn mold_vars(&self, recipe: &Recipe) -> Result<VarMap, Error> {
     let mut vars = IndexMap::new();
 
     vars.insert("MOLD_ROOT", self.root_dir.to_string_lossy());
     vars.insert("MOLD_FILE", self.file.to_string_lossy());
     vars.insert("MOLD_DIR", self.mold_dir.to_string_lossy());
 
-    if let Some(script) = self.script_name(target_name)? {
+    if let Some(script) = self.script_name(recipe)? {
       // what the fuck is going on here?
       // PathBuf -> String is such a nightmare.
       // it seems like the .to_string().into() is needed to satisfy borrowck.
@@ -300,9 +299,8 @@ impl Mold {
   }
 
   /// Return a list of arguments to pass to Command
-  pub fn script_name(&self, target_name: &str) -> Result<Option<PathBuf>, Error> {
-    let target = self.find_recipe(target_name)?;
-    if let Some(script) = &target.script {
+  pub fn script_name(&self, recipe: &Recipe) -> Result<Option<PathBuf>, Error> {
+    if let Some(script) = &recipe.script {
       let file = self.mold_dir.join(util::hash_string(&script));
       fs::write(&file, &script)?;
       Ok(Some(file))
@@ -567,7 +565,7 @@ impl Mold {
 
     println!("{:12} {}", "command:".white(), target.shell(&self.envs)?);
 
-    let args = self.build_args(target_name)?;
+    let args = self.build_args(target)?;
     println!(
       "{:12} {} {}",
       "executes:".white(),
@@ -576,7 +574,7 @@ impl Mold {
     );
 
     // display contents of script file
-    if let Some(script) = self.script_name(target_name)? {
+    if let Some(script) = self.script_name(target)? {
       util::cat(script)?;
     }
 
