@@ -1,16 +1,12 @@
 use colored::*;
 use failure::Error;
-use git2::build::CheckoutBuilder;
-use git2::build::RepoBuilder;
 use git2::Cred;
 use git2::CredentialType;
-use git2::FetchOptions;
-use git2::RemoteCallbacks;
-use git2::Repository;
-use std::cell::RefCell;
 use std::io;
 use std::io::Write;
 use std::path::Path;
+use std::process::Command;
+use std::process::Stdio;
 use std::time::Instant;
 
 // This is a heavily modified version of the libgit2 "clone" example
@@ -23,27 +19,56 @@ struct State<'a> {
   past: &'a str,
   dots: usize,
   label: &'a str,
+  cmd: Command,
 }
 
-fn print_progress(state: &mut State) {
-  let duration = (Instant::now() - state.start).as_millis() as usize;
-  let dotlist = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-  if duration > 33 {
-    state.start = Instant::now();
-    state.dots = (state.dots + 1) % dotlist.len();
-    print!(
-      "{} {}... {}\r",
-      state.present.yellow(),
-      state.label,
-      dotlist[state.dots]
-    );
+impl<'a> State<'a> {
+  fn new(present: &'a str, past: &'a str, label: &'a str) -> Self {
+    let mut cmd = Command::new("git");
+    cmd.stderr(Stdio::null()).stdout(Stdio::null());
+
+    Self {
+      start: Instant::now(),
+      dots: 0,
+      present,
+      past,
+      label,
+      cmd,
+    }
+  }
+
+  fn print_progress(&mut self) {
+    let duration = (Instant::now() - self.start).as_millis() as usize;
+    let dotlist = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    if duration > 33 {
+      self.start = Instant::now();
+      self.dots = (self.dots + 1) % dotlist.len();
+      print!(
+        "{} {}... {}\r",
+        self.present.yellow(),
+        self.label,
+        dotlist[self.dots]
+      );
+      io::stdout().flush().unwrap();
+    }
+  }
+
+  fn print_done(&self) {
+    println!("{} {}     ", self.past.green(), self.label);
     io::stdout().flush().unwrap();
   }
-}
 
-fn print_done(state: &mut State) {
-  println!("{} {}     ", state.past.green(), state.label);
-  io::stdout().flush().unwrap();
+  fn wait(&mut self) -> Result<(), Error> {
+    let mut child = self.cmd.spawn()?;
+    loop {
+      if child.try_wait()?.is_some() {
+        self.print_done();
+        break;
+      }
+      self.print_progress();
+    }
+    Ok(())
+  }
 }
 
 pub fn git_credentials_callback(
@@ -65,80 +90,51 @@ pub fn git_credentials_callback(
 
 pub fn clone(url: &str, path: &Path) -> Result<(), Error> {
   let label = format!("{} into {}", url, path.display());
+  let mut state = State::new("     Cloning", "      Cloned", &label);
 
-  let state = RefCell::new(State {
-    start: Instant::now(),
-    present: "     Cloning",
-    past: "      Cloned",
-    label: &label,
-    dots: 0,
-  });
+  state.cmd.arg("clone").arg(url).arg(path);
 
-  let mut callbacks = RemoteCallbacks::new();
-  callbacks.transfer_progress(|_| {
-    let mut state = state.borrow_mut();
-    print_progress(&mut *state);
-    true
-  });
-  callbacks.credentials(git_credentials_callback);
+  state.wait()
+}
 
-  let mut fetch = FetchOptions::new();
-  fetch.remote_callbacks(callbacks);
+pub fn ref_exists(path: &Path, ref_: &str) -> Result<bool, Error> {
+  let exists = Command::new("git")
+    .arg("rev-parse")
+    .arg(ref_)
+    .arg("--")
+    .current_dir(path)
+    .stdout(Stdio::null())
+    .stderr(Stdio::null())
+    .spawn()
+    .and_then(|mut handle| handle.wait())?
+    .success();
 
-  let mut builder = CheckoutBuilder::new();
-  builder.progress(|_, _, _| {
-    let mut state = state.borrow_mut();
-    print_progress(&mut *state);
-  });
-
-  RepoBuilder::new()
-    .fetch_options(fetch)
-    .with_checkout(builder)
-    .clone(url, path)?;
-
-  print_done(&mut state.borrow_mut());
-
-  Ok(())
+  Ok(exists)
 }
 
 pub fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
-  let repo = Repository::discover(path)?;
-  let mut remote = repo.find_remote("origin")?;
+  let label = format!("{}", path.display());
+  let mut state = State::new("    Fetching", "     Fetched", &label);
+  state
+    .cmd
+    .arg("fetch")
+    .arg("--all")
+    .arg("--prune")
+    .current_dir(path);
 
-  let label = &format!("{} to {}", path.display(), ref_);
-  let state = RefCell::new(State {
-    start: Instant::now(),
-    present: "    Updating",
-    past: "     Updated",
-    label: &label,
-    dots: 0,
-  });
+  state.wait()?;
 
-  let mut callbacks = RemoteCallbacks::new();
-  callbacks.transfer_progress(|_| {
-    let mut state = state.borrow_mut();
-    print_progress(&mut *state);
-    true
-  });
-  callbacks.credentials(git_credentials_callback);
+  let refs = vec![format!("tags/{}", ref_), format!("origin/{}", ref_)];
 
-  let mut fetch = FetchOptions::new();
-  fetch.remote_callbacks(callbacks);
+  for target in refs {
+    if ref_exists(path, &target)? {
+      let label = format!("{} into {}", path.display(), ref_);
+      let mut state = State::new("   Switching", "    Switched", &label);
+      state.cmd.arg("checkout").arg(target).current_dir(path);
 
-  remote.fetch(&[ref_], Some(&mut fetch), None)?;
+      return state.wait();
+    }
+  }
 
-  let tag_name = format!("tags/{}", ref_);
-  let branch_name = format!("origin/{}", ref_);
-  let object = repo
-    .revparse_single(&tag_name)
-    .or_else(|_| repo.revparse_single(&branch_name))?;
-  repo.set_head_detached(object.id())?;
-
-  let mut checkout = CheckoutBuilder::new();
-  checkout.force();
-  repo.checkout_head(Some(&mut checkout))?;
-
-  print_done(&mut state.borrow_mut());
-
-  Ok(())
+  Err(failure::format_err!("Couldn't locate ref '{}'", ref_.red()))
 }
