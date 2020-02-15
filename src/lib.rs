@@ -270,7 +270,7 @@ impl Mold {
         .get(name)
         .map(std::string::ToString::to_string)
         .or_else(|| std::env::var(name).ok())
-        .or(Some("".into()))
+        .or_else(|| Some("".into()))
     });
     Ok(shell_words::split(&expanded)?)
   }
