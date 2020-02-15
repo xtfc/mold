@@ -7,10 +7,6 @@ use std::process::Command;
 use std::process::Stdio;
 use std::time::Instant;
 
-// This is a heavily modified version of the libgit2 "clone" example
-// Its original form was public domain and linked to the CC0 Public Domain Dedication:
-// <http://creativecommons.org/publicdomain/zero/1.0/>.
-
 struct State<'a> {
   start: Instant,
   present: &'a str,
@@ -20,18 +16,21 @@ struct State<'a> {
   cmd: Command,
 }
 
+fn new_cmd() -> Command {
+  let mut cmd = Command::new("git");
+  cmd.stderr(Stdio::null()).stdout(Stdio::null());
+  cmd
+}
+
 impl<'a> State<'a> {
   fn new(present: &'a str, past: &'a str, label: &'a str) -> Self {
-    let mut cmd = Command::new("git");
-    cmd.stderr(Stdio::null()).stdout(Stdio::null());
-
     Self {
       start: Instant::now(),
       dots: 0,
       present,
       past,
       label,
-      cmd,
+      cmd: new_cmd(),
     }
   }
 
@@ -79,13 +78,11 @@ pub fn clone(url: &str, path: &Path) -> Result<(), Error> {
 }
 
 pub fn ref_exists(path: &Path, ref_: &str) -> Result<bool, Error> {
-  let exists = Command::new("git")
+  let exists = new_cmd()
     .arg("rev-parse")
     .arg(ref_)
     .arg("--")
     .current_dir(path)
-    .stdout(Stdio::null())
-    .stderr(Stdio::null())
     .spawn()
     .and_then(|mut handle| handle.wait())?
     .success();
@@ -98,9 +95,7 @@ pub fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
   let mut state = State::new("    Fetching", "     Fetched", &label);
   state
     .cmd
-    .arg("fetch")
-    .arg("--all")
-    .arg("--prune")
+    .args(&["fetch", "--all", "--prune"])
     .current_dir(path);
 
   state.wait()?;
