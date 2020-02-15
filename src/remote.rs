@@ -1,7 +1,5 @@
 use colored::*;
 use failure::Error;
-use git2::Cred;
-use git2::CredentialType;
 use std::io;
 use std::io::Write;
 use std::path::Path;
@@ -68,23 +66,6 @@ impl<'a> State<'a> {
       self.print_progress();
     }
     Ok(())
-  }
-}
-
-pub fn git_credentials_callback(
-  _user: &str,
-  _user_from_url: Option<&str>,
-  _cred: CredentialType,
-) -> Result<Cred, git2::Error> {
-  if let Some(home_dir) = dirs::home_dir() {
-    let pub_key = home_dir.join(".ssh/id_rsa.pub");
-    let priv_key = home_dir.join(".ssh/id_rsa");
-    let credentials = Cred::ssh_key("git", Some(&pub_key), &priv_key, None)
-      .expect("Could not create credentials object");
-
-    Ok(credentials)
-  } else {
-    Err(git2::Error::from_str("Couldn't locate home directory"))
   }
 }
 
