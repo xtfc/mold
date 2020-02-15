@@ -44,28 +44,21 @@ fn active_envs(env_map: &file::EnvMap, envs: &[String]) -> Vec<String> {
   result
 }
 
-/// Do minimal variable expansion
+/// Perform variable expansion
 ///
-/// FOO => FOO
-/// $FOO => value of variable FOO
-/// $$FOO $FOO
-/// $$$FOO $$FOO
-/// ...
+/// This first searches the `vars` argument, then searches std::env, defaulting
+/// to an empty string if not found.
 fn sub_vars(args: Vec<String>, vars: &VarMap) -> Result<Vec<String>, Error> {
   let mut subbed_args = vec![];
   for arg in args {
-    // FIXME once stabilized, use `.strip_prefix` instead.
-    if arg.starts_with("$$") {
-      subbed_args.push(arg[1..].into());
-    } else if arg.starts_with('$') {
-      if let Some(val) = vars.get(&arg[1..]) {
-        subbed_args.push(val.into());
-      } else if let Ok(val) = std::env::var(&arg[1..]) {
-        subbed_args.push(val);
-      }
-    } else {
-      subbed_args.push(arg);
-    }
+    let new_arg = shellexpand::env_with_context_no_errors(&arg, |name| {
+      vars
+        .get(name)
+        .map(std::string::ToString::to_string)
+        .or_else(|| std::env::var(name).ok())
+        .or(Some("".into()))
+    });
+    subbed_args.push(new_arg.into());
   }
 
   Ok(subbed_args)
