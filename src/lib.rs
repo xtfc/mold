@@ -44,33 +44,6 @@ fn active_envs(env_map: &file::EnvMap, envs: &[String]) -> Vec<String> {
   result
 }
 
-/// Do minimal variable expansion
-///
-/// FOO => FOO
-/// $FOO => value of variable FOO
-/// $$FOO $FOO
-/// $$$FOO $$FOO
-/// ...
-fn sub_vars(args: Vec<String>, vars: &VarMap) -> Result<Vec<String>, Error> {
-  let mut subbed_args = vec![];
-  for arg in args {
-    // FIXME once stabilized, use `.strip_prefix` instead.
-    if arg.starts_with("$$") {
-      subbed_args.push(arg[1..].into());
-    } else if arg.starts_with('$') {
-      if let Some(val) = vars.get(&arg[1..]) {
-        subbed_args.push(val.into());
-      } else if let Ok(val) = std::env::var(&arg[1..]) {
-        subbed_args.push(val);
-      }
-    } else {
-      subbed_args.push(arg);
-    }
-  }
-
-  Ok(subbed_args)
-}
-
 #[derive(Debug)]
 pub struct Mold {
   /// path to the moldfile
@@ -281,7 +254,7 @@ impl Mold {
   pub fn build_task(&self, target_name: &str) -> Result<Task, Error> {
     let recipe = self.find_recipe(target_name)?;
     let vars = self.build_vars(recipe)?;
-    let args = sub_vars(self.build_args(recipe)?, &vars)?;
+    let args = self.build_args(recipe, &vars)?;
     Ok(Task {
       work_dir: recipe.work_dir.clone(),
       vars,
@@ -289,10 +262,17 @@ impl Mold {
     })
   }
 
-  /// Return a list of arguments to pass to Command
-  fn build_args(&self, recipe: &Recipe) -> Result<Vec<String>, Error> {
+  /// Perform variable expansion and return a list of arguments to pass to Command
+  fn build_args(&self, recipe: &Recipe, vars: &VarMap) -> Result<Vec<String>, Error> {
     let command = recipe.shell(&self.envs)?;
-    Ok(shell_words::split(&command)?)
+    let expanded = shellexpand::env_with_context_no_errors(&command, |name| {
+      vars
+        .get(name)
+        .map(std::string::ToString::to_string)
+        .or_else(|| std::env::var(name).ok())
+        .or_else(|| Some("".into()))
+    });
+    Ok(shell_words::split(&expanded)?)
   }
 
   /// Return a list of arguments to pass to Command
