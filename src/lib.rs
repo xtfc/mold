@@ -98,7 +98,7 @@ pub struct Task {
 
 // Moldfiles
 impl Mold {
-  /// Open a moldfile and load it
+  /// Given a path, open and parse the file
   pub fn open(path: &Path) -> Result<Mold, Error> {
     let mut file = fs::File::open(path)?;
     let mut contents = String::new();
@@ -133,17 +133,29 @@ impl Mold {
     })
   }
 
-  /// Try to locate a moldfile by walking up the directory tree
-  fn locate_file(name: &Path) -> Result<PathBuf, Error> {
+  /// Try to find a file by walking up the tree
+  ///
+  /// Absolute paths will either be located or fail instantly. Relative paths
+  /// will walk the entire file tree up to root, looking for a file with the
+  /// given name.
+  fn find_file(name: &Path) -> Result<PathBuf, Error> {
+    // if it's an absolute path, we don't need to walk up the tree.
     if name.is_absolute() {
       if name.is_file() {
         return Ok(name.to_path_buf());
+      } else if name.exists() {
+        let name = format!("{}", name.display());
+        return Err(failure::format_err!(
+          "'{}' exists, but is not a file",
+          name.red()
+        ));
       } else {
         let name = format!("{}", name.display());
         return Err(failure::format_err!("File '{}' does not exist", name.red()));
       }
     }
 
+    // walk up the tree until we find the file or hit the root
     let mut path = std::env::current_dir()?;
     while !path.join(name).is_file() {
       path.pop();
@@ -158,17 +170,18 @@ impl Mold {
       Ok(path)
     } else {
       let name = format!("{}", name.display());
-      Err(failure::format_err!("Unable to discover '{}'", name.red()))
+      Err(failure::format_err!("Unable to locate a '{}'", name.red()))
     }
   }
 
-  /// Try to locate and open a moldfile by directory
+  /// Search a directory for default moldfiles, opening it if found
   ///
-  /// Checks for DEFAULT_FILES
+  /// Iterates through all values found in `DEFAULT_FILES`, joining them to the
+  /// provided `name` argument
   fn discover_dir(name: &Path) -> Result<Mold, Error> {
     let path = DEFAULT_FILES
       .iter()
-      .find_map(|file| Self::locate_file(&name.join(file)).ok())
+      .find_map(|file| Self::find_file(&name.join(file)).ok())
       .ok_or_else(|| {
         failure::format_err!(
           "Cannot locate moldfile, tried the following:\n{}",
@@ -178,13 +191,13 @@ impl Mold {
     Self::open(&path)
   }
 
-  /// Try to locate and open a moldfile by name
+  /// Try to locate a moldfile by name, opening it if found
   fn discover_file(name: &Path) -> Result<Mold, Error> {
-    let path = Self::locate_file(name)?;
+    let path = Self::find_file(name)?;
     Self::open(&path)
   }
 
-  /// Try to locate a file or a directory
+  /// Try to locate a file or a directory, opening it if found
   pub fn discover(dir: &Path, file: Option<PathBuf>) -> Result<Mold, Error> {
     // I think this should take Option<&Path> but I couldn't figure out how to
     // please the compiler when I have an existing Option<PathBuf>, so...  I'm
