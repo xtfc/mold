@@ -103,7 +103,7 @@ fn run(args: Args) -> Result<(), Error> {
 
   let all_targets = mold.find_all_dependencies(&requested_targets)?;
   for target_name in &all_targets {
-    let args = mold.build_args(target_name)?;
+    let task = mold.build_task(target_name)?;
     println!(
       "{} {} {} {}",
       "mold".white(),

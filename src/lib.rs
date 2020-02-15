@@ -273,8 +273,8 @@ impl Mold {
 
   pub fn build_task(&self, target_name: &str) -> Result<Task, Error> {
     let recipe = self.find_recipe(target_name)?;
-    let vars = self.build_vars(recipe)?;
-    let args = sub_vars(self.build_args(recipe)?, &vars)?;
+    let vars = self.build_vars(&recipe)?;
+    let args = sub_vars(self.build_args(&recipe)?, &vars)?;
     Ok(Task {
       work_dir: recipe.work_dir.clone(),
       vars,
@@ -554,7 +554,7 @@ impl Mold {
     );
 
     // display contents of script file
-    if let Some(script) = self.script_name(recipe)? {
+    if let Some(script) = self.script_name(&recipe)? {
       util::cat(script)?;
     }
 
