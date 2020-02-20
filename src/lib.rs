@@ -22,6 +22,7 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;
+use std::str::FromStr;
 use std::string::ToString;
 
 /// Generate a list of all active environments
@@ -78,9 +79,8 @@ impl Mold {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
 
-    let _data = self::serde::compile(&contents)?;
+    let data = self::serde::from_str(&contents)?;
 
-    let data: Moldfile = serde_yaml::from_str(&contents)?;
     let self_version = Version::parse(clap::crate_version!())?;
     let target_version = VersionReq::parse(&data.version)?;
 
@@ -654,5 +654,57 @@ impl Task {
 
   pub fn args(&self) -> &Vec<String> {
     &self.args
+  }
+}
+
+impl Remote {
+  /// Parse a string into an Remote
+  ///
+  /// The format is roughly: url[#[ref][/file]], eg:
+  ///   https://foo.com/mold.git -> ref = master, file = None
+  ///   https://foo.com/mold.git#dev -> ref = dev, file = None
+  ///   https://foo.com/mold.git#dev/dev.yaml, ref = dev, file = dev.yaml
+  ///   https://foo.com/mold.git#/dev.yaml -> ref = master, file = dev.yaml
+  fn parse(url: &str) -> Self {
+    match url.find('#') {
+      Some(idx) => {
+        let (url, frag) = url.split_at(idx);
+        let frag = frag.trim_start_matches('#');
+
+        let (ref_, file) = match frag.find('/') {
+          Some(idx) => {
+            let (ref_, file) = frag.split_at(idx);
+            let file = file.trim_start_matches('/');
+
+            let ref_ = match ref_ {
+              "" => "master".into(),
+              _ => ref_.into(),
+            };
+
+            (ref_, Some(file.into()))
+          }
+          None => (frag.into(), None),
+        };
+
+        Self {
+          url: url.into(),
+          ref_,
+          file,
+        }
+      }
+      None => Self {
+        url: url.into(),
+        ref_: "master".into(),
+        file: None,
+      },
+    }
+  }
+}
+
+impl FromStr for Remote {
+  type Err = Error;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(Self::parse(s))
   }
 }

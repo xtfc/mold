@@ -1,9 +1,11 @@
+use super::file;
 use failure::err_msg;
 use failure::format_err;
 use failure::Error;
 use std::iter::Peekable;
 use std::slice::Iter;
 use std::str::Chars;
+use std::str::FromStr;
 
 type CharIter<'a> = Peekable<Chars<'a>>;
 type TokenIter<'a> = Peekable<Iter<'a, Token>>;
@@ -46,7 +48,6 @@ pub enum Expr {
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-  File(Vec<Statement>),
   Version(String),
   Import(String, Option<String>),
   Var(String, String),
@@ -56,9 +57,62 @@ pub enum Statement {
   Run(String),
 }
 
-pub fn compile(code: &str) -> Result<Statement, Error> {
+pub fn from_str(code: &str) -> Result<file::Moldfile, Error> {
   let tokens = lex(code)?;
-  parse(&tokens)
+  let root = parse(&tokens)?;
+
+  let mut version = None;
+  let mut help = None;
+  let mut includes = file::IncludeVec::new();
+  let mut recipes = file::RecipeMap::new();
+  let mut variables = file::VarMap::new();
+  let mut environments = file::EnvMap::new();
+
+  for stmt in root {
+    match stmt {
+      Statement::Version(s) => {
+        if version.is_none() {
+          version = Some(s);
+        } else {
+          return Err(format_err!("Duplicate version specified: {}", s));
+        }
+      }
+
+      Statement::Help(s) => {
+        if help.is_none() {
+          help = Some(s);
+        } else {
+          return Err(format_err!("Duplicate help string: {}", s));
+        }
+      }
+
+      Statement::Import(url, prefix) => includes.push(file::Include {
+        remote: file::Remote::from_str(&url)?,
+        prefix: prefix.unwrap_or("".to_string()),
+      }),
+
+      Statement::Var(name, value) => {
+        variables.insert(name, value);
+      }
+
+      Statement::Recipe(name, body) => {}
+
+      Statement::If(expr, body) => {}
+
+      Statement::Run(_) => {
+        return Err(err_msg("Something terrible has happened."));
+      }
+    }
+  }
+
+  Ok(file::Moldfile {
+    version: version.ok_or(err_msg("File version must be specified"))?,
+    help,
+    includes,
+    recipes,
+    variables,
+    environments,
+  })
 }
 
 /// Return a String if the next token in `it` is a `String`
@@ -93,7 +147,7 @@ fn use_token(it: &mut TokenIter, kind: Token) -> bool {
   }
 }
 
-fn parse(tokens: &[Token]) -> Result<Statement, Error> {
+fn parse(tokens: &[Token]) -> Result<Vec<Statement>, Error> {
   let mut it: TokenIter = tokens.iter().peekable();
   let mut stmts = vec![];
   while let Some(_) = it.peek() {
@@ -102,7 +156,7 @@ fn parse(tokens: &[Token]) -> Result<Statement, Error> {
     stmts.push(stmt);
   }
 
-  Ok(Statement::File(stmts))
+  Ok(stmts)
 }
 
 fn parse_stmt(it: &mut TokenIter) -> Result<Statement, Error> {
