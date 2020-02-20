@@ -1,4 +1,5 @@
 use failure::err_msg;
+use failure::format_err;
 use failure::Error;
 use std::iter::Peekable;
 use std::slice::Iter;
@@ -115,6 +116,8 @@ fn require_token(it: &mut TokenIter, kind: Token) -> Result<(), Error> {
   Err(err_msg("Oops"))
 }
 
+// top-level statements
+
 fn parse(tokens: &[Token]) -> Result<Statement, Error> {
   let mut it: TokenIter = tokens.iter().peekable();
   let mut stmts = vec![];
@@ -132,10 +135,16 @@ fn parse_stmt(it: &mut TokenIter) -> Result<Statement, Error> {
     Some(Token::Version) => parse_version(it),
     Some(Token::Import) => parse_import(it),
     Some(Token::Var) => parse_var(it),
-    Some(Token::If) => parse_if(it),
+    Some(Token::If) => parse_if(it, parse_stmt),
     Some(Token::Help) => parse_help(it),
-    //Some(Token::Recipe) => parse_recipe(it),
-    _ => Err(err_msg("Can't work")),
+    Some(Token::Recipe) => parse_recipe(it),
+    Some(x) => Err(failure::format_err!(
+      "Unexpected token {:?} when parsing top-level statements",
+      x
+    )),
+    None => Err(err_msg(
+      "Unexpected end of input while parsing top-level statements",
+    )),
   }
 }
 
