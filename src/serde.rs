@@ -61,15 +61,6 @@ pub fn compile(code: &str) -> Result<Statement, Error> {
   parse(&tokens)
 }
 
-/// Return true if the next token in `it` is `kind`
-fn peek_token(it: &mut TokenIter, kind: Token) -> bool {
-  if let Some(&tok) = it.peek() {
-    *tok == kind
-  } else {
-    false
-  }
-}
-
 /// Return a String if the next token in `it` is a `String`
 fn use_string(it: &mut TokenIter) -> Option<String> {
   if let Some(Token::String(s)) = it.peek() {
@@ -101,22 +92,6 @@ fn use_token(it: &mut TokenIter, kind: Token) -> bool {
     false
   }
 }
-
-/// Return an Err if the next token in `it` is *not* `kind`
-fn require_token(it: &mut TokenIter, kind: Token) -> Result<(), Error> {
-  if let Some(&tok) = it.peek() {
-    if *tok == kind {
-      it.next();
-      return Ok(());
-    }
-
-    return Err(err_msg("Oops"));
-  }
-
-  Err(err_msg("Oops"))
-}
-
-// top-level statements
 
 fn parse(tokens: &[Token]) -> Result<Statement, Error> {
   let mut it: TokenIter = tokens.iter().peekable();
@@ -188,7 +163,10 @@ fn parse_var(it: &mut TokenIter) -> Result<Statement, Error> {
   Ok(Statement::Var(name, val))
 }
 
-fn parse_if(it: &mut TokenIter) -> Result<Statement, Error> {
+fn parse_if<F>(it: &mut TokenIter, parser: F) -> Result<Statement, Error>
+where
+  F: Fn(&mut TokenIter) -> Result<Statement, Error>,
+{
   it.next(); // skip Token::If
 
   let expr = parse_expr(it)?;
@@ -203,11 +181,54 @@ fn parse_if(it: &mut TokenIter) -> Result<Statement, Error> {
     if use_token(it, Token::Cur) {
       break;
     }
-    body.push(parse_stmt(it)?);
+    body.push(parser(it)?);
   }
 
   Ok(Statement::If(expr, body))
 }
+
+fn parse_recipe(it: &mut TokenIter) -> Result<Statement, Error> {
+  it.next(); // skip Token::Recipe
+
+  let name = use_name(it).ok_or(err_msg("Expected name after `recipe` keyword"))?;
+
+  if !use_token(it, Token::Cul) {
+    return Err(err_msg("Expected { bracket after recipe name"));
+  }
+
+  let mut body = vec![];
+
+  loop {
+    if use_token(it, Token::Cur) {
+      break;
+    }
+    body.push(parse_recipe_stmt(it)?);
+  }
+
+  Ok(Statement::Recipe(name, body))
+}
+
+fn parse_recipe_stmt(it: &mut TokenIter) -> Result<Statement, Error> {
+  match it.peek() {
+    Some(Token::Var) => parse_var(it),
+    Some(Token::Help) => parse_help(it),
+    Some(Token::If) => parse_if(it, parse_recipe_stmt),
+    Some(Token::Run) => parse_run(it),
+    Some(x) => Err(format_err!(
+      "Unexpected token {:?} when parsing recipe body",
+      x
+    )),
+    None => Err(err_msg("Unexpected end of input while parsing recipe body")),
+  }
+}
+
+fn parse_run(it: &mut TokenIter) -> Result<Statement, Error> {
+  it.next(); // skip Token::Run
+  let cmd = use_string(it).ok_or(err_msg("Expected command string after `run` keyword"))?;
+  Ok(Statement::Run(cmd))
+}
+
+// expressions
 
 fn parse_expr(it: &mut TokenIter) -> Result<Expr, Error> {
   parse_or(it)
@@ -263,6 +284,8 @@ fn parse_atom(it: &mut TokenIter) -> Result<Expr, Error> {
     None => Err(err_msg("Parse error; unexpected end of expression")),
   }
 }
+
+// lexer
 
 fn lex(expr: &str) -> Result<Vec<Token>, Error> {
   let mut tokens = vec![];
