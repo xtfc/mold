@@ -46,6 +46,22 @@ pub enum Expr {
   Wild,
 }
 
+impl Expr {
+  pub fn apply(&self, to: &[String]) -> bool {
+    match self {
+      Expr::And(x, y) => x.apply(to) && y.apply(to),
+      Expr::Or(x, y) => x.apply(to) || y.apply(to),
+      Expr::Not(x) => !x.apply(to),
+      Expr::Group(x) => x.apply(to),
+      Expr::Atom(x) => to.contains(x),
+      Expr::Wild => true,
+    }
+  }
+}
+
+// FIXME workdir?
+// FIXME dependencies?
+// FIXME inline scripts?
 #[derive(Debug, Clone)]
 pub enum Statement {
   Version(String),
@@ -113,6 +129,16 @@ pub fn from_str(code: &str) -> Result<file::Moldfile, Error> {
     variables,
     environments,
   })
+}
+
+pub fn compile_expr(expr: &str) -> Result<Expr, Error> {
+  let tokens = lex(expr)?;
+  let mut it: TokenIter = tokens.iter().peekable();
+  let expr = parse_expr(&mut it)?;
+  match it.next() {
+    Some(_) => Err(err_msg("Parse error; expected end of expression")),
+    None => Ok(expr),
+  }
 }
 
 /// Return a String if the next token in `it` is a `String`

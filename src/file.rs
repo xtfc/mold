@@ -31,7 +31,7 @@ pub struct Moldfile {
   /// A map of recipes
   pub recipes: RecipeMap,
 
-  /// A list of environment variables
+  /// A map of environment variables
   pub variables: VarMap,
 
   /// A list of conditionals
@@ -70,23 +70,13 @@ pub struct Recipe {
   /// A short description of the module's contents
   pub help: String,
 
-  // A map of environment names to variable maps used to parametrize recipes
-  //
-  // ADDED: 0.3.0
-  // REMOVED: 0.5.0
-  // pub environments: EnvMap,
   /// The working directory relative to the calling Moldfile's root_dir
-  ///
-  /// ADDED: 0.4.0
   pub work_dir: Option<PathBuf>,
 
-  /// A list of pre-execution dependencies
+  /// A list of prerequisites
   pub deps: Vec<String>,
 
-  /// The command to pass to $SHELL to execute this recipe
-  ///
-  /// eg: "bash $MOLD_ROOT/foo.sh"
-  /// eg: "bash $MOLD_SCRIPT"
+  /// The command to execute
   pub command: Command,
 
   /// The script contents as a multiline string

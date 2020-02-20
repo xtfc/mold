@@ -1,4 +1,3 @@
-pub mod expr;
 pub mod file;
 pub mod remote;
 pub mod serde;
@@ -33,7 +32,7 @@ use std::string::ToString;
 fn active_envs(env_map: &file::EnvMap, envs: &[String]) -> Vec<String> {
   let mut result = vec![];
   for (test, _) in env_map {
-    match expr::compile(&test) {
+    match serde::compile_expr(&test) {
       Ok(ex) => {
         if ex.apply(&envs) {
           result.push(test.clone());
@@ -595,7 +594,7 @@ impl Recipe {
       Command::Shell(cmd) => return Ok(cmd.into()),
       Command::Map(map) => {
         for (test, cmd) in map {
-          match expr::compile(&test) {
+          match serde::compile_expr(&test) {
             Ok(ex) => {
               if ex.apply(&envs) {
                 return Ok(cmd.into());
