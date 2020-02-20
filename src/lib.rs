@@ -1,6 +1,7 @@
 pub mod expr;
 pub mod file;
 pub mod remote;
+pub mod serde;
 pub mod util;
 
 use colored::*;
@@ -76,6 +77,8 @@ impl Mold {
     let mut file = fs::File::open(path)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
+
+    let _data = self::serde::compile(&contents)?;
 
     let data: Moldfile = serde_yaml::from_str(&contents)?;
     let self_version = Version::parse(clap::crate_version!())?;
