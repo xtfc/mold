@@ -7,12 +7,13 @@ use std::str::Chars;
 type CharIter<'a> = Peekable<Chars<'a>>;
 type TokenIter<'a> = Peekable<Iter<'a, Token>>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Token {
   And,
   As,
   Cul,
   Cur,
+  Eq,
   Help,
   If,
   Import,
@@ -20,6 +21,7 @@ enum Token {
   Or,
   Pal,
   Par,
+  Recipe,
   Run,
   Sql,
   Sqr,
@@ -46,9 +48,10 @@ pub enum Expr {
 pub enum Statement {
   File(Vec<Statement>),
   Version(String),
-  Import(String, String),
-  Var(String, Box<Expr>),
+  Import(String, Option<String>),
+  Var(String, String),
   If(Box<Expr>, Vec<Statement>),
+  Recipe(String, Vec<Statement>),
   Help(String),
   Run(String),
 }
@@ -58,27 +61,118 @@ pub fn compile(code: &str) -> Result<Statement, Error> {
   parse(&tokens)
 }
 
+/// Return true if the next token in `it` is `kind`
+fn peek_token(it: &mut TokenIter, kind: Token) -> bool {
+  if let Some(&tok) = it.peek() {
+    *tok == kind
+  } else {
+    false
+  }
+}
+
+/// Return a String if the next token in `it` is a `String`
+fn use_string(it: &mut TokenIter) -> Option<String> {
+  if let Some(Token::String(s)) = it.peek() {
+    it.next();
+    Some(s.to_string())
+  } else {
+    None
+  }
+}
+
+/// Return a String if the next token in `it` is a `Name`
+fn use_name(it: &mut TokenIter) -> Option<String> {
+  if let Some(Token::Name(s)) = it.peek() {
+    it.next();
+    Some(s.to_string())
+  } else {
+    None
+  }
+}
+
+/// Return true if the next token in `it` is `kind` *and* consume the token
+fn use_token(it: &mut TokenIter, kind: Token) -> bool {
+  if let Some(&tok) = it.peek() {
+    if *tok == kind {
+      it.next();
+    }
+    *tok == kind
+  } else {
+    false
+  }
+}
+
+/// Return an Err if the next token in `it` is *not* `kind`
+fn require_token(it: &mut TokenIter, kind: Token) -> Result<(), Error> {
+  if let Some(&tok) = it.peek() {
+    if *tok == kind {
+      it.next();
+      return Ok(());
+    }
+
+    return Err(err_msg("Oops"));
+  }
+
+  Err(err_msg("Oops"))
+}
+
 fn parse(tokens: &[Token]) -> Result<Statement, Error> {
   let mut it: TokenIter = tokens.iter().peekable();
-  let stmt = parse_stmt(&mut it)?;
-  dbg!(&stmt);
-  Ok(stmt)
+  let mut stmts = vec![];
+  while let Some(_) = it.peek() {
+    stmts.push(parse_stmt(&mut it)?);
+  }
+
+  dbg!(&stmts);
+
+  Ok(Statement::File(stmts))
 }
 
 fn parse_stmt(it: &mut TokenIter) -> Result<Statement, Error> {
   match it.peek() {
     Some(Token::Version) => parse_version(it),
+    Some(Token::Import) => parse_import(it),
+    Some(Token::Var) => parse_var(it),
+    //Some(Token::If) => parse_if(it),
+    //Some(Token::Recipe) => parse_recipe(it),
+    //Some(Token::Help) => parse_help(it),
     _ => Err(err_msg("Can't work")),
   }
 }
 
 fn parse_version(it: &mut TokenIter) -> Result<Statement, Error> {
-  it.next();
-  if let Some(Token::String(s)) = it.peek() {
-    Ok(Statement::Version(s.to_string()))
-  } else {
-    Err(err_msg("Expected string after `version` keyword"))
+  it.next(); // skip Token::Version
+  let version = use_string(it).ok_or(err_msg("Expected version string after `version` keyword"))?;
+  Ok(Statement::Version(version))
+}
+
+fn parse_import(it: &mut TokenIter) -> Result<Statement, Error> {
+  it.next(); // skip Token::Import
+
+  let url = use_string(it).ok_or(err_msg("Expected URL string after `import` keyword"))?;
+
+  let prefix = if use_token(it, Token::As) {
+    Some(use_string(it).ok_or(err_msg("Expected prefix string after `as` keyword"))?)
   }
+  else {
+    None
+  };
+
+  Ok(Statement::Import(url, prefix))
+}
+
+fn parse_var(it: &mut TokenIter) -> Result<Statement, Error> {
+  it.next(); // skip Token::Import
+
+  let name = use_name(it).ok_or(err_msg("Expected variable name after `var` keyword"))?;
+
+  if !use_token(it, Token::Eq) {
+    return Err(err_msg("Expected = operator after variable name"));
+  }
+
+  let val = use_string(it).ok_or(err_msg("Expected value string after = operator"))?;
+
+  Ok(Statement::Var(name, val))
 }
 
 fn parse_expr(it: &mut TokenIter) -> Result<Expr, Error> {
@@ -143,8 +237,9 @@ fn lex(expr: &str) -> Result<Vec<Token>, Error> {
   while let Some(c) = it.next() {
     let x = match c {
       'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => Some(lex_name(c, &mut it)),
-      '\'' => Some(lex_string(&mut it)?),
+      '"' => Some(lex_string(&mut it)?),
       '$' => Some(Token::Run),
+      '=' => Some(Token::Eq),
       '+' => Some(Token::And),
       '|' => Some(Token::Or),
       '*' | '?' => Some(Token::Wild),
@@ -182,12 +277,13 @@ fn lex_name(first: char, it: &mut CharIter) -> Token {
   }
 
   match name.as_str() {
+    "as" => Token::As,
+    "help" => Token::Help,
     "if" => Token::If,
     "import" => Token::Import,
-    "as" => Token::As,
-    "var" => Token::Var,
+    "recipe" => Token::Recipe,
     "run" => Token::Run,
-    "help" => Token::Help,
+    "var" => Token::Var,
     "version" => Token::Version,
     _ => Token::Name(name),
   }
@@ -217,7 +313,7 @@ fn lex_string(it: &mut CharIter) -> Result<Token, Error> {
         escaped = false;
       } else {
         match c {
-          '\'' => {
+          '"' => {
             break;
           }
           '\\' => {
