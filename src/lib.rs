@@ -1,6 +1,6 @@
 pub mod file;
 pub mod remote;
-pub mod serde;
+pub mod lang;
 pub mod util;
 
 use colored::*;
@@ -32,7 +32,7 @@ use std::string::ToString;
 fn active_envs(env_map: &file::EnvMap, envs: &[String]) -> Vec<String> {
   let mut result = vec![];
   for (test, _) in env_map {
-    match serde::compile_expr(&test) {
+    match lang::compile_expr(&test) {
       Ok(ex) => {
         if ex.apply(&envs) {
           result.push(test.clone());
@@ -78,7 +78,7 @@ impl Mold {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
 
-    let data = self::serde::from_str(&contents)?;
+    let data = self::lang::from_str(&contents)?;
 
     let self_version = Version::parse(clap::crate_version!())?;
     let target_version = VersionReq::parse(&data.version)?;
@@ -594,7 +594,7 @@ impl Recipe {
       Command::Shell(cmd) => return Ok(cmd.into()),
       Command::Map(map) => {
         for (test, cmd) in map {
-          match serde::compile_expr(&test) {
+          match lang::compile_expr(&test) {
             Ok(ex) => {
               if ex.apply(&envs) {
                 return Ok(cmd.into());
