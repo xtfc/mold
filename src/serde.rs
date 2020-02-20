@@ -43,14 +43,13 @@ pub enum Expr {
   Wild,
 }
 
-
 #[derive(Debug, Clone)]
 pub enum Statement {
   File(Vec<Statement>),
   Version(String),
   Import(String, Option<String>),
   Var(String, String),
-  If(Box<Expr>, Vec<Statement>),
+  If(Expr, Vec<Statement>),
   Recipe(String, Vec<Statement>),
   Help(String),
   Run(String),
@@ -120,10 +119,10 @@ fn parse(tokens: &[Token]) -> Result<Statement, Error> {
   let mut it: TokenIter = tokens.iter().peekable();
   let mut stmts = vec![];
   while let Some(_) = it.peek() {
-    stmts.push(parse_stmt(&mut it)?);
+    let stmt = parse_stmt(&mut it)?;
+    dbg!(&stmt);
+    stmts.push(stmt);
   }
-
-  dbg!(&stmts);
 
   Ok(Statement::File(stmts))
 }
@@ -133,9 +132,9 @@ fn parse_stmt(it: &mut TokenIter) -> Result<Statement, Error> {
     Some(Token::Version) => parse_version(it),
     Some(Token::Import) => parse_import(it),
     Some(Token::Var) => parse_var(it),
-    //Some(Token::If) => parse_if(it),
+    Some(Token::If) => parse_if(it),
+    Some(Token::Help) => parse_help(it),
     //Some(Token::Recipe) => parse_recipe(it),
-    //Some(Token::Help) => parse_help(it),
     _ => Err(err_msg("Can't work")),
   }
 }
@@ -146,6 +145,12 @@ fn parse_version(it: &mut TokenIter) -> Result<Statement, Error> {
   Ok(Statement::Version(version))
 }
 
+fn parse_help(it: &mut TokenIter) -> Result<Statement, Error> {
+  it.next(); // skip Token::Help
+  let desc = use_string(it).ok_or(err_msg("Expected help string after `help` keyword"))?;
+  Ok(Statement::Help(desc))
+}
+
 fn parse_import(it: &mut TokenIter) -> Result<Statement, Error> {
   it.next(); // skip Token::Import
 
@@ -153,8 +158,7 @@ fn parse_import(it: &mut TokenIter) -> Result<Statement, Error> {
 
   let prefix = if use_token(it, Token::As) {
     Some(use_string(it).ok_or(err_msg("Expected prefix string after `as` keyword"))?)
-  }
-  else {
+  } else {
     None
   };
 
@@ -162,7 +166,7 @@ fn parse_import(it: &mut TokenIter) -> Result<Statement, Error> {
 }
 
 fn parse_var(it: &mut TokenIter) -> Result<Statement, Error> {
-  it.next(); // skip Token::Import
+  it.next(); // skip Token::Var
 
   let name = use_name(it).ok_or(err_msg("Expected variable name after `var` keyword"))?;
 
@@ -173,6 +177,27 @@ fn parse_var(it: &mut TokenIter) -> Result<Statement, Error> {
   let val = use_string(it).ok_or(err_msg("Expected value string after = operator"))?;
 
   Ok(Statement::Var(name, val))
+}
+
+fn parse_if(it: &mut TokenIter) -> Result<Statement, Error> {
+  it.next(); // skip Token::If
+
+  let expr = parse_expr(it)?;
+
+  if !use_token(it, Token::Cul) {
+    return Err(err_msg("Expected { bracket after condition"));
+  }
+
+  let mut body = vec![];
+
+  loop {
+    if use_token(it, Token::Cur) {
+      break;
+    }
+    body.push(parse_stmt(it)?);
+  }
+
+  Ok(Statement::If(expr, body))
 }
 
 fn parse_expr(it: &mut TokenIter) -> Result<Expr, Error> {
