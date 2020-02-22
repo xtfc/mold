@@ -363,45 +363,6 @@ impl Mold {
 /*
 // Remotes
 impl Mold {
-  /// Clone a single remote reference and then recursively clone subremotes
-  fn clone(
-    &self,
-    folder_name: &str,
-    url: &str,
-    ref_: &str,
-    file: Option<PathBuf>,
-  ) -> Result<(), Error> {
-    let path = self.mold_dir.join(folder_name);
-    if !path.is_dir() {
-      remote::clone(&format!("https://{}", url), &path).or_else(|_| remote::clone(url, &path))?;
-      remote::checkout(&path, ref_)?;
-
-      // open it and recursively clone its remotes
-      Self::discover(&path, file)?.adopt(self).clone_all()?;
-    }
-
-    Ok(())
-  }
-
-  /// Clone a single remote
-  pub fn clone_remote(&self, include: &Remote) -> Result<(), Error> {
-    self.clone(
-      &include.folder_name(),
-      &include.url,
-      &include.ref_,
-      include.file.clone(),
-    )
-  }
-
-  /// Recursively all Includes and Modules
-  pub fn clone_all(&self) -> Result<(), Error> {
-    for include in &self.data.includes {
-      self.clone_remote(&include.remote)?;
-    }
-
-    Ok(())
-  }
-
   /// Update a single remote
   ///
   /// * find the expected path
@@ -437,35 +398,6 @@ impl Mold {
     }
 
     Ok(())
-  }
-
-  /// Merge every Include'd Mold into `self`
-  pub fn process_includes(&mut self) -> Result<(), Error> {
-    // merge all Includes into the current Mold. everything needs to be stuffed
-    // into a vector because merging is a mutating action and `self` can't be
-    // mutated while iterating through one of its fields.
-    let mut others = vec![];
-    for include in &self.data.includes {
-      let path = self.mold_dir.join(include.remote.folder_name());
-      let mut other = Self::discover(&path, include.remote.file.clone())?.adopt(self);
-
-      // recursively merge
-      other.process_includes()?;
-      others.push((other, include.prefix.clone()));
-    }
-
-    for (data, prefix) in others {
-      self.data.merge(data, &prefix);
-    }
-
-    Ok(())
-  }
-
-  /// Adopt any attributes from the parent that should be shared
-  fn adopt(mut self, parent: &Self) -> Self {
-    self.mold_dir = parent.mold_dir.clone();
-    self.envs = parent.envs.clone();
-    self
   }
 }
 */
