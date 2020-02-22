@@ -90,8 +90,8 @@ impl Mold {
     }
 
     let vars = indexmap! {
-      "MOLD_ROOT".to_string() => root_dir.to_string_lossy().to_string(),
-      "MOLD_DIR".to_string() => mold_dir.to_string_lossy().to_string(),
+      "MOLD_ROOT".into() => root_dir.to_string_lossy().into(),
+      "MOLD_DIR".into() => mold_dir.to_string_lossy().into(),
     };
 
     let envs = envs.into_iter().collect();
@@ -231,18 +231,28 @@ impl Mold {
   }
 
   /// Find a recipe in the top level map
-  fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
+  fn recipe(&self, name: &str) -> Result<&Recipe, Error> {
     self
       .recipes
-      .get(target_name)
-      .ok_or_else(|| failure::format_err!("Couldn't locate target '{}'", target_name.red()))
+      .get(name)
+      .ok_or_else(|| failure::format_err!("Couldn't locate recipe '{}'", name.red()))
   }
 
-  pub fn execute(&self, target_name: &str) -> Result<(), Error> {
-    let recipe = self.find_recipe(target_name)?;
+  pub fn execute(&self, name: &str) -> Result<(), Error> {
+    let recipe = self.recipe(name)?;
 
     let mut vars = self.vars.clone();
     vars.extend(recipe.vars.clone());
+
+    // insert var for where this recipe's mold file lives
+    if let Some(source) = self.sources.get(name) {
+      vars.insert("MOLD_SOURCE".into(), source.to_string_lossy().into());
+    } else {
+      return Err(failure::format_err!(
+        "Couldn't locate source for recipe '{}'",
+        name.red()
+      ));
+    }
 
     for command_str in &recipe.commands {
       let args = self.build_args(command_str, &vars)?;
@@ -265,7 +275,7 @@ impl Mold {
       println!(
         "{} {} {} {}",
         "mold".white(),
-        target_name.cyan(),
+        name.cyan(),
         "$".green(),
         shell_words::join(&args),
       );
