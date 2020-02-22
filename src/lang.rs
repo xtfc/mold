@@ -47,7 +47,7 @@ pub enum Expr {
 }
 
 impl Expr {
-  pub fn apply(&self, to: &[String]) -> bool {
+  pub fn apply(&self, to: &super::EnvSet) -> bool {
     match self {
       Expr::And(x, y) => x.apply(to) && y.apply(to),
       Expr::Or(x, y) => x.apply(to) || y.apply(to),
@@ -73,13 +73,13 @@ pub enum Statement {
   Run(String),
 }
 
-pub fn compile(code: &str, _envs: &super::EnvSet) -> Result<super::Moldfile, Error> {
+pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Error> {
   let tokens = lex(code)?;
-  let statements = parse(&tokens)?;
+  let statements = flatten(parse(&tokens)?, envs)?;
 
   let mut version = None;
   let mut includes = super::IncludeVec::new();
-  let recipes = super::RecipeMap::new();
+  let mut recipes = super::RecipeMap::new();
   let mut vars = super::VarMap::new();
 
   for stmt in statements {
@@ -103,11 +103,11 @@ pub fn compile(code: &str, _envs: &super::EnvSet) -> Result<super::Moldfile, Err
         vars.insert(name, value);
       }
 
-      Statement::Recipe(_name, _body) => {}
+      Statement::Recipe(name, body) => {
+        recipes.insert(name, compile_recipe(body, envs)?);
+      }
 
-      Statement::If(_expr, _body) => {}
-
-      Statement::Run(_) => {
+      Statement::If(_, _) | Statement::Run(_) => {
         return Err(err_msg("Something terrible has happened."));
       }
     }
@@ -121,6 +121,64 @@ pub fn compile(code: &str, _envs: &super::EnvSet) -> Result<super::Moldfile, Err
     recipes,
     vars,
   })
+}
+
+pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<super::Recipe, Error> {
+  let mut help = None;
+  let mut commands = vec![];
+  let mut vars = super::VarMap::new();
+
+  let body = flatten(body, envs)?;
+
+  for stmt in body {
+    match stmt {
+      Statement::Help(s) => {
+        if help.is_none() {
+          help = Some(s);
+        } else {
+          return Err(format_err!("Duplicate help string: {}", s));
+        }
+      }
+
+      Statement::Var(name, value) => {
+        vars.insert(name, value);
+      }
+
+      Statement::Run(cmd) => {
+        commands.push(cmd);
+      }
+
+      Statement::If(_, _)
+      | Statement::Version(_)
+      | Statement::Import(_, _)
+      | Statement::Recipe(_, _) => {
+        return Err(err_msg("Something terrible has happened."));
+      }
+    }
+  }
+
+  Ok(super::Recipe {
+    help,
+    commands,
+    vars,
+  })
+}
+
+pub fn flatten(body: Vec<Statement>, envs: &super::EnvSet) -> Result<Vec<Statement>, Error> {
+  let mut ret = vec![];
+
+  for stmt in body {
+    match stmt {
+      Statement::If(expr, body) => {
+        if expr.apply(envs) {
+          ret.extend(flatten(body, envs)?);
+        }
+      }
+      x => ret.push(x),
+    }
+  }
+
+  Ok(ret)
 }
 
 pub fn compile_expr(expr: &str) -> Result<Expr, Error> {

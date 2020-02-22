@@ -6,9 +6,6 @@ use colored::*;
 use failure::Error;
 use indexmap::IndexMap;
 use indexmap::IndexSet;
-//use file::Moldfile;
-//use file::Recipe;
-//use file::TargetSet;
 //use indexmap::IndexMap;
 use remote::Remote;
 use semver::Version;
@@ -97,6 +94,9 @@ pub struct Recipe {
 
   /// The command to execute
   pub commands: Vec<String>,
+
+  /// A list of environment variables
+  pub vars: VarMap,
 }
 
 #[derive(Debug)]
