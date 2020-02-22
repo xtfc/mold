@@ -134,13 +134,13 @@ impl Mold {
     };
 
     mold.envs.extend(envs);
-    mold.open(path)?;
+    mold.open(path, "")?;
 
     Ok(mold)
   }
 
   /// Given a path, open and parse the file
-  pub fn open(&mut self, path: &Path) -> Result<(), Error> {
+  fn open(&mut self, path: &Path, prefix: &str) -> Result<(), Error> {
     let mut file = fs::File::open(path)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
@@ -160,8 +160,10 @@ impl Mold {
       ));
     }
 
-    for key in data.recipes.keys() {
-      self.sources.insert(key.to_string(), root_dir.clone());
+    for (name, recipe) in data.recipes {
+      let new_key = format!("{}{}", prefix, name);
+      self.sources.insert(new_key.clone(), root_dir.clone());
+      self.recipes.entry(new_key).or_insert(recipe);
     }
 
     for include in data.includes {
@@ -169,10 +171,13 @@ impl Mold {
         include.remote.clone(&self.mold_dir)?;
         include.remote.checkout(&self.mold_dir)?;
       }
+
+      let path = include.remote.path(&self.mold_dir);
+      let filepath = Self::discover(&path, include.remote.file)?;
+      self.open(&filepath, &include.prefix)?;
     }
 
     self.vars.extend(data.vars);
-    self.recipes.extend(data.recipes);
 
     Ok(())
   }
@@ -245,27 +250,15 @@ impl Mold {
       None => Self::discover_dir(dir),
     }
   }
-}
 
-/*
-impl Mold {
-  /// Return this moldfile's variables with activated environments
-  ///
-  /// This also inserts a few special mold variables
-  fn env_vars(&self) -> VarMap {
-    let active = active_envs(&self.data.environments, &self.envs);
-
-    let mut vars = self.data.variables.clone();
-    for env_name in active {
-      if let Some(env) = self.data.environments.get(&env_name) {
-        vars.extend(env.iter().map(|(k, v)| (k.clone(), v.clone())));
-      }
-    }
-
-    vars
+  /// Delete all cloned top-level targets
+  pub fn clean_all(&self) -> Result<(), Error> {
+    // no point in checking if it exists, because Mold::open creates it
+    fs::remove_dir_all(&self.mold_dir)?;
+    println!("{:>12} {}", "Deleted".red(), self.mold_dir.display());
+    Ok(())
   }
 }
-  */
 
 /*
 // Recipes
@@ -277,13 +270,6 @@ impl Mold {
       .recipes
       .get(target_name)
       .ok_or_else(|| failure::format_err!("Couldn't locate target '{}'", target_name.red()))
-  }
-
-  fn open_remote(&self, target: &Remote) -> Result<Mold, Error> {
-    let path = self.mold_dir.join(&target.folder_name());
-    let mut mold = Self::discover(&path, target.file.clone())?.adopt(self);
-    mold.process_includes()?;
-    Ok(mold)
   }
 
   pub fn find_all_dependencies(&self, targets: &TargetSet) -> Result<TargetSet, Error> {
@@ -450,14 +436,6 @@ impl Mold {
       self.update_remote(&include.remote, updated)?;
     }
 
-    Ok(())
-  }
-
-  /// Delete all cloned top-level targets
-  pub fn clean_all(&self) -> Result<(), Error> {
-    // no point in checking if it exists, because Mold::open creates it
-    fs::remove_dir_all(&self.mold_dir)?;
-    println!("{:>12} {}", "Deleted".red(), self.mold_dir.display());
     Ok(())
   }
 

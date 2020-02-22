@@ -53,14 +53,14 @@ fn run(args: Args) -> Result<(), Error> {
   let filepath = Mold::discover(&Path::new("."), args.file.clone())?;
   let mold = Mold::init(&filepath, envs)?;
 
-  dbg!(mold);
-
-  /*
   // early return if we passed a --clean
   if args.clean {
     return mold.clean_all();
   }
 
+  dbg!(mold);
+
+  /*
   // clone all Modules and Includes before proceeding
   mold.clone_all()?;
 
