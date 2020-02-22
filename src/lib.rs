@@ -4,6 +4,7 @@ pub mod util;
 
 use colored::*;
 use failure::Error;
+use indexmap::indexmap;
 use indexmap::IndexMap;
 use indexmap::IndexSet;
 use remote::Remote;
@@ -88,16 +89,22 @@ impl Mold {
       fs::create_dir(&mold_dir)?;
     }
 
-    let mut mold = Mold {
-      envs: EnvSet::new(),
-      recipes: RecipeMap::new(),
-      vars: VarMap::new(),
-      sources: SourceMap::new(),
-      root_dir: fs::canonicalize(root_dir)?,
-      mold_dir: fs::canonicalize(mold_dir)?,
+    let vars = indexmap! {
+      "MOLD_ROOT".to_string() => root_dir.to_string_lossy().to_string(),
+      "MOLD_DIR".to_string() => mold_dir.to_string_lossy().to_string(),
     };
 
-    mold.envs.extend(envs);
+    let envs = envs.into_iter().collect();
+
+    let mut mold = Mold {
+      root_dir: fs::canonicalize(root_dir)?,
+      mold_dir: fs::canonicalize(mold_dir)?,
+      recipes: RecipeMap::new(),
+      sources: SourceMap::new(),
+      envs,
+      vars,
+    };
+
     mold.open(path, "")?;
 
     Ok(mold)
@@ -234,14 +241,14 @@ impl Mold {
   pub fn execute(&self, target_name: &str) -> Result<(), Error> {
     let recipe = self.find_recipe(target_name)?;
 
-    let mut vars = self.build_vars()?;
+    let mut vars = self.vars.clone();
     vars.extend(recipe.vars.clone());
 
     for command_str in &recipe.commands {
       let args = self.build_args(command_str, &vars)?;
 
       if args.is_empty() {
-        return Err(failure::err_msg("empty command cannot be executed"));
+        continue;
       }
 
       let mut command = process::Command::new(&args[0]);
@@ -264,7 +271,6 @@ impl Mold {
       );
 
       let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
-
       if !exit_status.success() {
         return Err(failure::err_msg("recipe returned non-zero exit status"));
       }
@@ -283,32 +289,6 @@ impl Mold {
         .or_else(|| Some("".into()))
     });
     Ok(shell_words::split(&expanded)?)
-  }
-
-  /// Return a list of arguments to pass to Command
-  fn build_vars(&self) -> Result<VarMap, Error> {
-    let mut vars = self.vars.clone();
-    vars.extend(
-      self
-        .mold_vars()?
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string())),
-    );
-    Ok(vars)
-  }
-
-  /// Return a list of arguments to pass to Command
-  fn mold_vars(&self) -> Result<VarMap, Error> {
-    let mut vars = IndexMap::new();
-
-    vars.insert("MOLD_ROOT", self.root_dir.to_string_lossy());
-    vars.insert("MOLD_DIR", self.mold_dir.to_string_lossy());
-
-    let ret: VarMap = vars
-      .iter()
-      .map(|(k, v)| ((*k).to_string(), v.to_string()))
-      .collect();
-    Ok(ret)
   }
 }
 

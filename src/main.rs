@@ -54,17 +54,16 @@ fn run(args: Args) -> Result<(), Error> {
   let mold = Mold::init(&filepath, envs)?;
 
   // early return if we passed a --clean
+  // it is a little strange that if you
+  // run --clean on an already clean
+  // repo, it will download everything,
+  // then clean it up. strange, strange
+  // stuff. oh well.
   if args.clean {
     return mold.clean_all();
   }
 
   /*
-  // clone all Modules and Includes before proceeding
-  mold.clone_all()?;
-
-  // merge all Includes
-  mold.process_includes()?;
-
   // early return if we passed a --update
   if args.update {
     return mold.update_all();
