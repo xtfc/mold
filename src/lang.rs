@@ -228,7 +228,6 @@ fn parse(tokens: &[Token]) -> Result<Vec<Statement>, Error> {
   let mut stmts = vec![];
   while let Some(_) = it.peek() {
     let stmt = parse_stmt(&mut it)?;
-    dbg!(&stmt);
     stmts.push(stmt);
   }
 

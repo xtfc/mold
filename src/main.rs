@@ -58,8 +58,6 @@ fn run(args: Args) -> Result<(), Error> {
     return mold.clean_all();
   }
 
-  dbg!(mold);
-
   /*
   // clone all Modules and Includes before proceeding
   mold.clone_all()?;
@@ -71,7 +69,9 @@ fn run(args: Args) -> Result<(), Error> {
   if args.update {
     return mold.update_all();
   }
+  */
 
+  /*
   // explain the root moldfile if requested.
   // this is separate from the `if args.explain` below because we want this
   // to happen even if there are no arguments.
@@ -92,17 +92,20 @@ fn run(args: Args) -> Result<(), Error> {
 
     return Ok(());
   }
+  */
 
-  let requested_targets = args
+  let requested_targets: Vec<_> = args
     .targets
     .iter()
     .map(std::string::ToString::to_string)
     .collect();
-  let all_targets = mold.find_all_dependencies(&requested_targets)?;
+  // let all_targets = mold.find_all_dependencies(&requested_targets)?;
+  let all_targets = requested_targets;
 
   for target_name in &all_targets {
-    let task = mold.build_task(target_name)?;
+    mold.execute(target_name)?;
 
+    /*
     println!(
       "{} {} {} {}",
       "mold".white(),
@@ -110,10 +113,8 @@ fn run(args: Args) -> Result<(), Error> {
       "$".green(),
       shell_words::join(task.args()),
     );
-
-    task.execute()?;
+    */
   }
-  */
 
   Ok(())
 }

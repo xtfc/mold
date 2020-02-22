@@ -6,11 +6,9 @@ use colored::*;
 use failure::Error;
 use indexmap::IndexMap;
 use indexmap::IndexSet;
-//use indexmap::IndexMap;
 use remote::Remote;
 use semver::Version;
 use semver::VersionReq;
-//use std::collections::HashSet;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::prelude::*;
@@ -18,29 +16,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process;
 use std::string::ToString;
-
-/// Generate a list of all active environments
-///
-/// Environment map keys are parsed as test expressions and evaluated against
-/// the list of environments. Environments that evaluate to true are added to
-/// the returned list; environments that evaluate to false are ignored.
-/*
-fn active_envs(env_map: &file::EnvMap, envs: &[String]) -> Vec<String> {
-  let mut result = vec![];
-  for (test, _) in env_map {
-    match lang::compile_expr(test) {
-      Ok(ex) => {
-        if ex.apply(&envs) {
-          result.push(test.clone());
-        }
-      }
-      // FIXME this error handling should probably be better
-      Err(err) => println!("{}: '{}': {}", "Warning".bright_red(), test, err),
-    }
-  }
-  result
-}
-*/
 
 // maps sorted by insertion order
 pub type IncludeVec = Vec<Include>;
@@ -97,13 +72,6 @@ pub struct Recipe {
 
   /// A list of environment variables
   pub vars: VarMap,
-}
-
-#[derive(Debug)]
-pub struct Task {
-  args: Vec<String>,
-  vars: VarMap,
-  work_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -258,20 +226,91 @@ impl Mold {
     println!("{:>12} {}", "Deleted".red(), self.mold_dir.display());
     Ok(())
   }
-}
 
-/*
-// Recipes
-impl Mold {
   /// Find a recipe in the top level map
   fn find_recipe(&self, target_name: &str) -> Result<&Recipe, Error> {
     self
-      .data
       .recipes
       .get(target_name)
       .ok_or_else(|| failure::format_err!("Couldn't locate target '{}'", target_name.red()))
   }
 
+  pub fn execute(&self, target_name: &str) -> Result<(), Error> {
+    let recipe = self.find_recipe(target_name)?;
+
+    let mut vars = self.build_vars()?;
+    vars.extend(recipe.vars.clone());
+
+    for command_str in &recipe.commands {
+      let args = self.build_args(command_str, &vars)?;
+
+      if args.is_empty() {
+        return Err(failure::err_msg("empty command cannot be executed"));
+      }
+
+      let mut command = process::Command::new(&args[0]);
+      command.args(&args[1..]);
+      command.envs(&vars);
+
+      /*
+      // FIXME this should be relative to root, no?
+      if let Some(dir) = &recipe.work_dir {
+        command.current_dir(dir);
+      }
+      */
+
+      let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
+
+      if !exit_status.success() {
+        return Err(failure::err_msg("recipe returned non-zero exit status"));
+      }
+    }
+
+    Ok(())
+  }
+
+  /// Perform variable expansion and return a list of arguments to pass to Command
+  fn build_args(&self, command: &str, vars: &VarMap) -> Result<Vec<String>, Error> {
+    let expanded = shellexpand::env_with_context_no_errors(&command, |name| {
+      vars
+        .get(name)
+        .map(std::string::ToString::to_string)
+        .or_else(|| std::env::var(name).ok())
+        .or_else(|| Some("".into()))
+    });
+    Ok(shell_words::split(&expanded)?)
+  }
+
+  /// Return a list of arguments to pass to Command
+  fn build_vars(&self) -> Result<VarMap, Error> {
+    let mut vars = self.vars.clone();
+    vars.extend(
+      self
+        .mold_vars()?
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string())),
+    );
+    Ok(vars)
+  }
+
+  /// Return a list of arguments to pass to Command
+  fn mold_vars(&self) -> Result<VarMap, Error> {
+    let mut vars = IndexMap::new();
+
+    vars.insert("MOLD_ROOT", self.root_dir.to_string_lossy());
+    vars.insert("MOLD_DIR", self.mold_dir.to_string_lossy());
+
+    let ret: VarMap = vars
+      .iter()
+      .map(|(k, v)| ((*k).to_string(), v.to_string()))
+      .collect();
+    Ok(ret)
+  }
+}
+
+/*
+// Recipes
+impl Mold {
   pub fn find_all_dependencies(&self, targets: &TargetSet) -> Result<TargetSet, Error> {
     let mut new_targets = TargetSet::new();
 
@@ -287,64 +326,6 @@ impl Mold {
     let recipe = self.find_recipe(target_name)?;
     let deps = recipe.deps().iter().map(ToString::to_string).collect();
     self.find_all_dependencies(&deps)
-  }
-
-  pub fn build_task(&self, target_name: &str) -> Result<Task, Error> {
-    let recipe = self.find_recipe(target_name)?;
-    let vars = self.build_vars(recipe)?;
-    let args = self.build_args(recipe, &vars)?;
-    Ok(Task {
-      work_dir: recipe.work_dir.clone(),
-      vars,
-      args,
-    })
-  }
-
-  /// Perform variable expansion and return a list of arguments to pass to Command
-  fn build_args(&self, recipe: &Recipe, vars: &VarMap) -> Result<Vec<String>, Error> {
-    let command = recipe.shell(&self.envs)?;
-    let expanded = shellexpand::env_with_context_no_errors(&command, |name| {
-      vars
-        .get(name)
-        .map(std::string::ToString::to_string)
-        .or_else(|| std::env::var(name).ok())
-        .or_else(|| Some("".into()))
-    });
-    Ok(shell_words::split(&expanded)?)
-  }
-
-  /// Return a list of arguments to pass to Command
-  fn build_vars(&self, recipe: &Recipe) -> Result<VarMap, Error> {
-    let mut vars = self.env_vars();
-    vars.extend(
-      self
-        .mold_vars(recipe)?
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string())),
-    );
-    Ok(vars)
-  }
-
-  /// Return a list of arguments to pass to Command
-  fn mold_vars(&self, recipe: &Recipe) -> Result<VarMap, Error> {
-    let mut vars = IndexMap::new();
-
-    vars.insert("MOLD_ROOT", self.root_dir.to_string_lossy());
-    vars.insert("MOLD_FILE", self.file.to_string_lossy());
-    vars.insert("MOLD_DIR", self.mold_dir.to_string_lossy());
-
-    if let Some(script) = self.script_name(recipe)? {
-      // what the fuck is going on here?
-      // PathBuf -> String is such a nightmare.
-      // it seems like the .to_string().into() is needed to satisfy borrowck.
-      vars.insert("MOLD_SCRIPT", script.to_string_lossy().to_string().into());
-    }
-
-    let ret: VarMap = vars
-      .iter()
-      .map(|(k, v)| ((*k).to_string(), v.to_string()))
-      .collect();
-    Ok(ret)
   }
 
   /// Return a list of arguments to pass to Command
@@ -577,33 +558,3 @@ impl Recipe {
   }
 }
 */
-
-impl Task {
-  /// Execute a recipe
-  pub fn execute(self) -> Result<(), Error> {
-    if self.args.is_empty() {
-      return Err(failure::err_msg("empty command cannot be executed"));
-    }
-
-    let mut command = process::Command::new(&self.args[0]);
-    command.args(&self.args[1..]);
-    command.envs(self.vars);
-
-    // FIXME this should be relative to root, no?
-    if let Some(dir) = self.work_dir {
-      command.current_dir(dir);
-    }
-
-    let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
-
-    if !exit_status.success() {
-      return Err(failure::err_msg("recipe returned non-zero exit status"));
-    }
-
-    Ok(())
-  }
-
-  pub fn args(&self) -> &Vec<String> {
-    &self.args
-  }
-}
