@@ -62,8 +62,11 @@ pub struct Include {
 // FIXME script
 // FIXME dependencies
 pub struct Recipe {
-  /// A short description of the module's contents
+  /// A short description of the recipe
   pub help: Option<String>,
+
+  /// Working directory relative to $MOLD_ROOT
+  pub dir: Option<String>,
 
   /// The command to execute
   pub commands: Vec<String>,
@@ -265,12 +268,10 @@ impl Mold {
       command.args(&args[1..]);
       command.envs(&vars);
 
-      /*
       // FIXME this should be relative to root, no?
-      if let Some(dir) = &recipe.work_dir {
-        command.current_dir(dir);
+      if let Some(dir) = &recipe.dir {
+        command.current_dir(self.root_dir.join(dir));
       }
-      */
 
       println!(
         "{} {} {} {}",
@@ -282,7 +283,7 @@ impl Mold {
 
       let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
       if !exit_status.success() {
-        return Err(failure::err_msg("recipe returned non-zero exit status"));
+        return Err(failure::err_msg("Recipe returned non-zero exit status"));
       }
     }
 

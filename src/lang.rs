@@ -18,6 +18,7 @@ enum Token {
   Cur,
   Eq,
   Help,
+  Dir,
   If,
   Import,
   Not,
@@ -70,6 +71,7 @@ pub enum Statement {
   If(Expr, Vec<Statement>),
   Recipe(String, Vec<Statement>),
   Help(String),
+  Dir(String),
   Run(String),
 }
 
@@ -107,7 +109,7 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
         recipes.insert(name, compile_recipe(body, envs)?);
       }
 
-      Statement::If(_, _) | Statement::Run(_) => {
+      Statement::Dir(_) | Statement::If(_, _) | Statement::Run(_) => {
         return Err(err_msg("Something terrible has happened."));
       }
     }
@@ -125,6 +127,7 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
 
 pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<super::Recipe, Error> {
   let mut help = None;
+  let mut dir = None;
   let mut commands = vec![];
   let mut vars = super::VarMap::new();
 
@@ -133,11 +136,11 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
   for stmt in body {
     match stmt {
       Statement::Help(s) => {
-        if help.is_none() {
-          help = Some(s);
-        } else {
-          return Err(format_err!("Duplicate help string: {}", s));
-        }
+        help = Some(s);
+      }
+
+      Statement::Dir(s) => {
+        dir = Some(s);
       }
 
       Statement::Var(name, value) => {
@@ -161,6 +164,7 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
     help,
     commands,
     vars,
+    dir,
   })
 }
 
@@ -265,6 +269,12 @@ fn parse_help(it: &mut TokenIter) -> Result<Statement, Error> {
   Ok(Statement::Help(desc))
 }
 
+fn parse_dir(it: &mut TokenIter) -> Result<Statement, Error> {
+  it.next(); // skip Token::Help
+  let dir = use_string(it).ok_or_else(|| err_msg("Expected directory after `dir` keyword"))?;
+  Ok(Statement::Dir(dir))
+}
+
 fn parse_import(it: &mut TokenIter) -> Result<Statement, Error> {
   it.next(); // skip Token::Import
 
@@ -344,6 +354,7 @@ fn parse_recipe_stmt(it: &mut TokenIter) -> Result<Statement, Error> {
     Some(Token::Help) => parse_help(it),
     Some(Token::If) => parse_if(it, parse_recipe_stmt),
     Some(Token::Run) => parse_run(it),
+    Some(Token::Dir) => parse_dir(it),
     Some(x) => Err(format_err!(
       "Unexpected token {:?} when parsing recipe body",
       x
@@ -465,6 +476,7 @@ fn lex_name(first: char, it: &mut CharIter) -> Token {
 
   match name.as_str() {
     "as" => Token::As,
+    "dir" => Token::Dir,
     "help" => Token::Help,
     "if" => Token::If,
     "import" => Token::Import,
