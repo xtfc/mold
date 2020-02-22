@@ -61,8 +61,6 @@ impl Expr {
   }
 }
 
-// FIXME workdir?
-// FIXME dependencies?
 // FIXME inline scripts?
 #[derive(Debug, Clone)]
 pub enum Statement {
@@ -131,7 +129,7 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
   let mut help = None;
   let mut dir = None;
   let mut commands = vec![];
-  let mut requires = vec![];
+  let mut requires = super::TargetSet::new();
   let mut vars = super::VarMap::new();
 
   let body = flatten(body, envs)?;
@@ -155,7 +153,7 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
       }
 
       Statement::Require(recipe) => {
-        requires.push(recipe);
+        requires.insert(recipe);
       }
 
       Statement::If(_, _)

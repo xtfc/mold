@@ -58,9 +58,8 @@ pub struct Include {
   pub prefix: String,
 }
 
-// FIXME working dir
 // FIXME script
-// FIXME dependencies
+#[derive(Clone)]
 pub struct Recipe {
   /// A short description of the recipe
   pub help: Option<String>,
@@ -75,7 +74,7 @@ pub struct Recipe {
   pub vars: VarMap,
 
   /// A list of prerequisite recipes
-  pub requires: Vec<String>,
+  pub requires: TargetSet,
 }
 
 pub struct Moldfile {
@@ -139,8 +138,20 @@ impl Mold {
 
     for (name, recipe) in data.recipes {
       let new_key = format!("{}{}", prefix, name);
-      self.sources.insert(new_key.clone(), root_dir.clone());
-      self.recipes.entry(new_key).or_insert(recipe);
+
+      // clone this recipe and prefix all of its dependencies
+      let mut new_recipe = recipe.clone();
+      new_recipe.requires = new_recipe
+        .requires
+        .iter()
+        .map(|x| format!("{}{}", prefix, x))
+        .collect();
+
+      self.recipes.entry(new_key.clone()).or_insert(new_recipe);
+
+      // keep track of where this recipe came from so it can use things from
+      // its repo
+      self.sources.entry(new_key).or_insert(root_dir.clone());
     }
 
     for include in data.includes {
@@ -304,14 +315,12 @@ impl Mold {
     });
     Ok(shell_words::split(&expanded)?)
   }
-}
 
-/*
-// Recipes
-impl Mold {
   pub fn find_all_dependencies(&self, targets: &TargetSet) -> Result<TargetSet, Error> {
     let mut new_targets = TargetSet::new();
 
+    // FIXME this might not break on weird infinite cycles
+    // ...but since those shouldn't happen in sanely written moldfiles...
     for target_name in targets {
       new_targets.extend(self.find_dependencies(target_name)?);
       new_targets.insert(target_name.clone());
@@ -321,12 +330,15 @@ impl Mold {
   }
 
   fn find_dependencies(&self, target_name: &str) -> Result<TargetSet, Error> {
-    let recipe = self.find_recipe(target_name)?;
-    let deps = recipe.deps().iter().map(ToString::to_string).collect();
+    let recipe = self.recipe(target_name)?;
+    let deps = recipe.requires.iter().map(ToString::to_string).collect();
     self.find_all_dependencies(&deps)
   }
+}
 
-  /// Return a list of arguments to pass to Command
+/*
+// Recipes
+impl Mold {
   fn script_name(&self, recipe: &Recipe) -> Result<Option<PathBuf>, Error> {
     if let Some(script) = &recipe.script {
       let file = self.mold_dir.join(util::hash_string(&script));
@@ -491,27 +503,6 @@ impl Mold {
     println!();
 
     Ok(())
-  }
-}
-*/
-
-/*
-impl Moldfile {
-  /// Merges any recipes from `other` that aren't in `self`
-  pub fn merge(&mut self, other: Mold, prefix: &str) {
-    for (recipe_name, recipe) in other.data.recipes {
-      let mut new_recipe = recipe.clone();
-      new_recipe.deps = new_recipe
-        .deps
-        .iter()
-        .map(|x| format!("{}{}", prefix, x))
-        .collect();
-
-      self
-        .recipes
-        .entry(format!("{}{}", prefix, recipe_name))
-        .or_insert(new_recipe);
-    }
   }
 }
 */

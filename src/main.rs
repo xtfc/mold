@@ -93,13 +93,12 @@ fn run(args: Args) -> Result<(), Error> {
   }
   */
 
-  let requested_targets: Vec<_> = args
+  let requested_targets = args
     .targets
     .iter()
     .map(std::string::ToString::to_string)
     .collect();
-  // let all_targets = mold.find_all_dependencies(&requested_targets)?;
-  let all_targets = requested_targets;
+  let all_targets = mold.find_all_dependencies(&requested_targets)?;
 
   for target_name in &all_targets {
     mold.execute(target_name)?;
