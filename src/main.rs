@@ -1,4 +1,4 @@
-use colored::*;
+// use colored::*;
 use exitfailure::ExitFailure;
 use failure::Error;
 use mold::Mold;
@@ -44,13 +44,16 @@ pub struct Args {
 
 fn run(args: Args) -> Result<(), Error> {
   // load the moldfile
-  let mut mold = Mold::discover(&Path::new("."), args.file.clone())?;
-  mold.set_envs(args.env);
-  mold.add_envs(args.add_envs);
+  let mut envs = vec![];
+  envs.extend(args.env);
+  envs.extend(args.add_envs);
+  envs.push(std::env::consts::FAMILY.to_string());
+  envs.push(std::env::consts::OS.to_string());
 
-  mold.add_env(std::env::consts::FAMILY);
-  mold.add_env(std::env::consts::OS);
+  let filepath = Mold::discover(&Path::new("."), args.file.clone())?;
+  let _mold = Mold::init(&filepath, &envs);
 
+  /*
   // early return if we passed a --clean
   if args.clean {
     return mold.clean_all();
@@ -108,6 +111,7 @@ fn run(args: Args) -> Result<(), Error> {
 
     task.execute()?;
   }
+  */
 
   Ok(())
 }

@@ -1,27 +1,25 @@
-pub mod file;
-pub mod remote;
 pub mod lang;
+pub mod remote;
 pub mod util;
 
 use colored::*;
 use failure::Error;
-use file::Command;
-use file::Moldfile;
-use file::Recipe;
-use file::Remote;
-use file::TargetSet;
-use file::VarMap;
-use file::DEFAULT_FILES;
 use indexmap::IndexMap;
+use indexmap::IndexSet;
+//use file::Moldfile;
+//use file::Recipe;
+//use file::TargetSet;
+//use indexmap::IndexMap;
+use remote::Remote;
 use semver::Version;
 use semver::VersionReq;
-use std::collections::HashSet;
+//use std::collections::HashSet;
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::prelude::*;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;
-use std::str::FromStr;
 use std::string::ToString;
 
 /// Generate a list of all active environments
@@ -29,10 +27,11 @@ use std::string::ToString;
 /// Environment map keys are parsed as test expressions and evaluated against
 /// the list of environments. Environments that evaluate to true are added to
 /// the returned list; environments that evaluate to false are ignored.
+/*
 fn active_envs(env_map: &file::EnvMap, envs: &[String]) -> Vec<String> {
   let mut result = vec![];
   for (test, _) in env_map {
-    match lang::compile_expr(&test) {
+    match lang::compile_expr(test) {
       Ok(ex) => {
         if ex.apply(&envs) {
           result.push(test.clone());
@@ -44,23 +43,56 @@ fn active_envs(env_map: &file::EnvMap, envs: &[String]) -> Vec<String> {
   }
   result
 }
+*/
+
+// maps sorted by insertion order
+pub type IncludeVec = Vec<Include>;
+pub type TargetSet = IndexSet<String>;
+pub type EnvSet = IndexSet<String>;
+pub type VarMap = IndexMap<String, String>; // TODO maybe down the line this should allow nulls to `unset` a variable
+
+// maps sorted alphabetically
+pub type RecipeMap = BTreeMap<String, Recipe>;
+
+pub const DEFAULT_FILES: &[&str] = &["moldfile", "Moldfile"];
 
 #[derive(Debug)]
 pub struct Mold {
-  /// path to the moldfile
-  file: PathBuf,
+  /// A set of currently active environments
+  pub envs: EnvSet,
 
-  /// (derived) root directory that the file sits in
+  /// A map of recipes
+  pub recipes: RecipeMap,
+
+  /// A map of environment variables
+  pub variables: VarMap,
+
+  /// Root of the mold tree
   root_dir: PathBuf,
 
-  /// (derived) path to the cloned repos and generated scripts
+  /// Path to cloned repos and generated scripts
   mold_dir: PathBuf,
+}
 
-  /// which environments to use in the environment
-  envs: Vec<String>,
+#[derive(Debug, Clone)]
+pub struct Include {
+  /// Remote to include
+  pub remote: Remote,
 
-  /// the parsed moldfile data
-  data: file::Moldfile,
+  /// Prefix to prepend
+  pub prefix: String,
+}
+
+// FIXME working dir
+// FIXME script
+// FIXME dependencies
+#[derive(Debug, Clone)]
+pub struct Recipe {
+  /// A short description of the module's contents
+  pub help: Option<String>,
+
+  /// The command to execute
+  pub commands: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -72,13 +104,29 @@ pub struct Task {
 
 // Moldfiles
 impl Mold {
+  pub fn init(path: &Path, envs: &[String]) -> Result<Mold, Error> {
+    let root_dir = path.parent().unwrap_or(&Path::new("/")).to_path_buf();
+    let mold_dir = root_dir.join(".mold");
+
+    if !mold_dir.is_dir() {
+      fs::create_dir(&mold_dir)?;
+    }
+
+    Ok(Mold {
+      envs: EnvSet::new(),
+      recipes: RecipeMap::new(),
+      variables: VarMap::new(),
+      root_dir: fs::canonicalize(root_dir)?,
+      mold_dir: fs::canonicalize(mold_dir)?,
+    })
+  }
   /// Given a path, open and parse the file
-  pub fn open(path: &Path) -> Result<Mold, Error> {
+  pub fn open(&self, path: &Path) -> Result<(), Error> {
     let mut file = fs::File::open(path)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
 
-    let data = self::lang::from_str(&contents)?;
+    let data = self::lang::compile(&contents, &self.envs)?;
 
     let self_version = Version::parse(clap::crate_version!())?;
     let target_version = VersionReq::parse(&data.version)?;
@@ -92,20 +140,7 @@ impl Mold {
       ));
     }
 
-    let root_dir = path.parent().unwrap_or(&Path::new("/")).to_path_buf();
-    let mold_dir = root_dir.join(".mold");
-
-    if !mold_dir.is_dir() {
-      fs::create_dir(&mold_dir)?;
-    }
-
-    Ok(Mold {
-      file: fs::canonicalize(path)?,
-      root_dir: fs::canonicalize(root_dir)?,
-      mold_dir: fs::canonicalize(mold_dir)?,
-      envs: vec![],
-      data,
-    })
+    Ok(())
   }
 
   /// Try to find a file by walking up the tree
@@ -113,7 +148,7 @@ impl Mold {
   /// Absolute paths will either be located or fail instantly. Relative paths
   /// will walk the entire file tree up to root, looking for a file with the
   /// given name.
-  fn find_file(name: &Path) -> Result<PathBuf, Error> {
+  fn discover_file(name: &Path) -> Result<PathBuf, Error> {
     // if it's an absolute path, we don't need to walk up the tree.
     if name.is_absolute() {
       if name.is_file() {
@@ -149,31 +184,25 @@ impl Mold {
     }
   }
 
-  /// Search a directory for default moldfiles, opening it if found
+  /// Search a directory for default moldfiles
   ///
   /// Iterates through all values found in `DEFAULT_FILES`, joining them to the
   /// provided `name` argument
-  fn discover_dir(name: &Path) -> Result<Mold, Error> {
+  fn discover_dir(name: &Path) -> Result<PathBuf, Error> {
     let path = DEFAULT_FILES
       .iter()
-      .find_map(|file| Self::find_file(&name.join(file)).ok())
+      .find_map(|file| Self::discover_file(&name.join(file)).ok())
       .ok_or_else(|| {
         failure::format_err!(
           "Cannot locate moldfile, tried the following:\n{}",
           DEFAULT_FILES.join(" ").red()
         )
       })?;
-    Self::open(&path)
-  }
-
-  /// Try to locate a moldfile by name, opening it if found
-  fn discover_file(name: &Path) -> Result<Mold, Error> {
-    let path = Self::find_file(name)?;
-    Self::open(&path)
+    Ok(path)
   }
 
   /// Try to locate a file or a directory, opening it if found
-  pub fn discover(dir: &Path, file: Option<PathBuf>) -> Result<Mold, Error> {
+  pub fn discover(dir: &Path, file: Option<PathBuf>) -> Result<PathBuf, Error> {
     // I think this should take Option<&Path> but I couldn't figure out how to
     // please the compiler when I have an existing Option<PathBuf>, so...  I'm
     // just using .clone() on it.
@@ -184,7 +213,7 @@ impl Mold {
   }
 }
 
-// Environments
+/*
 impl Mold {
   /// Return this moldfile's variables with activated environments
   ///
@@ -201,23 +230,10 @@ impl Mold {
 
     vars
   }
-
-  pub fn set_envs(&mut self, env: Option<String>) {
-    self.envs = match env {
-      Some(envs) => envs.split(',').map(|x| x.into()).collect(),
-      None => vec![],
-    };
-  }
-
-  pub fn add_envs(&mut self, envs: Vec<String>) {
-    self.envs.extend(envs);
-  }
-
-  pub fn add_env(&mut self, env: &str) {
-    self.envs.push(env.into());
-  }
 }
+  */
 
+/*
 // Recipes
 impl Mold {
   /// Find a recipe in the top level map
@@ -322,7 +338,9 @@ impl Mold {
     }
   }
 }
+*/
 
+/*
 // Remotes
 impl Mold {
   /// Clone a single remote reference and then recursively clone subremotes
@@ -438,7 +456,9 @@ impl Mold {
     self
   }
 }
+*/
 
+/*
 // Help
 impl Mold {
   /// Print a description of all recipes in this moldfile
@@ -550,7 +570,9 @@ impl Mold {
     Ok(())
   }
 }
+*/
 
+/*
 impl Moldfile {
   /// Merges any recipes from `other` that aren't in `self`
   pub fn merge(&mut self, other: Mold, prefix: &str) {
@@ -569,24 +591,9 @@ impl Moldfile {
     }
   }
 }
+*/
 
-impl Remote {
-  /// Return this module's folder name in the format hash(url@ref)
-  fn folder_name(&self) -> String {
-    util::hash_url_ref(&self.url, &self.ref_)
-  }
-}
-
-impl ToString for Remote {
-  fn to_string(&self) -> String {
-    if let Some(file) = &self.file {
-      format!("{} @ {} /{}", self.url, self.ref_, file.display())
-    } else {
-      format!("{} @ {}", self.url, self.ref_)
-    }
-  }
-}
-
+/*
 impl Recipe {
   /// Figure out which command to run for our shell
   fn shell(&self, envs: &[String]) -> Result<String, Error> {
@@ -625,6 +632,7 @@ impl Recipe {
     &self.work_dir
   }
 }
+*/
 
 impl Task {
   /// Execute a recipe
@@ -653,57 +661,5 @@ impl Task {
 
   pub fn args(&self) -> &Vec<String> {
     &self.args
-  }
-}
-
-impl Remote {
-  /// Parse a string into an Remote
-  ///
-  /// The format is roughly: url[#[ref][/file]], eg:
-  ///   https://foo.com/mold.git -> ref = master, file = None
-  ///   https://foo.com/mold.git#dev -> ref = dev, file = None
-  ///   https://foo.com/mold.git#dev/dev.yaml, ref = dev, file = dev.yaml
-  ///   https://foo.com/mold.git#/dev.yaml -> ref = master, file = dev.yaml
-  fn parse(url: &str) -> Self {
-    match url.find('#') {
-      Some(idx) => {
-        let (url, frag) = url.split_at(idx);
-        let frag = frag.trim_start_matches('#');
-
-        let (ref_, file) = match frag.find('/') {
-          Some(idx) => {
-            let (ref_, file) = frag.split_at(idx);
-            let file = file.trim_start_matches('/');
-
-            let ref_ = match ref_ {
-              "" => "master".into(),
-              _ => ref_.into(),
-            };
-
-            (ref_, Some(file.into()))
-          }
-          None => (frag.into(), None),
-        };
-
-        Self {
-          url: url.into(),
-          ref_,
-          file,
-        }
-      }
-      None => Self {
-        url: url.into(),
-        ref_: "master".into(),
-        file: None,
-      },
-    }
-  }
-}
-
-impl FromStr for Remote {
-  type Err = Error;
-
-  fn from_str(s: &str) -> Result<Self, Self::Err> {
-    Ok(Self::parse(s))
   }
 }

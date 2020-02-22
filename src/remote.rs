@@ -1,10 +1,14 @@
+// use super::util;
 use colored::*;
 use failure::Error;
 use std::io;
 use std::io::Write;
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
+use std::str::FromStr;
+use std::string::ToString;
 use std::time::Instant;
 
 struct State<'a> {
@@ -113,4 +117,85 @@ pub fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
   }
 
   Err(failure::format_err!("Couldn't locate ref '{}'", ref_.red()))
+}
+
+#[derive(Debug, Clone)]
+pub struct Remote {
+  /// Git URL of a remote repo
+  pub url: String,
+
+  /// Git ref to keep up with
+  pub ref_: String,
+
+  /// Moldfile to look at
+  pub file: Option<PathBuf>,
+}
+
+impl Remote {
+  /*
+  /// Return this module's folder name in the format hash(url@ref)
+  fn folder_name(&self) -> String {
+    util::hash_url_ref(&self.url, &self.ref_)
+  }
+  */
+
+  /// Parse a string into an Remote
+  ///
+  /// The format is roughly: url[#[ref][/file]], eg:
+  ///   https://foo.com/mold.git -> ref = master, file = None
+  ///   https://foo.com/mold.git#dev -> ref = dev, file = None
+  ///   https://foo.com/mold.git#dev/dev.yaml, ref = dev, file = dev.yaml
+  ///   https://foo.com/mold.git#/dev.yaml -> ref = master, file = dev.yaml
+  fn parse(url: &str) -> Self {
+    match url.find('#') {
+      Some(idx) => {
+        let (url, frag) = url.split_at(idx);
+        let frag = frag.trim_start_matches('#');
+
+        let (ref_, file) = match frag.find('/') {
+          Some(idx) => {
+            let (ref_, file) = frag.split_at(idx);
+            let file = file.trim_start_matches('/');
+
+            let ref_ = match ref_ {
+              "" => "master".into(),
+              _ => ref_.into(),
+            };
+
+            (ref_, Some(file.into()))
+          }
+          None => (frag.into(), None),
+        };
+
+        Self {
+          url: url.into(),
+          ref_,
+          file,
+        }
+      }
+      None => Self {
+        url: url.into(),
+        ref_: "master".into(),
+        file: None,
+      },
+    }
+  }
+}
+
+impl ToString for Remote {
+  fn to_string(&self) -> String {
+    if let Some(file) = &self.file {
+      format!("{}#{}/{}", self.url, self.ref_, file.display())
+    } else {
+      format!("{}#{}", self.url, self.ref_)
+    }
+  }
+}
+
+impl FromStr for Remote {
+  type Err = Error;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(Self::parse(s))
+  }
 }

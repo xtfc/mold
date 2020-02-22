@@ -1,4 +1,4 @@
-use super::file;
+use super::remote;
 use failure::err_msg;
 use failure::format_err;
 use failure::Error;
@@ -73,18 +73,24 @@ pub enum Statement {
   Run(String),
 }
 
-pub fn from_str(code: &str) -> Result<file::Moldfile, Error> {
+#[derive(Debug, Clone)]
+pub struct Moldfile {
+  pub version: String,
+  pub includes: super::IncludeVec,
+  pub recipes: super::RecipeMap,
+  pub variables: super::VarMap,
+}
+
+pub fn compile(code: &str, _envs: &super::EnvSet) -> Result<Moldfile, Error> {
   let tokens = lex(code)?;
-  let root = parse(&tokens)?;
+  let statements = parse(&tokens)?;
 
   let mut version = None;
-  let mut help = None;
-  let mut includes = file::IncludeVec::new();
-  let mut recipes = file::RecipeMap::new();
-  let mut variables = file::VarMap::new();
-  let mut environments = file::EnvMap::new();
+  let mut includes = super::IncludeVec::new();
+  let recipes = super::RecipeMap::new();
+  let mut variables = super::VarMap::new();
 
-  for stmt in root {
+  for stmt in statements {
     match stmt {
       Statement::Version(s) => {
         if version.is_none() {
@@ -94,16 +100,10 @@ pub fn from_str(code: &str) -> Result<file::Moldfile, Error> {
         }
       }
 
-      Statement::Help(s) => {
-        if help.is_none() {
-          help = Some(s);
-        } else {
-          return Err(format_err!("Duplicate help string: {}", s));
-        }
-      }
+      Statement::Help(_) => {}
 
-      Statement::Import(url, prefix) => includes.push(file::Include {
-        remote: file::Remote::from_str(&url)?,
+      Statement::Import(url, prefix) => includes.push(super::Include {
+        remote: remote::Remote::from_str(&url)?,
         prefix: prefix.unwrap_or("".to_string()),
       }),
 
@@ -111,9 +111,9 @@ pub fn from_str(code: &str) -> Result<file::Moldfile, Error> {
         variables.insert(name, value);
       }
 
-      Statement::Recipe(name, body) => {}
+      Statement::Recipe(_name, _body) => {}
 
-      Statement::If(expr, body) => {}
+      Statement::If(_expr, _body) => {}
 
       Statement::Run(_) => {
         return Err(err_msg("Something terrible has happened."));
@@ -121,13 +121,13 @@ pub fn from_str(code: &str) -> Result<file::Moldfile, Error> {
     }
   }
 
-  Ok(file::Moldfile {
-    version: version.ok_or(err_msg("File version must be specified"))?,
-    help,
+  let version = version.ok_or(err_msg("File version must be specified"))?;
+
+  Ok(Moldfile {
+    version,
     includes,
     recipes,
     variables,
-    environments,
   })
 }
 
