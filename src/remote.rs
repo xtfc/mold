@@ -1,4 +1,4 @@
-// use super::util;
+use super::util;
 use colored::*;
 use failure::Error;
 use std::io;
@@ -72,7 +72,7 @@ impl<'a> State<'a> {
   }
 }
 
-pub fn clone(url: &str, path: &Path) -> Result<(), Error> {
+fn clone(url: &str, path: &Path) -> Result<(), Error> {
   let label = format!("{} into {}", url, path.display());
   let mut state = State::new("     Cloning", "      Cloned", &label);
 
@@ -81,7 +81,7 @@ pub fn clone(url: &str, path: &Path) -> Result<(), Error> {
   state.wait()
 }
 
-pub fn ref_exists(path: &Path, ref_: &str) -> Result<bool, Error> {
+fn ref_exists(path: &Path, ref_: &str) -> Result<bool, Error> {
   let exists = new_cmd()
     .arg("rev-parse")
     .arg(ref_)
@@ -94,7 +94,7 @@ pub fn ref_exists(path: &Path, ref_: &str) -> Result<bool, Error> {
   Ok(exists)
 }
 
-pub fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
+fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
   let label = format!("{}", path.display());
   let mut state = State::new("    Fetching", "     Fetched", &label);
   state
@@ -132,12 +132,28 @@ pub struct Remote {
 }
 
 impl Remote {
-  /*
   /// Return this module's folder name in the format hash(url@ref)
   fn folder_name(&self) -> String {
     util::hash_url_ref(&self.url, &self.ref_)
   }
-  */
+
+  pub fn path(&self, mold_dir: &Path) -> PathBuf {
+    mold_dir.join(self.folder_name())
+  }
+
+  pub fn exists(&self, mold_dir: &Path) -> bool {
+    self.path(mold_dir).is_dir()
+  }
+
+  pub fn clone(&self, mold_dir: &Path) -> Result<(), Error> {
+    let path = self.path(mold_dir);
+    clone(&format!("https://{}", self.url), &path).or_else(|_| clone(&self.url, &path))
+  }
+
+  pub fn checkout(&self, mold_dir: &Path) -> Result<(), Error> {
+    let path = self.path(mold_dir);
+    checkout(&path, &self.ref_)
+  }
 
   /// Parse a string into an Remote
   ///

@@ -164,6 +164,13 @@ impl Mold {
       self.sources.insert(key.to_string(), root_dir.clone());
     }
 
+    for include in data.includes {
+      if !include.remote.exists(&self.mold_dir) {
+        include.remote.clone(&self.mold_dir)?;
+        include.remote.checkout(&self.mold_dir)?;
+      }
+    }
+
     self.vars.extend(data.vars);
     self.recipes.extend(data.recipes);
 
