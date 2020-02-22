@@ -104,16 +104,6 @@ fn run(args: Args) -> Result<(), Error> {
 
   for target_name in &all_targets {
     mold.execute(target_name)?;
-
-    /*
-    println!(
-      "{} {} {} {}",
-      "mold".white(),
-      target_name.cyan(),
-      "$".green(),
-      shell_words::join(task.args()),
-    );
-    */
   }
 
   Ok(())

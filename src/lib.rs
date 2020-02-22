@@ -29,7 +29,6 @@ pub type RecipeMap = BTreeMap<String, Recipe>;
 
 pub const DEFAULT_FILES: &[&str] = &["moldfile", "Moldfile"];
 
-#[derive(Debug)]
 pub struct Mold {
   /// A set of currently active environments
   pub envs: EnvSet,
@@ -50,7 +49,6 @@ pub struct Mold {
   pub mold_dir: PathBuf,
 }
 
-#[derive(Debug, Clone)]
 pub struct Include {
   /// Remote to include
   pub remote: Remote,
@@ -62,7 +60,6 @@ pub struct Include {
 // FIXME working dir
 // FIXME script
 // FIXME dependencies
-#[derive(Debug, Clone)]
 pub struct Recipe {
   /// A short description of the module's contents
   pub help: Option<String>,
@@ -74,7 +71,6 @@ pub struct Recipe {
   pub vars: VarMap,
 }
 
-#[derive(Debug, Clone)]
 pub struct Moldfile {
   pub version: String,
   pub includes: IncludeVec,
@@ -258,6 +254,14 @@ impl Mold {
         command.current_dir(dir);
       }
       */
+
+      println!(
+        "{} {} {} {}",
+        "mold".white(),
+        target_name.cyan(),
+        "$".green(),
+        shell_words::join(&args),
+      );
 
       let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
 
@@ -514,47 +518,6 @@ impl Moldfile {
         .entry(format!("{}{}", prefix, recipe_name))
         .or_insert(new_recipe);
     }
-  }
-}
-*/
-
-/*
-impl Recipe {
-  /// Figure out which command to run for our shell
-  fn shell(&self, envs: &[String]) -> Result<String, Error> {
-    match &self.command {
-      Command::Shell(cmd) => return Ok(cmd.into()),
-      Command::Map(map) => {
-        for (test, cmd) in map {
-          match lang::compile_expr(&test) {
-            Ok(ex) => {
-              if ex.apply(&envs) {
-                return Ok(cmd.into());
-              }
-            }
-            Err(err) => {
-              println!("{}: '{}': {}", "Warning".bright_red(), test, err);
-            }
-          }
-        }
-      }
-    }
-    Err(failure::err_msg("Couldn't select command"))
-  }
-
-  /// Return this recipe's dependencies
-  fn deps(&self) -> Vec<String> {
-    self.deps.clone()
-  }
-
-  /// Return this recipe's help string
-  fn help(&self) -> &str {
-    &self.help
-  }
-
-  /// Return this recipe's working directory
-  fn work_dir(&self) -> &Option<PathBuf> {
-    &self.work_dir
   }
 }
 */
