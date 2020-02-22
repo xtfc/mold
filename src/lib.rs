@@ -50,6 +50,7 @@ pub type IncludeVec = Vec<Include>;
 pub type TargetSet = IndexSet<String>;
 pub type EnvSet = IndexSet<String>;
 pub type VarMap = IndexMap<String, String>; // TODO maybe down the line this should allow nulls to `unset` a variable
+pub type SourceMap = IndexMap<String, PathBuf>;
 
 // maps sorted alphabetically
 pub type RecipeMap = BTreeMap<String, Recipe>;
@@ -64,14 +65,17 @@ pub struct Mold {
   /// A map of recipes
   pub recipes: RecipeMap,
 
-  /// A map of environment variables
-  pub variables: VarMap,
+  /// A map of recipe sources
+  pub sources: SourceMap,
 
-  /// Root of the mold tree
-  root_dir: PathBuf,
+  /// A map of environment variables
+  pub vars: VarMap,
+
+  /// Root of the origin moldfile
+  pub root_dir: PathBuf,
 
   /// Path to cloned repos and generated scripts
-  mold_dir: PathBuf,
+  pub mold_dir: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -102,9 +106,17 @@ pub struct Task {
   work_dir: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone)]
+pub struct Moldfile {
+  pub version: String,
+  pub includes: IncludeVec,
+  pub recipes: RecipeMap,
+  pub vars: VarMap,
+}
+
 // Moldfiles
 impl Mold {
-  pub fn init(path: &Path, envs: &[String]) -> Result<Mold, Error> {
+  pub fn init(path: &Path, envs: Vec<String>) -> Result<Mold, Error> {
     let root_dir = path.parent().unwrap_or(&Path::new("/")).to_path_buf();
     let mold_dir = root_dir.join(".mold");
 
@@ -112,25 +124,33 @@ impl Mold {
       fs::create_dir(&mold_dir)?;
     }
 
-    Ok(Mold {
+    let mut mold = Mold {
       envs: EnvSet::new(),
       recipes: RecipeMap::new(),
-      variables: VarMap::new(),
+      vars: VarMap::new(),
+      sources: SourceMap::new(),
       root_dir: fs::canonicalize(root_dir)?,
       mold_dir: fs::canonicalize(mold_dir)?,
-    })
+    };
+
+    mold.envs.extend(envs);
+    mold.open(path)?;
+
+    Ok(mold)
   }
+
   /// Given a path, open and parse the file
-  pub fn open(&self, path: &Path) -> Result<(), Error> {
+  pub fn open(&mut self, path: &Path) -> Result<(), Error> {
     let mut file = fs::File::open(path)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
 
     let data = self::lang::compile(&contents, &self.envs)?;
+    let root_dir = path.parent().unwrap_or(&Path::new("/")).to_path_buf();
 
+    // check version requirements
     let self_version = Version::parse(clap::crate_version!())?;
     let target_version = VersionReq::parse(&data.version)?;
-
     if !target_version.matches(&self_version) {
       return Err(failure::format_err!(
         "Incompatible versions: file {} requires version {}, but current version is {}",
@@ -139,6 +159,13 @@ impl Mold {
         self_version.to_string().red()
       ));
     }
+
+    for key in data.recipes.keys() {
+      self.sources.insert(key.to_string(), root_dir.clone());
+    }
+
+    self.vars.extend(data.vars);
+    self.recipes.extend(data.recipes);
 
     Ok(())
   }

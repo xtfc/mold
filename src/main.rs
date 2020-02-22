@@ -51,7 +51,9 @@ fn run(args: Args) -> Result<(), Error> {
   envs.push(std::env::consts::OS.to_string());
 
   let filepath = Mold::discover(&Path::new("."), args.file.clone())?;
-  let _mold = Mold::init(&filepath, &envs);
+  let mold = Mold::init(&filepath, envs);
+
+  dbg!(mold);
 
   /*
   // early return if we passed a --clean

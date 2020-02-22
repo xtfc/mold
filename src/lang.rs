@@ -73,22 +73,14 @@ pub enum Statement {
   Run(String),
 }
 
-#[derive(Debug, Clone)]
-pub struct Moldfile {
-  pub version: String,
-  pub includes: super::IncludeVec,
-  pub recipes: super::RecipeMap,
-  pub variables: super::VarMap,
-}
-
-pub fn compile(code: &str, _envs: &super::EnvSet) -> Result<Moldfile, Error> {
+pub fn compile(code: &str, _envs: &super::EnvSet) -> Result<super::Moldfile, Error> {
   let tokens = lex(code)?;
   let statements = parse(&tokens)?;
 
   let mut version = None;
   let mut includes = super::IncludeVec::new();
   let recipes = super::RecipeMap::new();
-  let mut variables = super::VarMap::new();
+  let mut vars = super::VarMap::new();
 
   for stmt in statements {
     match stmt {
@@ -108,7 +100,7 @@ pub fn compile(code: &str, _envs: &super::EnvSet) -> Result<Moldfile, Error> {
       }),
 
       Statement::Var(name, value) => {
-        variables.insert(name, value);
+        vars.insert(name, value);
       }
 
       Statement::Recipe(_name, _body) => {}
@@ -123,11 +115,11 @@ pub fn compile(code: &str, _envs: &super::EnvSet) -> Result<Moldfile, Error> {
 
   let version = version.ok_or(err_msg("File version must be specified"))?;
 
-  Ok(Moldfile {
+  Ok(super::Moldfile {
     version,
     includes,
     recipes,
-    variables,
+    vars,
   })
 }
 
