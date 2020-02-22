@@ -96,7 +96,7 @@ pub fn compile(code: &str, _envs: &super::EnvSet) -> Result<super::Moldfile, Err
 
       Statement::Import(url, prefix) => includes.push(super::Include {
         remote: remote::Remote::from_str(&url)?,
-        prefix: prefix.unwrap_or("".to_string()),
+        prefix: prefix.unwrap_or_else(|| "".to_string()),
       }),
 
       Statement::Var(name, value) => {
@@ -113,7 +113,7 @@ pub fn compile(code: &str, _envs: &super::EnvSet) -> Result<super::Moldfile, Err
     }
   }
 
-  let version = version.ok_or(err_msg("File version must be specified"))?;
+  let version = version.ok_or_else(|| err_msg("File version must be specified"))?;
 
   Ok(super::Moldfile {
     version,
@@ -197,23 +197,24 @@ fn parse_stmt(it: &mut TokenIter) -> Result<Statement, Error> {
 
 fn parse_version(it: &mut TokenIter) -> Result<Statement, Error> {
   it.next(); // skip Token::Version
-  let version = use_string(it).ok_or(err_msg("Expected version string after `version` keyword"))?;
+  let version =
+    use_string(it).ok_or_else(|| err_msg("Expected version string after `version` keyword"))?;
   Ok(Statement::Version(version))
 }
 
 fn parse_help(it: &mut TokenIter) -> Result<Statement, Error> {
   it.next(); // skip Token::Help
-  let desc = use_string(it).ok_or(err_msg("Expected help string after `help` keyword"))?;
+  let desc = use_string(it).ok_or_else(|| err_msg("Expected help string after `help` keyword"))?;
   Ok(Statement::Help(desc))
 }
 
 fn parse_import(it: &mut TokenIter) -> Result<Statement, Error> {
   it.next(); // skip Token::Import
 
-  let url = use_string(it).ok_or(err_msg("Expected URL string after `import` keyword"))?;
+  let url = use_string(it).ok_or_else(|| err_msg("Expected URL string after `import` keyword"))?;
 
   let prefix = if use_token(it, Token::As) {
-    Some(use_string(it).ok_or(err_msg("Expected prefix string after `as` keyword"))?)
+    Some(use_string(it).ok_or_else(|| err_msg("Expected prefix string after `as` keyword"))?)
   } else {
     None
   };
@@ -224,13 +225,13 @@ fn parse_import(it: &mut TokenIter) -> Result<Statement, Error> {
 fn parse_var(it: &mut TokenIter) -> Result<Statement, Error> {
   it.next(); // skip Token::Var
 
-  let name = use_name(it).ok_or(err_msg("Expected variable name after `var` keyword"))?;
+  let name = use_name(it).ok_or_else(|| err_msg("Expected variable name after `var` keyword"))?;
 
   if !use_token(it, Token::Eq) {
     return Err(err_msg("Expected = operator after variable name"));
   }
 
-  let val = use_string(it).ok_or(err_msg("Expected value string after = operator"))?;
+  let val = use_string(it).ok_or_else(|| err_msg("Expected value string after = operator"))?;
 
   Ok(Statement::Var(name, val))
 }
@@ -262,7 +263,7 @@ where
 fn parse_recipe(it: &mut TokenIter) -> Result<Statement, Error> {
   it.next(); // skip Token::Recipe
 
-  let name = use_name(it).ok_or(err_msg("Expected name after `recipe` keyword"))?;
+  let name = use_name(it).ok_or_else(|| err_msg("Expected name after `recipe` keyword"))?;
 
   if !use_token(it, Token::Cul) {
     return Err(err_msg("Expected { bracket after recipe name"));
@@ -296,7 +297,7 @@ fn parse_recipe_stmt(it: &mut TokenIter) -> Result<Statement, Error> {
 
 fn parse_run(it: &mut TokenIter) -> Result<Statement, Error> {
   it.next(); // skip Token::Run
-  let cmd = use_string(it).ok_or(err_msg("Expected command string after `run` keyword"))?;
+  let cmd = use_string(it).ok_or_else(|| err_msg("Expected command string after `run` keyword"))?;
   Ok(Statement::Run(cmd))
 }
 
