@@ -73,6 +73,9 @@ pub struct Recipe {
 
   /// A list of environment variables
   pub vars: VarMap,
+
+  /// A list of prerequisite recipes
+  pub requires: Vec<String>,
 }
 
 pub struct Moldfile {

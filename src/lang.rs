@@ -16,9 +16,9 @@ enum Token {
   As,
   Cul,
   Cur,
+  Dir,
   Eq,
   Help,
-  Dir,
   If,
   Import,
   Not,
@@ -26,6 +26,7 @@ enum Token {
   Pal,
   Par,
   Recipe,
+  Require,
   Run,
   Sql,
   Sqr,
@@ -65,14 +66,15 @@ impl Expr {
 // FIXME inline scripts?
 #[derive(Debug, Clone)]
 pub enum Statement {
-  Version(String),
-  Import(String, Option<String>),
-  Var(String, String),
-  If(Expr, Vec<Statement>),
-  Recipe(String, Vec<Statement>),
-  Help(String),
   Dir(String),
+  Help(String),
+  If(Expr, Vec<Statement>),
+  Import(String, Option<String>),
+  Recipe(String, Vec<Statement>),
+  Require(String),
   Run(String),
+  Var(String, String),
+  Version(String),
 }
 
 pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Error> {
@@ -109,7 +111,7 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
         recipes.insert(name, compile_recipe(body, envs)?);
       }
 
-      Statement::Dir(_) | Statement::If(_, _) | Statement::Run(_) => {
+      Statement::Require(_) | Statement::Dir(_) | Statement::If(_, _) | Statement::Run(_) => {
         return Err(err_msg("Something terrible has happened."));
       }
     }
@@ -129,6 +131,7 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
   let mut help = None;
   let mut dir = None;
   let mut commands = vec![];
+  let mut requires = vec![];
   let mut vars = super::VarMap::new();
 
   let body = flatten(body, envs)?;
@@ -151,6 +154,10 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
         commands.push(cmd);
       }
 
+      Statement::Require(recipe) => {
+        requires.push(recipe);
+      }
+
       Statement::If(_, _)
       | Statement::Version(_)
       | Statement::Import(_, _)
@@ -165,6 +172,7 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
     commands,
     vars,
     dir,
+    requires,
   })
 }
 
@@ -270,9 +278,16 @@ fn parse_help(it: &mut TokenIter) -> Result<Statement, Error> {
 }
 
 fn parse_dir(it: &mut TokenIter) -> Result<Statement, Error> {
-  it.next(); // skip Token::Help
+  it.next(); // skip Token::Dir
   let dir = use_string(it).ok_or_else(|| err_msg("Expected directory after `dir` keyword"))?;
   Ok(Statement::Dir(dir))
+}
+
+fn parse_require(it: &mut TokenIter) -> Result<Statement, Error> {
+  it.next(); // skip Token::Require
+  let recipe =
+    use_string(it).ok_or_else(|| err_msg("Expected recipe string after `recipe` keyword"))?;
+  Ok(Statement::Require(recipe))
 }
 
 fn parse_import(it: &mut TokenIter) -> Result<Statement, Error> {
@@ -355,6 +370,7 @@ fn parse_recipe_stmt(it: &mut TokenIter) -> Result<Statement, Error> {
     Some(Token::If) => parse_if(it, parse_recipe_stmt),
     Some(Token::Run) => parse_run(it),
     Some(Token::Dir) => parse_dir(it),
+    Some(Token::Require) => parse_require(it),
     Some(x) => Err(format_err!(
       "Unexpected token {:?} when parsing recipe body",
       x
@@ -481,6 +497,7 @@ fn lex_name(first: char, it: &mut CharIter) -> Token {
     "if" => Token::If,
     "import" => Token::Import,
     "recipe" => Token::Recipe,
+    "require" => Token::Require,
     "run" => Token::Run,
     "var" => Token::Var,
     "version" => Token::Version,
