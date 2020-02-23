@@ -51,17 +51,13 @@ fn run(args: Args) -> Result<(), Error> {
   envs.push(std::env::consts::OS.to_string());
 
   let filepath = Mold::discover(&Path::new("."), args.file.clone())?;
-  let mold = Mold::init(&filepath, envs)?;
 
   // early return if we passed a --clean
-  // it is a little strange that if you
-  // run --clean on an already clean
-  // repo, it will download everything,
-  // then clean it up. strange, strange
-  // stuff. oh well.
   if args.clean {
-    return mold.clean_all();
+    return Mold::clean_all(&filepath);
   }
+
+  let mold = Mold::init(&filepath, envs)?;
 
   // early return if we passed a --update
   if args.update {

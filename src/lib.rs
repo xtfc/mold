@@ -119,6 +119,21 @@ impl Mold {
     Ok(mold)
   }
 
+  /// Delete all cloned top-level targets
+  pub fn clean_all(path: &Path) -> Result<(), Error> {
+    let root_dir = path.parent().unwrap_or(&Path::new("/")).to_path_buf();
+    let mold_dir = root_dir.join(".mold");
+
+    if mold_dir.is_dir() {
+      fs::remove_dir_all(&mold_dir)?;
+      println!("{:>12} {}", "Deleted".red(), mold_dir.display());
+    } else {
+      println!("{:>12}", "Clean!".green());
+    }
+
+    Ok(())
+  }
+
   /// Given a path, open and parse the file
   fn open(&mut self, path: &Path, prefix: &str) -> Result<(), Error> {
     let mut file = fs::File::open(path)?;
@@ -242,14 +257,6 @@ impl Mold {
       Some(file) => Self::discover_file(&dir.join(file)),
       None => Self::discover_dir(dir),
     }
-  }
-
-  /// Delete all cloned top-level targets
-  pub fn clean_all(&self) -> Result<(), Error> {
-    // no point in checking if it exists, because Mold::open creates it
-    fs::remove_dir_all(&self.mold_dir)?;
-    println!("{:>12} {}", "Deleted".red(), self.mold_dir.display());
-    Ok(())
   }
 
   /// Find a recipe in the top level map
