@@ -72,7 +72,7 @@ impl<'a> State<'a> {
   }
 }
 
-fn clone(url: &str, path: &Path) -> Result<(), Error> {
+fn pull(url: &str, path: &Path) -> Result<(), Error> {
   let label = format!("{} into {}", url, path.display());
   let mut state = State::new("     Cloning", "      Cloned", &label);
 
@@ -145,9 +145,9 @@ impl Remote {
     self.path(mold_dir).is_dir()
   }
 
-  pub fn clone(&self, mold_dir: &Path) -> Result<(), Error> {
+  pub fn pull(&self, mold_dir: &Path) -> Result<(), Error> {
     let path = self.path(mold_dir);
-    clone(&format!("https://{}", self.url), &path).or_else(|_| clone(&self.url, &path))
+    pull(&format!("https://{}", self.url), &path).or_else(|_| pull(&self.url, &path))
   }
 
   pub fn checkout(&self, mold_dir: &Path) -> Result<(), Error> {

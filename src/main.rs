@@ -63,12 +63,10 @@ fn run(args: Args) -> Result<(), Error> {
     return mold.clean_all();
   }
 
-  /*
   // early return if we passed a --update
   if args.update {
     return mold.update_all();
   }
-  */
 
   /*
   // explain the root moldfile if requested.

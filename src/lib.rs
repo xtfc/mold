@@ -43,6 +43,9 @@ pub struct Mold {
   /// A map of environment variables
   pub vars: VarMap,
 
+  /// List of Remotes that have been imported
+  pub remotes: Vec<Remote>,
+
   /// Root of the origin moldfile
   pub root_dir: PathBuf,
 
@@ -106,6 +109,7 @@ impl Mold {
       mold_dir: fs::canonicalize(mold_dir)?,
       recipes: RecipeMap::new(),
       sources: SourceMap::new(),
+      remotes: vec![],
       envs,
       vars,
     };
@@ -156,11 +160,12 @@ impl Mold {
 
     for include in data.includes {
       if !include.remote.exists(&self.mold_dir) {
-        include.remote.clone(&self.mold_dir)?;
+        include.remote.pull(&self.mold_dir)?;
         include.remote.checkout(&self.mold_dir)?;
       }
 
       let path = include.remote.path(&self.mold_dir);
+      self.remotes.push(include.remote.clone());
       let filepath = Self::discover(&path, include.remote.file)?;
       self.open(&filepath, &include.prefix)?;
     }
@@ -334,6 +339,18 @@ impl Mold {
     let deps = recipe.requires.iter().map(ToString::to_string).collect();
     self.find_all_dependencies(&deps)
   }
+
+  /// Update (ie: fetch + force checkout) all remotes
+  pub fn update_all(&self) -> Result<(), Error> {
+    for remote in &self.remotes {
+      let path = remote.path(&self.mold_dir);
+      if path.is_dir() {
+        remote.checkout(&self.mold_dir)?;
+      }
+    }
+
+    Ok(())
+  }
 }
 
 /*
@@ -351,47 +368,7 @@ impl Mold {
 }
 */
 
-/*
 // Remotes
-impl Mold {
-  /// Update a single remote
-  ///
-  /// * find the expected path
-  /// * make sure it exists (ie, is cloned) and hasn't been visited
-  /// * track it as visited
-  /// * fetch / checkout
-  /// * recurse into it
-  fn update_remote(&self, remote: &Remote, updated: &mut HashSet<PathBuf>) -> Result<(), Error> {
-    let path = self.mold_dir.join(remote.folder_name());
-    if path.is_dir() && !updated.contains(&path) {
-      updated.insert(path.clone());
-      remote::checkout(&path, &remote.ref_)?;
-      self.open_remote(remote)?.update_all_track(updated)?;
-    }
-
-    Ok(())
-  }
-
-  /// Recursively fetch/checkout for all modules that have already been cloned
-  pub fn update_all(&self) -> Result<(), Error> {
-    self.update_all_track(&mut HashSet::new())
-  }
-
-  /// Recursively fetch/checkout for all modules that have already been cloned,
-  /// but with extra checks to avoid infinite recursion cycles
-  fn update_all_track(&self, updated: &mut HashSet<PathBuf>) -> Result<(), Error> {
-    // `updated` contains all of the directories that have been, well, updated.
-    // it *needs* to be passed to recursive calls.
-
-    // find all Includes that have already been cloned and update them
-    for include in &self.data.includes {
-      self.update_remote(&include.remote, updated)?;
-    }
-
-    Ok(())
-  }
-}
-*/
 
 /*
 // Help
