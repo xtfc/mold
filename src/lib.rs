@@ -267,6 +267,7 @@ impl Mold {
       .ok_or_else(|| failure::format_err!("Couldn't locate recipe '{}'", name.red()))
   }
 
+  /// Look up a recipe and execute it
   pub fn execute(&self, name: &str) -> Result<(), Error> {
     let recipe = self.recipe(name)?;
 
@@ -328,21 +329,23 @@ impl Mold {
     Ok(shell_words::split(&expanded)?)
   }
 
+  /// Find *all* dependencies for a given set of target recipes
   pub fn find_all_dependencies(&self, targets: &TargetSet) -> Result<TargetSet, Error> {
     let mut new_targets = TargetSet::new();
 
     // FIXME this might not break on weird infinite cycles
     // ...but since those shouldn't happen in sanely written moldfiles...
-    for target_name in targets {
-      new_targets.extend(self.find_dependencies(target_name)?);
-      new_targets.insert(target_name.clone());
+    for name in targets {
+      new_targets.extend(self.find_dependencies(name)?);
+      new_targets.insert(name.clone());
     }
 
     Ok(new_targets)
   }
 
-  fn find_dependencies(&self, target_name: &str) -> Result<TargetSet, Error> {
-    let recipe = self.recipe(target_name)?;
+  /// Find all recipes for a *single* target recipe
+  fn find_dependencies(&self, name: &str) -> Result<TargetSet, Error> {
+    let recipe = self.recipe(name)?;
     let deps = recipe.requires.iter().map(ToString::to_string).collect();
     self.find_all_dependencies(&deps)
   }
@@ -353,6 +356,25 @@ impl Mold {
       let path = remote.path(&self.mold_dir);
       if path.is_dir() {
         remote.checkout(&self.mold_dir)?;
+      }
+    }
+
+    Ok(())
+  }
+
+  /// Print a description of all recipes in this moldfile
+  pub fn help(&self) -> Result<(), Error> {
+    for (name, recipe) in &self.recipes {
+      let help_str = match &recipe.help {
+        Some(x) => x,
+        None => "",
+      };
+      println!("{:>12} {}", name.cyan(), help_str);
+
+      // print dependencies
+      let deps: Vec<_> = recipe.requires.iter().map(|x| x.to_string()).collect();
+      if !deps.is_empty() {
+        println!("             ⮡ {}", deps.join(" ").cyan());
       }
     }
 
@@ -380,21 +402,6 @@ impl Mold {
 /*
 // Help
 impl Mold {
-  /// Print a description of all recipes in this moldfile
-  pub fn help(&self) -> Result<(), Error> {
-    for (name, recipe) in &self.data.recipes {
-      println!("{:>12} {}", name.cyan(), recipe.help());
-
-      // print dependencies
-      let deps = recipe.deps();
-      if !deps.is_empty() {
-        println!("             ⮡ {}", deps.join(" ").cyan());
-      }
-    }
-
-    Ok(())
-  }
-
   /// Print an explanation of global settings for this Moldfile
   pub fn explain_self(&self) -> Result<(), Error> {
     println!("{:12} {}", "environments:".white(), self.envs.join(" "));
@@ -434,10 +441,10 @@ impl Mold {
   }
 
   /// Print an explanation of what a recipe does
-  pub fn explain(&self, target_name: &str) -> Result<(), Error> {
-    let recipe = self.find_recipe(target_name)?;
+  pub fn explain(&self, name: &str) -> Result<(), Error> {
+    let recipe = self.find_recipe(name)?;
 
-    println!("{:12}", target_name.cyan());
+    println!("{:12}", name.cyan());
     if !recipe.help().is_empty() {
       println!("{:12} {}", "help:".white(), recipe.help());
     }
@@ -460,7 +467,7 @@ impl Mold {
 
     println!("{:12} {}", "command:".white(), recipe.shell(&self.envs)?);
 
-    let task = self.build_task(target_name)?;
+    let task = self.build_task(name)?;
 
     println!("{:12}", "variables:".white());
     for (name, desc) in &task.vars {
