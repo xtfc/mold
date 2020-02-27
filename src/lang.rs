@@ -154,7 +154,7 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
       }
     }
     Rule::not_expr => Expr::Not(consume_expr(&mut pair.into_inner()).unwrap().into()),
-    Rule::expr | Rule::atom | Rule::group => consume_expr(&mut pair.into_inner()).unwrap(),
+    Rule::atom | Rule::group => consume_expr(&mut pair.into_inner()).unwrap(),
     Rule::name => Expr::Atom(pair.as_str().into()),
     Rule::wild => Expr::Wild,
     x => {

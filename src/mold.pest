@@ -29,7 +29,7 @@ run_stmt = { ("run" | "$") ~ string }
 var_stmt = { "var" ~ name ~ "=" ~ string }
 version_stmt = { "version" ~ string }
 
-expr = { or_expr }
+expr = _{ or_expr }
 or_expr = { and_expr ~ ("|" ~ expr)? }
 and_expr = { (not_expr | atom) ~ ("+" ~ expr)? }
 not_expr = { "~" ~ atom }
