@@ -284,7 +284,7 @@ fn parse_dir(it: &mut TokenIter) -> Result<Statement, Error> {
 fn parse_require(it: &mut TokenIter) -> Result<Statement, Error> {
   it.next(); // skip Token::Require
   let recipe =
-    use_string(it).ok_or_else(|| err_msg("Expected recipe string after `recipe` keyword"))?;
+    use_name(it).ok_or_else(|| err_msg("Expected recipe name after `require` keyword"))?;
   Ok(Statement::Require(recipe))
 }
 
@@ -294,7 +294,7 @@ fn parse_import(it: &mut TokenIter) -> Result<Statement, Error> {
   let url = use_string(it).ok_or_else(|| err_msg("Expected URL string after `import` keyword"))?;
 
   let prefix = if use_token(it, Token::As) {
-    Some(use_string(it).ok_or_else(|| err_msg("Expected prefix string after `as` keyword"))?)
+    Some(use_name(it).ok_or_else(|| err_msg("Expected prefix string after `as` keyword"))?)
   } else {
     None
   };
@@ -480,7 +480,7 @@ fn lex_name(first: char, it: &mut CharIter) -> Token {
 
   while let Some(&c) = it.peek() {
     match c {
-      'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => {
+      'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | '/' | ':' => {
         it.next();
         name.push(c);
       }

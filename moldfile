@@ -1,5 +1,5 @@
 version "0.6"
-import "github.com/xtfc/cargo.mold#dev" as "c/"
+import "github.com/xtfc/cargo.mold#dev" as c/
 
 recipe staticbuild {
   help "Build a static MUSL binary using Docker"
