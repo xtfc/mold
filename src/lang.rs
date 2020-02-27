@@ -38,7 +38,7 @@ enum Token {
   String(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
   And(Box<Expr>, Box<Expr>),
   Or(Box<Expr>, Box<Expr>),
@@ -62,7 +62,7 @@ impl Expr {
 }
 
 // FIXME inline scripts?
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Statement {
   Dir(String),
   Help(String),
@@ -89,23 +89,43 @@ use pest::Parser;
 fn consume_string(pairs: &mut Pairs<Rule>) -> Option<String> {
   pairs
     .next()
-    .map(|x| x.into_inner().next().unwrap().as_str().to_string())
+    .and_then(|x| x.into_inner().next())
+    .map(|x| x.as_str().to_string())
 }
 
 fn consume_name(pairs: &mut Pairs<Rule>) -> Option<String> {
   pairs.next().map(|x| x.as_str().to_string())
 }
 
-fn convert_token(pair: Pair<Rule>) -> Statement {
+fn convert_statement(pair: Pair<Rule>) -> Statement {
   match pair.as_rule() {
     Rule::version_stmt => Statement::Version(consume_string(&mut pair.into_inner()).unwrap()),
+
     Rule::dir_stmt => Statement::Dir(consume_string(&mut pair.into_inner()).unwrap()),
+
     Rule::import_stmt => {
       let mut inner = pair.into_inner();
       let source = consume_string(&mut inner).unwrap();
       let name = consume_name(&mut inner);
       Statement::Import(source, name)
     }
+
+    Rule::var_stmt => {
+      let mut inner = pair.into_inner();
+      let name = consume_name(&mut inner).unwrap();
+      let value = consume_string(&mut inner).unwrap();
+      Statement::Var(name, value)
+    }
+
+    Rule::run_stmt => Statement::Run(consume_string(&mut pair.into_inner()).unwrap()),
+
+    Rule::if_stmt => {
+      let mut inner = pair.into_inner();
+      let expr = consume_expr(&mut inner).unwrap();
+      let body = consume_statements(&mut inner).unwrap();
+      Statement::If(expr, body)
+    }
+
     x => {
       dbg!(&pair);
       panic!(format!("found {:?}", x));
@@ -113,22 +133,24 @@ fn convert_token(pair: Pair<Rule>) -> Statement {
   }
 }
 
+fn convert_expr(pair: Pair<Rule>) -> Expr {
+  Expr::Wild
+}
+
+fn consume_statements(pairs: &mut Pairs<Rule>) -> Option<Vec<Statement>> {
+  pairs
+    .next()
+    .map(|x| x.into_inner().map(convert_statement).collect())
+}
+
+fn consume_expr(pairs: &mut Pairs<Rule>) -> Option<Expr> {
+  pairs.next().map(convert_expr)
+}
+
 fn parse_pest(code: &str) -> Result<Vec<Statement>, Error> {
   let main = MoldParser::parse(Rule::main, code)?.next().unwrap();
-
-  let stmts = match main.as_rule() {
-    Rule::main => main
-      .into_inner()
-      .next()
-      .unwrap()
-      .into_inner()
-      .map(convert_token)
-      .collect(),
-    _ => unreachable!(),
-  };
-
+  let stmts = consume_statements(&mut main.into_inner()).unwrap();
   dbg!(&stmts);
-
   Ok(stmts)
 }
 
@@ -136,6 +158,8 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
   let tokens = lex(code)?;
   let statements = flatten(parse(&tokens)?, envs)?;
   let pest_statements = flatten(parse_pest(code)?, envs)?;
+
+  assert!(statements == pest_statements);
 
   let mut version = None;
   let mut includes = super::IncludeVec::new();

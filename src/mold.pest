@@ -15,7 +15,7 @@ special = { "_" | "-" | "/" | ":" }
 name = @{ (alpha | digit | special)+ }
 
 main = { SOI ~ main_body ~ EOI }
-main_body = { (version_stmt | import_stmt | recipe_stmt | var_stmt)* }
+main_body = { (version_stmt | import_stmt | recipe_stmt | var_stmt | if_stmt)* }
 recipe_body = { (help_stmt | if_recipe_stmt | dir_stmt | require_stmt | var_stmt | run_stmt )* }
 
 dir_stmt = { "dir" ~ string }
