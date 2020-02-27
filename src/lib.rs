@@ -80,6 +80,13 @@ pub struct Recipe {
   pub requires: TargetSet,
 }
 
+struct Task {
+  name: String,
+  commands: Vec<Vec<String>>,
+  work_dir: Option<PathBuf>,
+  vars: VarMap,
+}
+
 pub struct Moldfile {
   pub version: String,
   pub includes: IncludeVec,
@@ -267,8 +274,7 @@ impl Mold {
       .ok_or_else(|| failure::format_err!("Couldn't locate recipe '{}'", name.red()))
   }
 
-  /// Look up a recipe and execute it
-  pub fn execute(&self, name: &str) -> Result<(), Error> {
+  fn build_task(&self, name: &str) -> Result<Task, Error> {
     let recipe = self.recipe(name)?;
 
     let mut vars = self.vars.clone();
@@ -284,6 +290,8 @@ impl Mold {
       ));
     }
 
+    let mut commands = vec![];
+
     for command_str in &recipe.commands {
       let args = self.build_args(command_str, &vars)?;
 
@@ -291,30 +299,21 @@ impl Mold {
         continue;
       }
 
-      let mut command = process::Command::new(&args[0]);
-      command.args(&args[1..]);
-      command.envs(&vars);
-
-      // FIXME this should be relative to root, no?
-      if let Some(dir) = &recipe.dir {
-        command.current_dir(self.root_dir.join(dir));
-      }
-
-      println!(
-        "{} {} {} {}",
-        "mold".white(),
-        name.cyan(),
-        "$".green(),
-        shell_words::join(&args),
-      );
-
-      let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
-      if !exit_status.success() {
-        return Err(failure::err_msg("Recipe returned non-zero exit status"));
-      }
+      commands.push(args);
     }
 
-    Ok(())
+    Ok(Task {
+      name: name.into(),
+      commands,
+      vars,
+      work_dir: recipe.dir.clone().map(|x| self.root_dir.join(x)),
+    })
+  }
+
+  /// Look up a recipe and execute it
+  pub fn execute(&self, name: &str) -> Result<(), Error> {
+    let task = self.build_task(name)?;
+    task.execute()
   }
 
   /// Perform variable expansion and return a list of arguments to pass to Command
@@ -380,57 +379,13 @@ impl Mold {
 
     Ok(())
   }
-}
 
-/*
-// Recipes
-impl Mold {
-  fn script_name(&self, recipe: &Recipe) -> Result<Option<PathBuf>, Error> {
-    if let Some(script) = &recipe.script {
-      let file = self.mold_dir.join(util::hash_string(&script));
-      fs::write(&file, &script)?;
-      Ok(Some(file))
-    } else {
-      Ok(None)
-    }
-  }
-}
-*/
-
-// Remotes
-
-/*
-// Help
-impl Mold {
   /// Print an explanation of global settings for this Moldfile
   pub fn explain_self(&self) -> Result<(), Error> {
-    println!("{:12} {}", "environments:".white(), self.envs.join(" "));
-
-    if !self.data.environments.is_empty() {
-      println!("{:12}", "conditionals:".white());
-
-      let active = active_envs(&self.data.environments, &self.envs);
-
-      for (cond, map) in &self.data.environments {
-        let cond_disp = if active.contains(cond) {
-          cond.green()
-        } else {
-          cond.blue()
-        };
-
-        println!("  {}:", cond_disp);
-        for (key, val) in map {
-          println!("    {:16} = {}", format!("${}", key).bright_cyan(), val);
-        }
-      }
-    }
-
-    let vars = self.env_vars();
-
-    if !vars.is_empty() {
+    if !self.vars.is_empty() {
       println!("{:12}", "variables:".white());
 
-      for (key, val) in &vars {
+      for (key, val) in &self.vars {
         println!("  {:16} = {}", format!("${}", key).bright_cyan(), val);
       }
     }
@@ -442,31 +397,31 @@ impl Mold {
 
   /// Print an explanation of what a recipe does
   pub fn explain(&self, name: &str) -> Result<(), Error> {
-    let recipe = self.find_recipe(name)?;
+    let recipe = self.recipe(name)?;
 
-    println!("{:12}", name.cyan());
-    if !recipe.help().is_empty() {
-      println!("{:12} {}", "help:".white(), recipe.help());
+    println!("{}", name.cyan());
+    if let Some(help) = &recipe.help {
+      if !help.is_empty() {
+        println!("{} {}", "help:".white(), help);
+      }
     }
 
-    if !recipe.deps().is_empty() {
-      println!(
-        "{:12} {}",
-        "depends on:".white(),
-        recipe.deps().join(" ").cyan()
-      );
+    if !recipe.requires.is_empty() {
+      let deps: Vec<_> = recipe.requires.iter().map(|x| x.to_string()).collect();
+      println!("{} {}", "depends on:".white(), deps.join(" ").cyan());
     }
 
-    if let Some(dir) = recipe.work_dir() {
-      println!(
-        "{:12} {}",
-        "working dir:".white(),
-        dir.display().to_string().cyan()
-      );
+    if let Some(dir) = &recipe.dir {
+      println!("{} {}", "working dir:".white(), dir.cyan());
     }
 
-    println!("{:12} {}", "command:".white(), recipe.shell(&self.envs)?);
+    if !recipe.commands.is_empty() {
+      for command in &recipe.commands {
+        println!("{} {}", "$".green(), command);
+      }
+    }
 
+    /*
     let task = self.build_task(name)?;
 
     println!("{:12}", "variables:".white());
@@ -490,10 +445,67 @@ impl Mold {
     if let Some(script) = self.script_name(recipe)? {
       util::cat(script)?;
     }
+    */
 
     println!();
 
     Ok(())
   }
+}
+
+impl Task {
+  fn execute(self) -> Result<(), Error> {
+    for args in self.commands {
+      if args.is_empty() {
+        continue;
+      }
+
+      let mut command = process::Command::new(&args[0]);
+      command.args(&args[1..]);
+      command.envs(&self.vars);
+
+      // FIXME this should be relative to root, no?
+      if let Some(dir) = &self.work_dir {
+        command.current_dir(dir);
+      }
+
+      println!(
+        "{} {} {} {}",
+        "mold".white(),
+        self.name.cyan(),
+        "$".green(),
+        shell_words::join(&args),
+      );
+
+      let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
+      if !exit_status.success() {
+        return Err(failure::err_msg("Recipe returned non-zero exit status"));
+      }
+    }
+
+    Ok(())
+  }
+}
+
+/*
+// Recipes
+impl Mold {
+  fn script_name(&self, recipe: &Recipe) -> Result<Option<PathBuf>, Error> {
+    if let Some(script) = &recipe.script {
+      let file = self.mold_dir.join(util::hash_string(&script));
+      fs::write(&file, &script)?;
+      Ok(Some(file))
+    } else {
+      Ok(None)
+    }
+  }
+}
+*/
+
+// Remotes
+
+/*
+// Help
+impl Mold {
 }
 */

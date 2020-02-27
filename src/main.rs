@@ -64,17 +64,16 @@ fn run(args: Args) -> Result<(), Error> {
     return mold.update_all();
   }
 
-  // early return and print help if we didn't pass any targets
-  if args.targets.is_empty() {
-    return mold.help();
-  }
-
-  /*
   // explain the root moldfile if requested.
   // this is separate from the `if args.explain` below because we want this
   // to happen even if there are no arguments.
   if args.explain {
     mold.explain_self()?;
+  }
+
+  // early return and print help if we didn't pass any targets
+  if args.targets.is_empty() {
+    return mold.help();
   }
 
   // explain all of the given targets rather than executing them
@@ -85,7 +84,6 @@ fn run(args: Args) -> Result<(), Error> {
 
     return Ok(());
   }
-  */
 
   let requested_targets = args
     .targets
