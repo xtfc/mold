@@ -75,7 +75,22 @@ pub enum Statement {
   Version(String),
 }
 
+// use pest::Parser;
+use pest_derive::Parser;
+
+#[derive(Parser)]
+#[grammar = "mold.pest"]
+struct MoldParser;
+
+use pest::Parser;
+
 pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Error> {
+  let file = MoldParser::parse(Rule::main, code)
+    .expect("unsuccessful parse") // unwrap the parse result
+    .next().unwrap(); // get and unwrap the `file` rule; never fails
+
+  dbg!(file);
+
   let tokens = lex(code)?;
   let statements = flatten(parse(&tokens)?, envs)?;
 

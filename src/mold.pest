@@ -1,0 +1,36 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+
+string = ${ "\"" ~ inner ~ "\"" }
+inner = @{ char* }
+char = {
+    !("\"" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+}
+
+alpha = { 'a'..'z' | 'A'..'Z' }
+digit = { '0'..'9' }
+special = { "_" | "-" | "/" | ":" }
+
+name = @{ (alpha | digit | special)+ }
+
+main = { SOI ~ main_body ~ EOI }
+main_body = { (version_stmt | import_stmt | recipe_stmt | var_stmt)* }
+recipe_body = { (help_stmt | if_recipe_stmt | dir_stmt | require_stmt | var_stmt | run_stmt )* }
+
+dir_stmt = { "dir" ~ string }
+help_stmt = { "help" ~ string }
+if_stmt = { "if " ~ expr ~ "{" ~ main_body ~ "}" }
+if_recipe_stmt = { "if " ~ expr ~ "{" ~ recipe_body ~ "}" }
+import_stmt = { "import" ~ string ~ ("as" ~ name)? }
+recipe_stmt = { "recipe" ~ name ~ "{" ~ recipe_body ~ "}" }
+require_stmt = { "require" ~ name }
+run_stmt = { ("run" | "$") ~ string }
+var_stmt = { "var" ~ name ~ "=" ~ string }
+version_stmt = { "version" ~ string }
+
+expr = { or_expr }
+or_expr = { (and_expr ~ "|" ~ expr) | and_expr }
+and_expr = { (not_expr ~ "+" ~ expr) | not_expr }
+not_expr = { ("~" ~ atom) | atom }
+atom = { ("(" ~ expr ~ ")") | name | "*" }
