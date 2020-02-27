@@ -380,29 +380,15 @@ impl Mold {
     Ok(())
   }
 
-  /// Print an explanation of global settings for this Moldfile
-  pub fn explain_self(&self) -> Result<(), Error> {
-    if !self.vars.is_empty() {
-      println!("{:12}", "variables:".white());
-
-      for (key, val) in &self.vars {
-        println!("  {:16} = {}", format!("${}", key).bright_cyan(), val);
-      }
-    }
-
-    println!();
-
-    Ok(())
-  }
-
   /// Print an explanation of what a recipe does
   pub fn explain(&self, name: &str) -> Result<(), Error> {
+    // print recipe information
     let recipe = self.recipe(name)?;
 
     println!("{}", name.cyan());
     if let Some(help) = &recipe.help {
       if !help.is_empty() {
-        println!("{} {}", "help:".white(), help);
+        println!("{}", help);
       }
     }
 
@@ -416,36 +402,28 @@ impl Mold {
     }
 
     if !recipe.commands.is_empty() {
+      println!("{}", "commands:".white());
       for command in &recipe.commands {
-        println!("{} {}", "$".green(), command);
+        println!("  {} {}", "$".white(), command);
       }
     }
 
-    /*
+    // print task information
     let task = self.build_task(name)?;
 
-    println!("{:12}", "variables:".white());
-    for (name, desc) in &task.vars {
-      println!(
-        "  {}{} {}",
-        format!("${}", name).bright_cyan(),
-        ":".white(),
-        desc
-      );
+    if !task.vars.is_empty() {
+      println!("{}", "variables:".white());
+      for (key, val) in &task.vars {
+        println!("  {} = {}", format!("${}", key).bright_cyan(), val);
+      }
     }
 
-    println!(
-      "{:12} {} {}",
-      "executes:".white(),
-      "$".green(),
-      task.args.join(" ")
-    );
-
-    // display contents of script file
-    if let Some(script) = self.script_name(recipe)? {
-      util::cat(script)?;
+    if !task.commands.is_empty() {
+      println!("{}", "executes:".white());
+      for args in &task.commands {
+        println!("  {} {}", "$".green(), shell_words::join(args));
+      }
     }
-    */
 
     println!();
 
@@ -486,26 +464,3 @@ impl Task {
     Ok(())
   }
 }
-
-/*
-// Recipes
-impl Mold {
-  fn script_name(&self, recipe: &Recipe) -> Result<Option<PathBuf>, Error> {
-    if let Some(script) = &recipe.script {
-      let file = self.mold_dir.join(util::hash_string(&script));
-      fs::write(&file, &script)?;
-      Ok(Some(file))
-    } else {
-      Ok(None)
-    }
-  }
-}
-*/
-
-// Remotes
-
-/*
-// Help
-impl Mold {
-}
-*/
