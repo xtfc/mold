@@ -82,17 +82,60 @@ use pest_derive::Parser;
 #[grammar = "mold.pest"]
 struct MoldParser;
 
+use pest::iterators::Pair;
+use pest::iterators::Pairs;
 use pest::Parser;
 
+fn consume_string(pairs: &mut Pairs<Rule>) -> Option<String> {
+  pairs
+    .next()
+    .map(|x| x.into_inner().next().unwrap().as_str().to_string())
+}
+
+fn consume_name(pairs: &mut Pairs<Rule>) -> Option<String> {
+  pairs.next().map(|x| x.as_str().to_string())
+}
+
+fn convert_token(pair: Pair<Rule>) -> Statement {
+  match pair.as_rule() {
+    Rule::version_stmt => Statement::Version(consume_string(&mut pair.into_inner()).unwrap()),
+    Rule::dir_stmt => Statement::Dir(consume_string(&mut pair.into_inner()).unwrap()),
+    Rule::import_stmt => {
+      let mut inner = pair.into_inner();
+      let source = consume_string(&mut inner).unwrap();
+      let name = consume_name(&mut inner);
+      Statement::Import(source, name)
+    }
+    x => {
+      dbg!(&pair);
+      panic!(format!("found {:?}", x));
+    }
+  }
+}
+
+fn parse_pest(code: &str) -> Result<Vec<Statement>, Error> {
+  let main = MoldParser::parse(Rule::main, code)?.next().unwrap();
+
+  let stmts = match main.as_rule() {
+    Rule::main => main
+      .into_inner()
+      .next()
+      .unwrap()
+      .into_inner()
+      .map(convert_token)
+      .collect(),
+    _ => unreachable!(),
+  };
+
+  dbg!(&stmts);
+
+  Ok(stmts)
+}
+
 pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Error> {
-  let file = MoldParser::parse(Rule::main, code)
-    .expect("unsuccessful parse") // unwrap the parse result
-    .next().unwrap(); // get and unwrap the `file` rule; never fails
-
-  dbg!(file);
-
   let tokens = lex(code)?;
   let statements = flatten(parse(&tokens)?, envs)?;
+  let pest_statements = flatten(parse_pest(code)?, envs)?;
 
   let mut version = None;
   let mut includes = super::IncludeVec::new();
