@@ -122,9 +122,11 @@ fn convert_statement(pair: Pair<Rule>) -> Statement {
     Rule::if_stmt => {
       let mut inner = pair.into_inner();
       let expr = consume_expr(&mut inner).unwrap();
-      let body = consume_statements(&mut inner).unwrap();
+      let body = consume_statements(&mut inner);
       Statement::If(expr, body)
     }
+
+    Rule::EOI => unreachable!(),
 
     x => {
       dbg!(&pair);
@@ -164,10 +166,11 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
   }
 }
 
-fn consume_statements(pairs: &mut Pairs<Rule>) -> Option<Vec<Statement>> {
+fn consume_statements(pairs: &mut Pairs<Rule>) -> Vec<Statement> {
   pairs
-    .next()
-    .map(|x| x.into_inner().map(convert_statement).collect())
+    .filter(|x| x.as_rule() != Rule::EOI)
+    .map(convert_statement)
+    .collect()
 }
 
 fn consume_expr(pairs: &mut Pairs<Rule>) -> Option<Expr> {
@@ -175,8 +178,8 @@ fn consume_expr(pairs: &mut Pairs<Rule>) -> Option<Expr> {
 }
 
 fn parse_pest(code: &str) -> Result<Vec<Statement>, Error> {
-  let main = MoldParser::parse(Rule::main, code)?.next().unwrap();
-  let stmts = consume_statements(&mut main.into_inner()).unwrap();
+  let mut main = MoldParser::parse(Rule::main, code)?;
+  let stmts = consume_statements(&mut main);
   dbg!(&stmts);
   Ok(stmts)
 }
