@@ -134,7 +134,34 @@ fn convert_statement(pair: Pair<Rule>) -> Statement {
 }
 
 fn convert_expr(pair: Pair<Rule>) -> Expr {
-  Expr::Wild
+  match pair.as_rule() {
+    Rule::or_expr => {
+      let mut inner = pair.into_inner();
+      let lhs = consume_expr(&mut inner).unwrap();
+      let rhs = consume_expr(&mut inner);
+      match rhs {
+        Some(rhs) => Expr::Or(lhs.into(), rhs.into()),
+        None => lhs,
+      }
+    }
+    Rule::and_expr => {
+      let mut inner = pair.into_inner();
+      let lhs = consume_expr(&mut inner).unwrap();
+      let rhs = consume_expr(&mut inner);
+      match rhs {
+        Some(rhs) => Expr::And(lhs.into(), rhs.into()),
+        None => lhs,
+      }
+    }
+    Rule::not_expr => Expr::Not(consume_expr(&mut pair.into_inner()).unwrap().into()),
+    Rule::expr | Rule::atom | Rule::group => consume_expr(&mut pair.into_inner()).unwrap(),
+    Rule::name => Expr::Atom(pair.as_str().into()),
+    Rule::wild => Expr::Wild,
+    x => {
+      dbg!(&pair);
+      panic!(format!("Unknown expression rule {:?}", x));
+    }
+  }
 }
 
 fn consume_statements(pairs: &mut Pairs<Rule>) -> Option<Vec<Statement>> {
