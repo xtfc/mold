@@ -1,4 +1,4 @@
-use colored::*;
+// use colored::*;
 use exitfailure::ExitFailure;
 use failure::Error;
 use mold::Mold;
@@ -44,34 +44,24 @@ pub struct Args {
 
 fn run(args: Args) -> Result<(), Error> {
   // load the moldfile
-  let mut mold = Mold::discover(&Path::new("."), args.file.clone())?;
-  mold.set_envs(args.env);
-  mold.add_envs(args.add_envs);
+  let mut envs = vec![];
+  envs.extend(args.env);
+  envs.extend(args.add_envs);
+  envs.push(std::env::consts::FAMILY.to_string());
+  envs.push(std::env::consts::OS.to_string());
 
-  mold.add_env(std::env::consts::FAMILY);
-  mold.add_env(std::env::consts::OS);
+  let filepath = Mold::discover(&Path::new("."), args.file.clone())?;
 
   // early return if we passed a --clean
   if args.clean {
-    return mold.clean_all();
+    return Mold::clean_all(&filepath);
   }
 
-  // clone all Modules and Includes before proceeding
-  mold.clone_all()?;
-
-  // merge all Includes
-  mold.process_includes()?;
+  let mold = Mold::init(&filepath, envs)?;
 
   // early return if we passed a --update
   if args.update {
     return mold.update_all();
-  }
-
-  // explain the root moldfile if requested.
-  // this is separate from the `if args.explain` below because we want this
-  // to happen even if there are no arguments.
-  if args.explain {
-    mold.explain_self()?;
   }
 
   // early return and print help if we didn't pass any targets
@@ -96,17 +86,7 @@ fn run(args: Args) -> Result<(), Error> {
   let all_targets = mold.find_all_dependencies(&requested_targets)?;
 
   for target_name in &all_targets {
-    let task = mold.build_task(target_name)?;
-
-    println!(
-      "{} {} {} {}",
-      "mold".white(),
-      target_name.cyan(),
-      "$".green(),
-      shell_words::join(task.args()),
-    );
-
-    task.execute()?;
+    mold.execute(target_name)?;
   }
 
   Ok(())
