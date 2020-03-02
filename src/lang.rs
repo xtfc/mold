@@ -102,6 +102,8 @@ fn convert_statement(pair: Pair<Rule>) -> Statement {
     Rule::version_stmt => Statement::Version(consume_string(&mut pair.into_inner()).unwrap()),
 
     Rule::dir_stmt => Statement::Dir(consume_string(&mut pair.into_inner()).unwrap()),
+    Rule::help_stmt => Statement::Help(consume_string(&mut pair.into_inner()).unwrap()),
+    Rule::require_stmt => Statement::Help(consume_name(&mut pair.into_inner()).unwrap()),
 
     Rule::import_stmt => {
       let mut inner = pair.into_inner();
@@ -124,6 +126,20 @@ fn convert_statement(pair: Pair<Rule>) -> Statement {
       let expr = consume_expr(&mut inner).unwrap();
       let body = consume_statements(&mut inner);
       Statement::If(expr, body)
+    }
+
+    Rule::if_recipe_stmt => {
+      let mut inner = pair.into_inner();
+      let expr = consume_expr(&mut inner).unwrap();
+      let body = consume_statements(&mut inner);
+      Statement::If(expr, body)
+    }
+
+    Rule::recipe_stmt => {
+      let mut inner = pair.into_inner();
+      let name = consume_name(&mut inner).unwrap();
+      let stmts = consume_statements(&mut inner);
+      Statement::Recipe(name, stmts)
     }
 
     Rule::EOI => unreachable!(),
