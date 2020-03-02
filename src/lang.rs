@@ -2,6 +2,10 @@ use super::remote;
 use failure::err_msg;
 use failure::format_err;
 use failure::Error;
+use pest::iterators::Pair;
+use pest::iterators::Pairs;
+use pest::Parser;
+use pest_derive::Parser;
 use std::str::FromStr;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,16 +45,9 @@ pub enum Statement {
   Version(String),
 }
 
-// use pest::Parser;
-use pest_derive::Parser;
-
 #[derive(Parser)]
 #[grammar = "mold.pest"]
 struct MoldParser;
-
-use pest::iterators::Pair;
-use pest::iterators::Pairs;
-use pest::Parser;
 
 fn consume_string(pairs: &mut Pairs<Rule>) -> Option<String> {
   pairs
@@ -121,20 +118,14 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
     Rule::or_expr => {
       let mut inner = pair.into_inner();
       let lhs = consume_expr(&mut inner).unwrap();
-      let rhs = consume_expr(&mut inner);
-      match rhs {
-        Some(rhs) => Expr::Or(lhs.into(), rhs.into()),
-        None => lhs,
-      }
+      let rhs = consume_expr(&mut inner).unwrap();
+      Expr::Or(lhs.into(), rhs.into())
     }
     Rule::and_expr => {
       let mut inner = pair.into_inner();
       let lhs = consume_expr(&mut inner).unwrap();
-      let rhs = consume_expr(&mut inner);
-      match rhs {
-        Some(rhs) => Expr::And(lhs.into(), rhs.into()),
-        None => lhs,
-      }
+      let rhs = consume_expr(&mut inner).unwrap();
+      Expr::And(lhs.into(), rhs.into())
     }
     Rule::not_expr => Expr::Not(consume_expr(&mut pair.into_inner()).unwrap().into()),
     Rule::atom | Rule::group => consume_expr(&mut pair.into_inner()).unwrap(),
