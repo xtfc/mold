@@ -103,7 +103,7 @@ fn convert_statement(pair: Pair<Rule>) -> Statement {
 
     Rule::dir_stmt => Statement::Dir(consume_string(&mut pair.into_inner()).unwrap()),
     Rule::help_stmt => Statement::Help(consume_string(&mut pair.into_inner()).unwrap()),
-    Rule::require_stmt => Statement::Help(consume_name(&mut pair.into_inner()).unwrap()),
+    Rule::require_stmt => Statement::Require(consume_name(&mut pair.into_inner()).unwrap()),
 
     Rule::import_stmt => {
       let mut inner = pair.into_inner();
@@ -145,8 +145,7 @@ fn convert_statement(pair: Pair<Rule>) -> Statement {
     Rule::EOI => unreachable!(),
 
     x => {
-      dbg!(&pair);
-      panic!(format!("found {:?}", x));
+      panic!(format!("Unknown statement rule {:?}", x));
     }
   }
 }
@@ -176,7 +175,6 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
     Rule::name => Expr::Atom(pair.as_str().into()),
     Rule::wild => Expr::Wild,
     x => {
-      dbg!(&pair);
       panic!(format!("Unknown expression rule {:?}", x));
     }
   }
@@ -196,16 +194,15 @@ fn consume_expr(pairs: &mut Pairs<Rule>) -> Option<Expr> {
 fn parse_pest(code: &str) -> Result<Vec<Statement>, Error> {
   let mut main = MoldParser::parse(Rule::main, code)?;
   let stmts = consume_statements(&mut main);
-  dbg!(&stmts);
   Ok(stmts)
 }
 
 pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Error> {
   let tokens = lex(code)?;
-  let statements = flatten(parse(&tokens)?, envs)?;
-  let pest_statements = flatten(parse_pest(code)?, envs)?;
+  let mold_statements = flatten(parse(&tokens)?, envs)?;
+  let statements = flatten(parse_pest(code)?, envs)?;
 
-  assert!(statements == pest_statements);
+  assert!(mold_statements == statements);
 
   let mut version = None;
   let mut includes = super::IncludeVec::new();
