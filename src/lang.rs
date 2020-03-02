@@ -62,40 +62,21 @@ fn consume_name(pairs: &mut Pairs<Rule>) -> Option<String> {
 
 fn convert_statement(pair: Pair<Rule>) -> Statement {
   match pair.as_rule() {
-    Rule::version_stmt => Statement::Version(consume_string(&mut pair.into_inner()).unwrap()),
-
     Rule::dir_stmt => Statement::Dir(consume_string(&mut pair.into_inner()).unwrap()),
     Rule::help_stmt => Statement::Help(consume_string(&mut pair.into_inner()).unwrap()),
-    Rule::require_stmt => Statement::Require(consume_name(&mut pair.into_inner()).unwrap()),
+
+    Rule::if_stmt | Rule::if_recipe_stmt => {
+      let mut inner = pair.into_inner();
+      let expr = consume_expr(&mut inner).unwrap();
+      let body = consume_statements(&mut inner);
+      Statement::If(expr, body)
+    }
 
     Rule::import_stmt => {
       let mut inner = pair.into_inner();
       let source = consume_string(&mut inner).unwrap();
       let name = consume_name(&mut inner);
       Statement::Import(source, name)
-    }
-
-    Rule::var_stmt => {
-      let mut inner = pair.into_inner();
-      let name = consume_name(&mut inner).unwrap();
-      let value = consume_string(&mut inner).unwrap();
-      Statement::Var(name, value)
-    }
-
-    Rule::run_stmt => Statement::Run(consume_string(&mut pair.into_inner()).unwrap()),
-
-    Rule::if_stmt => {
-      let mut inner = pair.into_inner();
-      let expr = consume_expr(&mut inner).unwrap();
-      let body = consume_statements(&mut inner);
-      Statement::If(expr, body)
-    }
-
-    Rule::if_recipe_stmt => {
-      let mut inner = pair.into_inner();
-      let expr = consume_expr(&mut inner).unwrap();
-      let body = consume_statements(&mut inner);
-      Statement::If(expr, body)
     }
 
     Rule::recipe_stmt => {
@@ -105,11 +86,20 @@ fn convert_statement(pair: Pair<Rule>) -> Statement {
       Statement::Recipe(name, stmts)
     }
 
-    Rule::EOI => unreachable!(),
+    Rule::require_stmt => Statement::Require(consume_name(&mut pair.into_inner()).unwrap()),
 
-    x => {
-      panic!(format!("Unknown statement rule {:?}", x));
+    Rule::run_stmt => Statement::Run(consume_string(&mut pair.into_inner()).unwrap()),
+
+    Rule::var_stmt => {
+      let mut inner = pair.into_inner();
+      let name = consume_name(&mut inner).unwrap();
+      let value = consume_string(&mut inner).unwrap();
+      Statement::Var(name, value)
     }
+
+    Rule::version_stmt => Statement::Version(consume_string(&mut pair.into_inner()).unwrap()),
+
+    _ => unreachable!(),
   }
 }
 
@@ -121,19 +111,19 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
       let rhs = consume_expr(&mut inner).unwrap();
       Expr::Or(lhs.into(), rhs.into())
     }
+
     Rule::and_expr => {
       let mut inner = pair.into_inner();
       let lhs = consume_expr(&mut inner).unwrap();
       let rhs = consume_expr(&mut inner).unwrap();
       Expr::And(lhs.into(), rhs.into())
     }
+
     Rule::not_expr => Expr::Not(consume_expr(&mut pair.into_inner()).unwrap().into()),
     Rule::atom | Rule::group => consume_expr(&mut pair.into_inner()).unwrap(),
     Rule::name => Expr::Atom(pair.as_str().into()),
     Rule::wild => Expr::Wild,
-    x => {
-      panic!(format!("Unknown expression rule {:?}", x));
-    }
+    _ => unreachable!(),
   }
 }
 

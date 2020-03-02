@@ -20,8 +20,8 @@ recipe_body = _{ (help_stmt | if_recipe_stmt | dir_stmt | require_stmt | var_stm
 
 dir_stmt = { "dir" ~ string }
 help_stmt = { "help" ~ string }
-if_stmt = { "if " ~ expr ~ "{" ~ main_body ~ "}" }
 if_recipe_stmt = { "if " ~ expr ~ "{" ~ recipe_body ~ "}" }
+if_stmt = { "if " ~ expr ~ "{" ~ main_body ~ "}" }
 import_stmt = { "import" ~ string ~ ("as" ~ name)? }
 recipe_stmt = { "recipe" ~ name ~ "{" ~ recipe_body ~ "}" }
 require_stmt = { "require" ~ name }
