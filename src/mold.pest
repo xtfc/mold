@@ -29,10 +29,16 @@ run_stmt = { ("run" | "$") ~ string }
 var_stmt = { "var" ~ name ~ "=" ~ string }
 version_stmt = { "version" ~ string }
 
-expr = _{ or_expr }
-or_expr = { and_expr ~ ("|" ~ expr)? }
-and_expr = { (not_expr | atom) ~ ("+" ~ expr)? }
+// this is some weird stuff to avoid needing to use a precedence climber
+// but also avoid having insanely nested parse trees
+expr = _{ or_choice }
+or_expr = { and_choice ~ "|" ~ expr }
+and_expr = { not_choice ~ "+" ~ expr }
 not_expr = { "~" ~ atom }
 wild = { "*" }
 group = { "(" ~ expr ~ ")" }
 atom = { group | name | wild }
+
+or_choice = _{ or_expr | and_choice }
+and_choice = _{ and_expr | not_choice }
+not_choice = _{ not_expr | atom }
