@@ -28,8 +28,6 @@ pub type SourceMap = IndexMap<String, PathBuf>;
 // sorted alphabetically
 pub type RecipeMap = BTreeMap<String, Recipe>;
 
-pub const DEFAULT_FILES: &[&str] = &["moldfile", "Moldfile"];
-
 /// Complete set of application state
 pub struct Mold {
   /// A set of currently active environments
@@ -234,20 +232,10 @@ impl Mold {
     }
   }
 
-  /// Search a directory for default moldfiles
-  ///
-  /// Iterates through all values found in `DEFAULT_FILES`, joining them to the
-  /// provided `name` argument
+  /// Search a directory for default moldfile
   fn discover_dir(name: &Path) -> Result<PathBuf, Error> {
-    let path = DEFAULT_FILES
-      .iter()
-      .find_map(|file| Self::discover_file(&name.join(file)).ok())
-      .ok_or_else(|| {
-        failure::format_err!(
-          "Cannot locate moldfile, tried the following:\n{}",
-          DEFAULT_FILES.join(" ").red()
-        )
-      })?;
+    let path = Self::discover_file(&name.join("moldfile"))
+      .map_err(|_| failure::format_err!("Couldn't locate {}", "moldfile".red()))?;
     Ok(path)
   }
 
