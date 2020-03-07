@@ -23,7 +23,7 @@ semver = "0.9"
 shell-words = "0.1.0"
 shellexpand = "1.1.1"
 structopt = "0.3"
-which = "3.1"
+spinners = "1.2"
 
 [[bin]]
 name = "mold"
