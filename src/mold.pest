@@ -1,7 +1,7 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 
-string = ${ "\"" ~ inner ~ "\"" }
-inner = @{ char* }
+string = ${ "\"" ~ chars ~ "\"" }
+chars = @{ char* }
 char = {
     !("\"" | "\\") ~ ANY
     | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")

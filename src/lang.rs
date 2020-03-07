@@ -60,71 +60,8 @@ fn consume_name(pairs: &mut Pairs<Rule>) -> Option<String> {
   pairs.next().map(|x| x.as_str().to_string())
 }
 
-fn convert_statement(pair: Pair<Rule>) -> Statement {
-  match pair.as_rule() {
-    Rule::dir_stmt => Statement::Dir(consume_string(&mut pair.into_inner()).unwrap()),
-    Rule::help_stmt => Statement::Help(consume_string(&mut pair.into_inner()).unwrap()),
-
-    Rule::if_stmt | Rule::if_recipe_stmt => {
-      let mut inner = pair.into_inner();
-      let expr = consume_expr(&mut inner).unwrap();
-      let body = consume_statements(&mut inner);
-      Statement::If(expr, body)
-    }
-
-    Rule::import_stmt => {
-      let mut inner = pair.into_inner();
-      let source = consume_string(&mut inner).unwrap();
-      let name = consume_name(&mut inner);
-      Statement::Import(source, name)
-    }
-
-    Rule::recipe_stmt => {
-      let mut inner = pair.into_inner();
-      let name = consume_name(&mut inner).unwrap();
-      let stmts = consume_statements(&mut inner);
-      Statement::Recipe(name, stmts)
-    }
-
-    Rule::require_stmt => Statement::Require(consume_name(&mut pair.into_inner()).unwrap()),
-
-    Rule::run_stmt => Statement::Run(consume_string(&mut pair.into_inner()).unwrap()),
-
-    Rule::var_stmt => {
-      let mut inner = pair.into_inner();
-      let name = consume_name(&mut inner).unwrap();
-      let value = consume_string(&mut inner).unwrap();
-      Statement::Var(name, value)
-    }
-
-    Rule::version_stmt => Statement::Version(consume_string(&mut pair.into_inner()).unwrap()),
-
-    _ => unreachable!(),
-  }
-}
-
-fn convert_expr(pair: Pair<Rule>) -> Expr {
-  match pair.as_rule() {
-    Rule::or_expr => {
-      let mut inner = pair.into_inner();
-      let lhs = consume_expr(&mut inner).unwrap();
-      let rhs = consume_expr(&mut inner).unwrap();
-      Expr::Or(lhs.into(), rhs.into())
-    }
-
-    Rule::and_expr => {
-      let mut inner = pair.into_inner();
-      let lhs = consume_expr(&mut inner).unwrap();
-      let rhs = consume_expr(&mut inner).unwrap();
-      Expr::And(lhs.into(), rhs.into())
-    }
-
-    Rule::not_expr => Expr::Not(consume_expr(&mut pair.into_inner()).unwrap().into()),
-    Rule::atom | Rule::group => consume_expr(&mut pair.into_inner()).unwrap(),
-    Rule::name => Expr::Atom(pair.as_str().into()),
-    Rule::wild => Expr::Wild,
-    _ => unreachable!(),
-  }
+fn consume_expr(pairs: &mut Pairs<Rule>) -> Option<Expr> {
+  pairs.next().map(convert_expr)
 }
 
 fn consume_statements(pairs: &mut Pairs<Rule>) -> Vec<Statement> {
@@ -134,18 +71,96 @@ fn consume_statements(pairs: &mut Pairs<Rule>) -> Vec<Statement> {
     .collect()
 }
 
-fn consume_expr(pairs: &mut Pairs<Rule>) -> Option<Expr> {
-  pairs.next().map(convert_expr)
+fn force_name(pair: Pair<Rule>) -> String {
+  consume_name(&mut pair.into_inner()).unwrap()
 }
 
-fn parse_pest(code: &str) -> Result<Vec<Statement>, Error> {
+fn force_string(pair: Pair<Rule>) -> String {
+  consume_string(&mut pair.into_inner()).unwrap()
+}
+
+fn force_expr(pair: Pair<Rule>) -> Expr {
+  consume_expr(&mut pair.into_inner()).unwrap()
+}
+
+fn convert_statement(pair: Pair<Rule>) -> Statement {
+  use Rule::*; // a consequence is that no variables can shadow one of these
+  use Statement::*;
+
+  match pair.as_rule() {
+    if_stmt | if_recipe_stmt => {
+      let mut inner = pair.into_inner();
+      let cond = consume_expr(&mut inner).unwrap();
+      let body = consume_statements(&mut inner);
+      If(cond, body)
+    }
+
+    import_stmt => {
+      let mut inner = pair.into_inner();
+      let source = consume_string(&mut inner).unwrap();
+      let dep_name = consume_name(&mut inner);
+      Import(source, dep_name)
+    }
+
+    recipe_stmt => {
+      let mut inner = pair.into_inner();
+      let rec_name = consume_name(&mut inner).unwrap();
+      let stmts = consume_statements(&mut inner);
+      Recipe(rec_name, stmts)
+    }
+
+    var_stmt => {
+      let mut inner = pair.into_inner();
+      let var_name = consume_name(&mut inner).unwrap();
+      let value = consume_string(&mut inner).unwrap();
+      Var(var_name, value)
+    }
+
+    dir_stmt => Dir(force_string(pair)),
+    help_stmt => Help(force_string(pair)),
+    require_stmt => Require(force_name(pair)),
+    run_stmt => Run(force_string(pair)),
+    version_stmt => Version(force_string(pair)),
+    _ => unreachable!(),
+  }
+}
+
+fn convert_expr(pair: Pair<Rule>) -> Expr {
+  use Expr::*;
+  use Rule::*;
+
+  match pair.as_rule() {
+    or_expr => {
+      let mut inner = pair.into_inner();
+      let lhs = consume_expr(&mut inner).unwrap();
+      let rhs = consume_expr(&mut inner).unwrap();
+      Or(lhs.into(), rhs.into())
+    }
+
+    and_expr => {
+      let mut inner = pair.into_inner();
+      let lhs = consume_expr(&mut inner).unwrap();
+      let rhs = consume_expr(&mut inner).unwrap();
+      And(lhs.into(), rhs.into())
+    }
+
+    not_expr => Not(force_expr(pair).into()),
+    atom | group => force_expr(pair),
+    name => Atom(pair.as_str().into()),
+    wild => Wild,
+    _ => unreachable!(),
+  }
+}
+
+fn parse(code: &str) -> Result<Vec<Statement>, Error> {
   let mut main = MoldParser::parse(Rule::main, code)?;
   let stmts = consume_statements(&mut main);
   Ok(stmts)
 }
 
 pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Error> {
-  let statements = flatten(parse_pest(code)?, envs)?;
+  use Statement::*;
+  let statements = flatten(parse(code)?, envs)?;
 
   let mut version = None;
   let mut includes = super::IncludeVec::new();
@@ -154,7 +169,7 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
 
   for stmt in statements {
     match stmt {
-      Statement::Version(s) => {
+      Version(s) => {
         if version.is_none() {
           version = Some(s);
         } else {
@@ -162,23 +177,23 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
         }
       }
 
-      Statement::Help(_) => {}
+      Help(_) => {}
 
-      Statement::Import(url, prefix) => includes.push(super::Include {
+      Import(url, prefix) => includes.push(super::Include {
         remote: remote::Remote::from_str(&url)?,
         prefix: prefix.unwrap_or_else(|| "".to_string()),
       }),
 
-      Statement::Var(name, value) => {
+      Var(name, value) => {
         vars.insert(name, value);
       }
 
-      Statement::Recipe(name, body) => {
+      Recipe(name, body) => {
         recipes.insert(name, compile_recipe(body, envs)?);
       }
 
-      Statement::Require(_) | Statement::Dir(_) | Statement::If(_, _) | Statement::Run(_) => {
-        return Err(err_msg("Something terrible has happened."));
+      Require(_) | Dir(_) | If(_, _) | Run(_) => {
+        unreachable!();
       }
     }
   }
@@ -194,6 +209,8 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
 }
 
 pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<super::Recipe, Error> {
+  use Statement::*;
+
   let mut help = None;
   let mut dir = None;
   let mut commands = vec![];
@@ -204,31 +221,28 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
 
   for stmt in body {
     match stmt {
-      Statement::Help(s) => {
+      Help(s) => {
         help = Some(s);
       }
 
-      Statement::Dir(s) => {
+      Dir(s) => {
         dir = Some(s);
       }
 
-      Statement::Var(name, value) => {
+      Var(name, value) => {
         vars.insert(name, value);
       }
 
-      Statement::Run(cmd) => {
+      Run(cmd) => {
         commands.push(cmd);
       }
 
-      Statement::Require(recipe) => {
+      Require(recipe) => {
         requires.insert(recipe);
       }
 
-      Statement::If(_, _)
-      | Statement::Version(_)
-      | Statement::Import(_, _)
-      | Statement::Recipe(_, _) => {
-        return Err(err_msg("Something terrible has happened."));
+      If(_, _) | Version(_) | Import(_, _) | Recipe(_, _) => {
+        unreachable!();
       }
     }
   }
