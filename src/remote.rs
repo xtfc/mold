@@ -1,24 +1,14 @@
 use super::util;
 use colored::*;
 use failure::Error;
-use std::io;
-use std::io::Write;
+use spinners::Spinner;
+use spinners::Spinners;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 use std::str::FromStr;
 use std::string::ToString;
-use std::time::Instant;
-
-struct State<'a> {
-  start: Instant,
-  present: &'a str,
-  past: &'a str,
-  dots: usize,
-  label: &'a str,
-  cmd: Command,
-}
 
 fn new_cmd() -> Command {
   let mut cmd = Command::new("git");
@@ -26,59 +16,45 @@ fn new_cmd() -> Command {
   cmd
 }
 
-impl<'a> State<'a> {
-  fn new(present: &'a str, past: &'a str, label: &'a str) -> Self {
-    Self {
-      start: Instant::now(),
-      dots: 0,
-      present,
-      past,
-      label,
-      cmd: new_cmd(),
-    }
-  }
+fn pull(url: &str, path: &Path) -> Result<(), Error> {
+  let label = format!("{} {}...", "Cloning".green(), url);
+  let spinner = Spinner::new(Spinners::Dots, label);
 
-  fn print_progress(&mut self) {
-    let duration = (Instant::now() - self.start).as_millis() as usize;
-    let dotlist = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    if duration > 33 {
-      self.start = Instant::now();
-      self.dots = (self.dots + 1) % dotlist.len();
-      print!(
-        "{} {}... {}\r",
-        self.present.yellow(),
-        self.label,
-        dotlist[self.dots]
-      );
-      io::stdout().flush().unwrap();
-    }
-  }
+  let mut command = new_cmd();
+  command.arg("clone").arg(url).arg(path);
+  command.spawn().and_then(|mut handle| handle.wait())?;
 
-  fn print_done(&self) {
-    println!("{} {}     ", self.past.green(), self.label);
-    io::stdout().flush().unwrap();
-  }
-
-  fn wait(&mut self) -> Result<(), Error> {
-    let mut child = self.cmd.spawn()?;
-    loop {
-      if child.try_wait()?.is_some() {
-        self.print_done();
-        break;
-      }
-      self.print_progress();
-    }
-    Ok(())
-  }
+  spinner.stop();
+  println!();
+  Ok(())
 }
 
-fn pull(url: &str, path: &Path) -> Result<(), Error> {
-  let label = format!("{} into {}", url, path.display());
-  let mut state = State::new("     Cloning", "      Cloned", &label);
+fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
+  let label = format!("{} {} to {}...", "Updating".green(), path.display(), ref_);
+  let spinner = Spinner::new(Spinners::Dots, label);
 
-  state.cmd.arg("clone").arg(url).arg(path);
+  let mut command = new_cmd();
+  command
+    .args(&["fetch", "--all", "--prune"])
+    .current_dir(path);
+  command.spawn().and_then(|mut handle| handle.wait())?;
 
-  state.wait()
+  let refs = vec![format!("tags/{}", ref_), format!("origin/{}", ref_)];
+  for target in refs {
+    if ref_exists(path, &target)? {
+      let mut command = new_cmd();
+      command.arg("checkout").arg(target).current_dir(path);
+      command.spawn().and_then(|mut handle| handle.wait())?;
+
+      spinner.stop();
+      println!();
+      return Ok(());
+    }
+  }
+
+  spinner.stop();
+  println!();
+  Err(failure::format_err!("Couldn't locate ref '{}'", ref_.red()))
 }
 
 fn ref_exists(path: &Path, ref_: &str) -> Result<bool, Error> {
@@ -92,31 +68,6 @@ fn ref_exists(path: &Path, ref_: &str) -> Result<bool, Error> {
     .success();
 
   Ok(exists)
-}
-
-fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
-  let label = format!("{}", path.display());
-  let mut state = State::new("    Fetching", "     Fetched", &label);
-  state
-    .cmd
-    .args(&["fetch", "--all", "--prune"])
-    .current_dir(path);
-
-  state.wait()?;
-
-  let refs = vec![format!("tags/{}", ref_), format!("origin/{}", ref_)];
-
-  for target in refs {
-    if ref_exists(path, &target)? {
-      let label = format!("{} into {}", path.display(), ref_);
-      let mut state = State::new("   Switching", "    Switched", &label);
-      state.cmd.arg("checkout").arg(target).current_dir(path);
-
-      return state.wait();
-    }
-  }
-
-  Err(failure::format_err!("Couldn't locate ref '{}'", ref_.red()))
 }
 
 #[derive(Debug, Clone)]
