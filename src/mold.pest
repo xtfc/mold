@@ -1,0 +1,44 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+
+string = ${ "\"" ~ chars ~ "\"" }
+chars = @{ char* }
+char = {
+    !("\"" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+}
+
+alpha = { 'a'..'z' | 'A'..'Z' }
+digit = { '0'..'9' }
+special = { "_" | "-" | "/" | ":" }
+
+name = @{ (alpha | digit | special)+ }
+
+main = _{ SOI ~ main_body ~ EOI }
+main_body = _{ (version_stmt | import_stmt | recipe_stmt | var_stmt | if_stmt)* }
+recipe_body = _{ (help_stmt | if_recipe_stmt | dir_stmt | require_stmt | var_stmt | run_stmt )* }
+
+dir_stmt = { "dir" ~ string }
+help_stmt = { "help" ~ string }
+if_recipe_stmt = { "if " ~ expr ~ "{" ~ recipe_body ~ "}" }
+if_stmt = { "if " ~ expr ~ "{" ~ main_body ~ "}" }
+import_stmt = { "import" ~ string ~ ("as" ~ name)? }
+recipe_stmt = { "recipe" ~ name ~ "{" ~ recipe_body ~ "}" }
+require_stmt = { "require" ~ name }
+run_stmt = { ("run" | "$") ~ string }
+var_stmt = { "var" ~ name ~ "=" ~ string }
+version_stmt = { "version" ~ string }
+
+// this is some weird stuff to avoid needing to use a precedence climber
+// but also avoid having insanely nested parse trees
+expr = _{ or_choice }
+or_expr = { and_choice ~ "|" ~ expr }
+and_expr = { not_choice ~ "+" ~ expr }
+not_expr = { "~" ~ atom }
+wild = { "*" }
+group = { "(" ~ expr ~ ")" }
+atom = { group | name | wild }
+
+or_choice = _{ or_expr | and_choice }
+and_choice = _{ and_expr | not_choice }
+not_choice = _{ not_expr | atom }

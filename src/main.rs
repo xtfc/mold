@@ -1,4 +1,3 @@
-// use colored::*;
 use exitfailure::ExitFailure;
 use failure::Error;
 use mold::Mold;
@@ -42,6 +41,7 @@ pub struct Args {
   pub targets: Vec<String>,
 }
 
+/// Handle actual execution
 fn run(args: Args) -> Result<(), Error> {
   // load the moldfile
   let mut envs = vec![];
@@ -92,6 +92,7 @@ fn run(args: Args) -> Result<(), Error> {
   Ok(())
 }
 
+/// Facade to work with ExitFailure
 fn main() -> Result<(), ExitFailure> {
   let args = Args::from_args();
   env_logger::init();

@@ -18,18 +18,19 @@ use std::path::PathBuf;
 use std::process;
 use std::string::ToString;
 
-// maps sorted by insertion order
+// sorted by insertion order
 pub type IncludeVec = Vec<Include>;
 pub type TargetSet = IndexSet<String>;
 pub type EnvSet = IndexSet<String>;
 pub type VarMap = IndexMap<String, String>; // TODO maybe down the line this should allow nulls to `unset` a variable
 pub type SourceMap = IndexMap<String, PathBuf>;
 
-// maps sorted alphabetically
+// sorted alphabetically
 pub type RecipeMap = BTreeMap<String, Recipe>;
 
 pub const DEFAULT_FILES: &[&str] = &["moldfile", "Moldfile"];
 
+/// Complete set of application state
 pub struct Mold {
   /// A set of currently active environments
   pub envs: EnvSet,
@@ -53,6 +54,7 @@ pub struct Mold {
   pub mold_dir: PathBuf,
 }
 
+/// An external module included for reuse
 pub struct Include {
   /// Remote to include
   pub remote: Remote,
@@ -61,7 +63,7 @@ pub struct Include {
   pub prefix: String,
 }
 
-// FIXME script
+/// A single task to execute
 #[derive(Clone)]
 pub struct Recipe {
   /// A short description of the recipe
@@ -80,13 +82,7 @@ pub struct Recipe {
   pub requires: TargetSet,
 }
 
-struct Task {
-  name: String,
-  commands: Vec<Vec<String>>,
-  work_dir: Option<PathBuf>,
-  vars: VarMap,
-}
-
+/// Data straight from a file
 pub struct Moldfile {
   pub version: String,
   pub includes: IncludeVec,
@@ -94,8 +90,8 @@ pub struct Moldfile {
   pub vars: VarMap,
 }
 
-// Moldfiles
 impl Mold {
+  /// Create a new, empty application and import the given path into it
   pub fn init(path: &Path, envs: Vec<String>) -> Result<Mold, Error> {
     let root_dir = path.parent().unwrap_or(&Path::new("/")).to_path_buf();
     let mold_dir = root_dir.join(".mold");
@@ -141,7 +137,7 @@ impl Mold {
     Ok(())
   }
 
-  /// Given a path, open and parse the file
+  /// Given a path, load the file into the current application
   fn open(&mut self, path: &Path, prefix: &str) -> Result<(), Error> {
     let mut file = fs::File::open(path)?;
     let mut contents = String::new();
@@ -266,7 +262,7 @@ impl Mold {
     }
   }
 
-  /// Find a recipe in the top level map
+  /// Look up a recipe by name
   fn recipe(&self, name: &str) -> Result<&Recipe, Error> {
     self
       .recipes
@@ -274,6 +270,7 @@ impl Mold {
       .ok_or_else(|| failure::format_err!("Couldn't locate recipe '{}'", name.red()))
   }
 
+  /// Construct a Task instance from a recipe name
   fn build_task(&self, name: &str) -> Result<Task, Error> {
     let recipe = self.recipe(name)?;
 
@@ -310,13 +307,14 @@ impl Mold {
     })
   }
 
-  /// Look up a recipe and execute it
+  /// Construct and execute a Task from a recipe name
   pub fn execute(&self, name: &str) -> Result<(), Error> {
     let task = self.build_task(name)?;
     task.execute()
   }
 
-  /// Perform variable expansion and return a list of arguments to pass to Command
+  /// Perform variable expansion on a string and return a list of arguments to
+  /// pass to std::process::Command
   fn build_args(&self, command: &str, vars: &VarMap) -> Result<Vec<String>, Error> {
     let expanded = shellexpand::env_with_context_no_errors(&command, |name| {
       vars
@@ -361,7 +359,7 @@ impl Mold {
     Ok(())
   }
 
-  /// Print a description of all recipes in this moldfile
+  /// Print a short description of all recipes in this moldfile
   pub fn help(&self) -> Result<(), Error> {
     for (name, recipe) in &self.recipes {
       let help_str = match &recipe.help {
@@ -380,7 +378,7 @@ impl Mold {
     Ok(())
   }
 
-  /// Print an explanation of what a recipe does
+  /// Print a long description of a recipe
   pub fn explain(&self, name: &str) -> Result<(), Error> {
     // print recipe information
     let recipe = self.recipe(name)?;
@@ -431,7 +429,16 @@ impl Mold {
   }
 }
 
+/// An instantiation of a recipe ready for execution
+struct Task {
+  name: String,
+  commands: Vec<Vec<String>>,
+  work_dir: Option<PathBuf>,
+  vars: VarMap,
+}
+
 impl Task {
+  /// Populate a std::process::Command and spawn it
   fn execute(self) -> Result<(), Error> {
     for args in self.commands {
       if args.is_empty() {
@@ -442,7 +449,6 @@ impl Task {
       command.args(&args[1..]);
       command.envs(&self.vars);
 
-      // FIXME this should be relative to root, no?
       if let Some(dir) = &self.work_dir {
         command.current_dir(dir);
       }
