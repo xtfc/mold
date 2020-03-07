@@ -50,8 +50,8 @@ impl Expr {
         And(lhs.into(), rhs.into())
       }
 
-      not_expr => Not(force_expr(pair).into()),
-      atom | group => force_expr(pair),
+      not_expr => Not(single_expr(pair).into()),
+      atom | group => single_expr(pair),
       name => Atom(pair.as_str().into()),
       wild => Wild,
       _ => unreachable!(),
@@ -108,11 +108,11 @@ impl Statement {
         Var(var_name, value)
       }
 
-      dir_stmt => Dir(force_string(pair)),
-      help_stmt => Help(force_string(pair)),
-      require_stmt => Require(force_name(pair)),
-      run_stmt => Run(force_string(pair)),
-      version_stmt => Version(force_string(pair)),
+      dir_stmt => Dir(single_string(pair)),
+      help_stmt => Help(single_string(pair)),
+      require_stmt => Require(single_name(pair)),
+      run_stmt => Run(single_string(pair)),
+      version_stmt => Version(single_string(pair)),
       _ => unreachable!(),
     }
   }
@@ -148,18 +148,18 @@ fn consume_statements(pairs: &mut Pairs<Rule>) -> Vec<Statement> {
     .collect()
 }
 
-/// Given a Pair, forcefully consume a `string` from it
-fn force_string(pair: Pair<Rule>) -> String {
+/// Given a Pair, consume a single `string` from it
+fn single_string(pair: Pair<Rule>) -> String {
   consume_string(&mut pair.into_inner()).unwrap()
 }
 
-/// Given a Pair, forcefully consume a `name` from it
-fn force_name(pair: Pair<Rule>) -> String {
+/// Given a Pair, consume a single `name` from it
+fn single_name(pair: Pair<Rule>) -> String {
   consume_name(&mut pair.into_inner()).unwrap()
 }
 
-/// Given a Pair, forcefully consume an `expr` from it
-fn force_expr(pair: Pair<Rule>) -> Expr {
+/// Given a Pair, consume a single `expr` from it
+fn single_expr(pair: Pair<Rule>) -> Expr {
   consume_expr(&mut pair.into_inner()).unwrap()
 }
 
