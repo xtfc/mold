@@ -29,6 +29,34 @@ impl Expr {
       Expr::Wild => true,
     }
   }
+
+  /// Given a Pair, convert it into an Expr
+  pub fn from(pair: Pair<Rule>) -> Self {
+    use Expr::*;
+    use Rule::*;
+
+    match pair.as_rule() {
+      or_expr => {
+        let mut inner = pair.into_inner();
+        let lhs = consume_expr(&mut inner).unwrap();
+        let rhs = consume_expr(&mut inner).unwrap();
+        Or(lhs.into(), rhs.into())
+      }
+
+      and_expr => {
+        let mut inner = pair.into_inner();
+        let lhs = consume_expr(&mut inner).unwrap();
+        let rhs = consume_expr(&mut inner).unwrap();
+        And(lhs.into(), rhs.into())
+      }
+
+      not_expr => Not(force_expr(pair).into()),
+      atom | group => force_expr(pair),
+      name => Atom(pair.as_str().into()),
+      wild => Wild,
+      _ => unreachable!(),
+    }
+  }
 }
 
 // FIXME inline scripts?
@@ -45,10 +73,56 @@ pub enum Statement {
   Version(String),
 }
 
+impl Statement {
+  /// Given a Pair, convert it into a Statement
+  pub fn from(pair: Pair<Rule>) -> Self {
+    use Rule::*; // a consequence is that no variables can shadow one of these
+    use Statement::*;
+
+    match pair.as_rule() {
+      if_stmt | if_recipe_stmt => {
+        let mut inner = pair.into_inner();
+        let cond = consume_expr(&mut inner).unwrap();
+        let body = consume_statements(&mut inner);
+        If(cond, body)
+      }
+
+      import_stmt => {
+        let mut inner = pair.into_inner();
+        let source = consume_string(&mut inner).unwrap();
+        let dep_name = consume_name(&mut inner);
+        Import(source, dep_name)
+      }
+
+      recipe_stmt => {
+        let mut inner = pair.into_inner();
+        let rec_name = consume_name(&mut inner).unwrap();
+        let stmts = consume_statements(&mut inner);
+        Recipe(rec_name, stmts)
+      }
+
+      var_stmt => {
+        let mut inner = pair.into_inner();
+        let var_name = consume_name(&mut inner).unwrap();
+        let value = consume_string(&mut inner).unwrap();
+        Var(var_name, value)
+      }
+
+      dir_stmt => Dir(force_string(pair)),
+      help_stmt => Help(force_string(pair)),
+      require_stmt => Require(force_name(pair)),
+      run_stmt => Run(force_string(pair)),
+      version_stmt => Version(force_string(pair)),
+      _ => unreachable!(),
+    }
+  }
+}
+
 #[derive(Parser)]
 #[grammar = "mold.pest"]
 struct MoldParser;
 
+/// Given a Pairs iterator, try to yank a `string` out of it
 fn consume_string(pairs: &mut Pairs<Rule>) -> Option<String> {
   pairs
     .next()
@@ -56,108 +130,47 @@ fn consume_string(pairs: &mut Pairs<Rule>) -> Option<String> {
     .map(|x| x.as_str().to_string())
 }
 
+/// Given a Pairs iterator, try to yank a `name` out of it
 fn consume_name(pairs: &mut Pairs<Rule>) -> Option<String> {
   pairs.next().map(|x| x.as_str().to_string())
 }
 
+/// Given a Pairs iterator, try to yank an `expr` out of it
 fn consume_expr(pairs: &mut Pairs<Rule>) -> Option<Expr> {
-  pairs.next().map(convert_expr)
+  pairs.next().map(Expr::from)
 }
 
+/// Given a Pairs iterator, try to yank a lot of `stateent`s out of it
 fn consume_statements(pairs: &mut Pairs<Rule>) -> Vec<Statement> {
   pairs
     .filter(|x| x.as_rule() != Rule::EOI)
-    .map(convert_statement)
+    .map(Statement::from)
     .collect()
 }
 
-fn force_name(pair: Pair<Rule>) -> String {
-  consume_name(&mut pair.into_inner()).unwrap()
-}
-
+/// Given a Pair, forcefully consume a `string` from it
 fn force_string(pair: Pair<Rule>) -> String {
   consume_string(&mut pair.into_inner()).unwrap()
 }
 
+/// Given a Pair, forcefully consume a `name` from it
+fn force_name(pair: Pair<Rule>) -> String {
+  consume_name(&mut pair.into_inner()).unwrap()
+}
+
+/// Given a Pair, forcefully consume an `expr` from it
 fn force_expr(pair: Pair<Rule>) -> Expr {
   consume_expr(&mut pair.into_inner()).unwrap()
 }
 
-fn convert_statement(pair: Pair<Rule>) -> Statement {
-  use Rule::*; // a consequence is that no variables can shadow one of these
-  use Statement::*;
-
-  match pair.as_rule() {
-    if_stmt | if_recipe_stmt => {
-      let mut inner = pair.into_inner();
-      let cond = consume_expr(&mut inner).unwrap();
-      let body = consume_statements(&mut inner);
-      If(cond, body)
-    }
-
-    import_stmt => {
-      let mut inner = pair.into_inner();
-      let source = consume_string(&mut inner).unwrap();
-      let dep_name = consume_name(&mut inner);
-      Import(source, dep_name)
-    }
-
-    recipe_stmt => {
-      let mut inner = pair.into_inner();
-      let rec_name = consume_name(&mut inner).unwrap();
-      let stmts = consume_statements(&mut inner);
-      Recipe(rec_name, stmts)
-    }
-
-    var_stmt => {
-      let mut inner = pair.into_inner();
-      let var_name = consume_name(&mut inner).unwrap();
-      let value = consume_string(&mut inner).unwrap();
-      Var(var_name, value)
-    }
-
-    dir_stmt => Dir(force_string(pair)),
-    help_stmt => Help(force_string(pair)),
-    require_stmt => Require(force_name(pair)),
-    run_stmt => Run(force_string(pair)),
-    version_stmt => Version(force_string(pair)),
-    _ => unreachable!(),
-  }
-}
-
-fn convert_expr(pair: Pair<Rule>) -> Expr {
-  use Expr::*;
-  use Rule::*;
-
-  match pair.as_rule() {
-    or_expr => {
-      let mut inner = pair.into_inner();
-      let lhs = consume_expr(&mut inner).unwrap();
-      let rhs = consume_expr(&mut inner).unwrap();
-      Or(lhs.into(), rhs.into())
-    }
-
-    and_expr => {
-      let mut inner = pair.into_inner();
-      let lhs = consume_expr(&mut inner).unwrap();
-      let rhs = consume_expr(&mut inner).unwrap();
-      And(lhs.into(), rhs.into())
-    }
-
-    not_expr => Not(force_expr(pair).into()),
-    atom | group => force_expr(pair),
-    name => Atom(pair.as_str().into()),
-    wild => Wild,
-    _ => unreachable!(),
-  }
-}
-
+/// Given a &str of mold lang code, convert it into a pest parse tree
 fn parse(code: &str) -> Result<Vec<Statement>, Error> {
   let mut main = MoldParser::parse(Rule::main, code)?;
   let stmts = consume_statements(&mut main);
   Ok(stmts)
 }
 
+/// Given a &str of code and an EnvSet, compile it into a Moldfile
 pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Error> {
   use Statement::*;
   let statements = flatten(parse(code)?, envs)?;
@@ -208,6 +221,7 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
   })
 }
 
+/// Given a Vec<Statement> and an EnvSet, compile it into a Recipe
 pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<super::Recipe, Error> {
   use Statement::*;
 
@@ -256,6 +270,7 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
   })
 }
 
+/// Given a Vec<Statement> and an EnvSet, remove all falsy If statements
 pub fn flatten(body: Vec<Statement>, envs: &super::EnvSet) -> Result<Vec<Statement>, Error> {
   let mut ret = vec![];
 
