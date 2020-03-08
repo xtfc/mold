@@ -5,6 +5,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
+// there's no good way that I could find to group these into exclusive groups.
+// ie: `--clean` excludes everything else, `--import` permits `--prefix`, etc.
 /// A fresh task runner
 #[derive(StructOpt, Debug)]
 #[structopt(author, global_settings(&[structopt::clap::AppSettings::ColoredHelp]))]
@@ -20,6 +22,14 @@ pub struct Args {
   /// Single mold environment to append to list of active environments
   #[structopt(long = "add", short = "a", number_of_values = 1)]
   pub add_envs: Vec<String>,
+
+  /// Add an import to the selected moldfile
+  #[structopt(long = "import", short = "i")]
+  pub import: Option<String>,
+
+  /// Optional prefix to use with --import / -i
+  #[structopt(long = "prefix", short = "p")]
+  pub prefix: Option<String>,
 
   /// Fetch new updates for all downloaded remote data
   #[structopt(long = "update", short = "u")]
@@ -55,6 +65,19 @@ fn run(args: Args) -> Result<(), Error> {
   // early return if we passed a --clean
   if args.clean {
     return Mold::clean_all(&filepath);
+  }
+
+  if let Some(import) = args.import {
+    use std::io::prelude::*;
+    let line = if let Some(prefix) = args.prefix {
+      format!("import \"{}\" as {}\n", import, prefix)
+    } else {
+      format!("import \"{}\"\n", import)
+    };
+
+    let mut file = std::fs::OpenOptions::new().append(true).open(filepath)?;
+    file.write_all(line.as_bytes())?;
+    return Ok(());
   }
 
   let mold = Mold::init(&filepath, envs)?;
