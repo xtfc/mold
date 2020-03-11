@@ -127,7 +127,33 @@ fn consume_string(pairs: &mut Pairs<Rule>) -> Option<String> {
   pairs
     .next()
     .and_then(|x| x.into_inner().next())
-    .map(|x| x.as_str().to_string())
+    .map(|x| unescape(x.as_str()))
+}
+
+/// Given a &str, unescape special characters
+///
+/// This should potentially return an error, but that really complicates the
+/// above API, so it just silently permits and ignores invalid escapes. Oops.
+fn unescape(source: &str) -> String {
+  let mut new = String::with_capacity(source.len());
+  let mut chars = source.chars();
+
+  while let Some(ch) = chars.next() {
+    if ch == '\\' {
+      if let Some(ch2) = chars.next() {
+        new.push(match ch2 {
+          'n' => '\n',
+          'r' => '\r',
+          't' => '\t',
+          x => x,
+        });
+        continue;
+      }
+    }
+    new.push(ch);
+  }
+
+  new
 }
 
 /// Given a Pairs iterator, try to yank a `name` out of it
