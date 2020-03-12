@@ -1,12 +1,9 @@
 version "0.6"
 import "github.com/xtfc/cargo.mold#dev" as c/
 
-recipe staticbuild {
-  help "Build a static MUSL binary using Docker"
-  if linux {
+if linux {
+  recipe staticbuild {
+    help "Build a static MUSL binary using Docker"
     $ "sh $MOLD_ROOT/mold/staticbuild.sh"
-  }
-  if ~linux {
-    $ "echo 'This only works on Linux.'"
   }
 }

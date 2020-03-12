@@ -3,7 +3,7 @@
 # all arguments through to it. This simplifies usage on CI/CD platforms as well
 # as for users who haven't installed mold yet.
 
-VER="0.6.0"
+VER="0.6.0-rc1"
 EXE="./.mold-$VER"
 URL="https://github.com/xtfc/mold/releases/download/v$VER/mold-$VER-linux"
 
