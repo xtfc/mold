@@ -1,73 +1,96 @@
 use super::util;
 use colored::*;
 use failure::Error;
+use git2::build::CheckoutBuilder;
+use git2::build::RepoBuilder;
+use git2::Cred;
+use git2::CredentialType;
+use git2::FetchOptions;
+use git2::RemoteCallbacks;
+use git2::Repository;
 use spinners::Spinner;
 use spinners::Spinners;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::Command;
-use std::process::Stdio;
 use std::str::FromStr;
 use std::string::ToString;
 
-fn new_cmd() -> Command {
-  let mut cmd = Command::new("git");
-  cmd.stderr(Stdio::null()).stdout(Stdio::null());
-  cmd
+/// Find ssh credentials in ~/.ssh/id_rsa{,.pub}
+fn git_credentials_callback(
+  _user: &str,
+  _user_from_url: Option<&str>,
+  _cred: CredentialType,
+) -> Result<Cred, git2::Error> {
+  if let Some(home_dir) = dirs::home_dir() {
+    let pub_key = home_dir.join(".ssh/id_rsa.pub");
+    let priv_key = home_dir.join(".ssh/id_rsa");
+    let credentials = Cred::ssh_key("git", Some(&pub_key), &priv_key, None)
+      .expect("Could not create credentials object");
+
+    Ok(credentials)
+  } else {
+    Err(git2::Error::from_str("Couldn't locate home directory"))
+  }
 }
 
+fn fetch_options<'a>() -> FetchOptions<'a> {
+  // establish credentials
+  let mut callbacks = RemoteCallbacks::new();
+  callbacks.credentials(git_credentials_callback);
+
+  // build fetch opts
+  let mut fetch = FetchOptions::new();
+  fetch.remote_callbacks(callbacks);
+
+  fetch
+}
+
+/// Clone a git repository
 fn pull(url: &str, path: &Path) -> Result<(), Error> {
+  // start spinner
   let label = format!("{} {}...", "Cloning".green(), url);
   let spinner = Spinner::new(Spinners::Dots, label);
 
-  let mut command = new_cmd();
-  command.arg("clone").arg(url).arg(path);
-  command.spawn().and_then(|mut handle| handle.wait())?;
+  // clone repo
+  let fetch = fetch_options();
+  RepoBuilder::new().fetch_options(fetch).clone(url, path)?;
 
+  // finish spinner
   spinner.stop();
   println!();
   Ok(())
 }
 
 fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
+  // start spinner
   let label = format!("{} {} to {}...", "Updating".green(), path.display(), ref_);
   let spinner = Spinner::new(Spinners::Dots, label);
 
-  let mut command = new_cmd();
-  command
-    .args(&["fetch", "--all", "--prune"])
-    .current_dir(path);
-  command.spawn().and_then(|mut handle| handle.wait())?;
+  // locate existing repo
+  let repo = Repository::discover(path)?;
+  let mut remote = repo.find_remote("origin")?;
 
-  let refs = vec![format!("tags/{}", ref_), format!("origin/{}", ref_)];
-  for target in refs {
-    if ref_exists(path, &target)? {
-      let mut command = new_cmd();
-      command.arg("checkout").arg(target).current_dir(path);
-      command.spawn().and_then(|mut handle| handle.wait())?;
+  // fetch ref
+  let mut fetch = fetch_options();
+  remote.fetch(&[ref_], Some(&mut fetch), None)?;
 
-      spinner.stop();
-      println!();
-      return Ok(());
-    }
-  }
+  // checkout the appropriate ref
+  let tag_name = format!("tags/{}", ref_);
+  let branch_name = format!("origin/{}", ref_);
+  let object = repo
+    .revparse_single(&tag_name)
+    .or_else(|_| repo.revparse_single(&branch_name))?;
+  repo.set_head_detached(object.id())?;
 
+  // force checkout
+  let mut checkout = CheckoutBuilder::new();
+  checkout.force();
+  repo.checkout_head(Some(&mut checkout))?;
+
+  // finish spinner
   spinner.stop();
   println!();
-  Err(failure::format_err!("Couldn't locate ref '{}'", ref_.red()))
-}
-
-fn ref_exists(path: &Path, ref_: &str) -> Result<bool, Error> {
-  let exists = new_cmd()
-    .arg("rev-parse")
-    .arg(ref_)
-    .arg("--")
-    .current_dir(path)
-    .spawn()
-    .and_then(|mut handle| handle.wait())?
-    .success();
-
-  Ok(exists)
+  Ok(())
 }
 
 #[derive(Debug, Clone)]
