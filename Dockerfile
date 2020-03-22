@@ -1,4 +1,4 @@
-FROM ekidd/rust-musl-builder:1.41.0 AS build
+FROM ekidd/rust-musl-builder:1.42.0 AS build
 COPY Cargo.toml ./
 COPY src ./src
 RUN sudo chown -R rust:rust /home/rust \
