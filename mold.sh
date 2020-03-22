@@ -3,13 +3,31 @@
 # all arguments through to it. This simplifies usage on CI/CD platforms as well
 # as for users who haven't installed mold yet.
 
-VER="0.6.0-rc1"
-EXE="./.mold-$VER"
-URL="https://github.com/xtfc/mold/releases/download/v$VER/mold-v$VER-linux"
-
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
+
+case "$(uname -s)" in
+    Linux*)     PLATFORM=linux;;
+    Darwin*)    PLATFORM=mac;;
+    CYGWIN*)    PLATFORM=windows;;
+    MINGW*)     PLATFORM=windows;;
+    *)          PLATFORM=""
+esac
+
+if [ -z "$PLATFORM" ]; then
+  printf $RED"Error:"$NC" could not determine platform: $(uname -s)\n"
+  exit 1
+fi
+
+EXT=""
+if [ "$PLATFORM" == "windows" ]; then
+  EXT=".exe"
+fi
+
+VER="0.6.0-rc2"
+EXE="./.mold-$VER"
+URL="https://github.com/xtfc/mold/releases/download/v$VER/mold-v$VER-$PLATFORM$EXT"
 
 if [ ! -f $EXE ]; then
   # decide whether we can use curl or wget
