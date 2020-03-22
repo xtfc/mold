@@ -79,7 +79,8 @@ fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
   let branch_name = format!("origin/{}", ref_);
   let object = repo
     .revparse_single(&tag_name)
-    .or_else(|_| repo.revparse_single(&branch_name))?;
+    .or_else(|_| repo.revparse_single(&branch_name))
+    .map_err(|_| failure::format_err!("Unable to locate ref '{}'", ref_.red()))?;
   repo.set_head_detached(object.id())?;
 
   // force checkout
