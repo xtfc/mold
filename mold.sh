@@ -21,7 +21,7 @@ if [ -z "$PLATFORM" ]; then
 fi
 
 EXT=""
-if [ "$PLATFORM" == "windows" ]; then
+if [ "$PLATFORM" = "windows" ]; then
   EXT=".exe"
 fi
 
