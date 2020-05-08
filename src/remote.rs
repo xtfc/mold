@@ -14,6 +14,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::string::ToString;
+use url::Url;
 
 /// Find ssh credentials in ~/.ssh/id_rsa{,.pub}
 fn git_credentials_callback(
@@ -109,7 +110,20 @@ pub struct Remote {
 impl Remote {
   /// Return this module's folder name in the format hash(url@ref)
   fn folder_name(&self) -> String {
-    util::hash_url_ref(&self.url, &self.ref_)
+    // first attempt to parse with an implicit https://
+    let url = Url::parse(&format!("https://{}", &self.url)).or_else(|_| Url::parse(&self.url));
+    let last_path = match url {
+      Ok(ref url) => url.path_segments().map(|mut x| x.next_back()).flatten(),
+      _ => None,
+    };
+
+    let hash = util::hash_url_ref(&self.url, &self.ref_);
+
+    // not sure what kinda URLs the above will fail on, but... it can I guess.
+    match last_path {
+      Some(name) => format!("{}-{}-{}", name, self.ref_, hash),
+      None => format!("unknown-{}-{}", self.ref_, hash),
+    }
   }
 
   pub fn path(&self, mold_dir: &Path) -> PathBuf {
@@ -122,6 +136,7 @@ impl Remote {
 
   pub fn pull(&self, mold_dir: &Path) -> Result<(), Error> {
     let path = self.path(mold_dir);
+    // first attempt to pull with an implicit https://
     pull(&format!("https://{}", self.url), &path).or_else(|_| pull(&self.url, &path))
   }
 

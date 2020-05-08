@@ -25,6 +25,7 @@ shell-words = "0.1.0"
 shellexpand = "1.1.1"
 spinners = "1.2"
 structopt = "0.3"
+url = "2.1.1"
 
 [[bin]]
 name = "mold"
