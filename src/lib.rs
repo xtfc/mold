@@ -186,7 +186,10 @@ impl Mold {
       self.open(&filepath, &include.prefix)?;
     }
 
-    self.vars.extend(data.vars);
+    for (name, val) in data.vars {
+      let expanded_val = self.expand(&val, &self.vars);
+      self.vars.insert(name, expanded_val.into());
+    }
 
     Ok(())
   }
@@ -301,16 +304,21 @@ impl Mold {
     task.execute()
   }
 
-  /// Perform variable expansion on a string and return a list of arguments to
-  /// pass to std::process::Command
-  fn build_args(&self, command: &str, vars: &VarMap) -> Result<Vec<String>, Error> {
-    let expanded = shellexpand::env_with_context_no_errors(&command, |name| {
+  /// Perform variable expansion on a string
+  fn expand<'a>(&self, val: &'a str, vars: &VarMap) -> std::borrow::Cow<'a, str> {
+    shellexpand::env_with_context_no_errors(val, |name| {
       vars
         .get(name)
         .map(std::string::ToString::to_string)
         .or_else(|| std::env::var(name).ok())
         .or_else(|| Some("".into()))
-    });
+    })
+  }
+
+  /// Perform variable expansion on a string and return a list of arguments to
+  /// pass to std::process::Command
+  fn build_args(&self, command: &str, vars: &VarMap) -> Result<Vec<String>, Error> {
+    let expanded = self.expand(command, vars);
     Ok(shell_words::split(&expanded)?)
   }
 
