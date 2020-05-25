@@ -22,7 +22,7 @@ fn git_credentials_callback(
   _user_from_url: Option<&str>,
   _cred: CredentialType,
 ) -> Result<Cred, git2::Error> {
-  if let Some(home_dir) = dirs::home_dir() {
+  if let Some(home_dir) = dirs_next::home_dir() {
     let pub_key = home_dir.join(".ssh/id_rsa.pub");
     let priv_key = home_dir.join(".ssh/id_rsa");
     let credentials = Cred::ssh_key("git", Some(&pub_key), &priv_key, None)
