@@ -211,7 +211,8 @@ impl Mold {
 
     // if this file has a `dir` stmt, it overrides any other dir that was set
     if let Some(rel_path) = data.dir {
-      self.work_dir = Some(self.root_dir.join(rel_path));
+      let expanded_path = self.expand(&rel_path, &self.vars);
+      self.work_dir = Some(self.root_dir.join(expanded_path.to_string()));
     }
 
     Ok(())
@@ -313,11 +314,12 @@ impl Mold {
       commands.push(args);
     }
 
-    let work_dir = recipe
-      .dir
-      .clone()
-      .map(|x| self.root_dir.join(x))
-      .or(self.work_dir.clone());
+    let work_dir = if let Some(rel_path) = &recipe.dir {
+      let expanded_path = self.expand(&rel_path, &self.vars);
+      Some(self.root_dir.join(expanded_path.to_string()))
+    } else {
+      self.work_dir.clone()
+    };
 
     Ok(Task {
       name: name.into(),
