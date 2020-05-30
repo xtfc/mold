@@ -202,6 +202,7 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
   let statements = flatten(parse(code)?, envs)?;
 
   let mut version = None;
+  let mut dir = None;
   let mut includes = super::IncludeVec::new();
   let mut recipes = super::RecipeMap::new();
   let mut vars = super::VarMap::new();
@@ -231,7 +232,11 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
         recipes.insert(name, compile_recipe(body, envs)?);
       }
 
-      Require(_) | Dir(_) | If(_, _) | Run(_) => {
+      Dir(path) => {
+        dir = Some(path);
+      }
+
+      Require(_) | If(_, _) | Run(_) => {
         unreachable!();
       }
     }
@@ -244,6 +249,7 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
     includes,
     recipes,
     vars,
+    dir,
   })
 }
 

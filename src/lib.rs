@@ -50,6 +50,11 @@ pub struct Mold {
 
   /// Path to cloned repos and generated scripts
   pub mold_dir: PathBuf,
+
+  /// Working directory
+  ///
+  /// This is overridden by a recipe's `dir`
+  pub work_dir: Option<PathBuf>,
 }
 
 /// An external module included for reuse
@@ -82,10 +87,22 @@ pub struct Recipe {
 
 /// Data straight from a file
 pub struct Moldfile {
+  /// Required version to load this moldfile
   pub version: String,
+
+  /// A list of imported moldfiles
   pub includes: IncludeVec,
+
+  /// A list of recipes
   pub recipes: RecipeMap,
+
+  /// A list of environment variables
   pub vars: VarMap,
+
+  /// Working directory relative to $MOLD_ROOT
+  ///
+  /// This is overridden by a recipe's `dir`
+  pub dir: Option<String>,
 }
 
 impl Mold {
@@ -111,6 +128,7 @@ impl Mold {
       recipes: RecipeMap::new(),
       sources: SourceMap::new(),
       remotes: vec![],
+      work_dir: None,
       envs,
       vars,
     };
@@ -189,6 +207,11 @@ impl Mold {
     for (name, val) in data.vars {
       let expanded_val = self.expand(&val, &self.vars);
       self.vars.insert(name, expanded_val.into());
+    }
+
+    // if this file has a `dir` stmt, it overrides any other dir that was set
+    if let Some(rel_path) = data.dir {
+      self.work_dir = Some(self.root_dir.join(rel_path));
     }
 
     Ok(())
@@ -290,11 +313,17 @@ impl Mold {
       commands.push(args);
     }
 
+    let work_dir = recipe
+      .dir
+      .clone()
+      .map(|x| self.root_dir.join(x))
+      .or(self.work_dir.clone());
+
     Ok(Task {
       name: name.into(),
       commands,
       vars,
-      work_dir: recipe.dir.clone().map(|x| self.root_dir.join(x)),
+      work_dir,
     })
   }
 
