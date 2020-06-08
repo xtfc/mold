@@ -15,8 +15,8 @@ special = { "_" | "-" | "/" | ":" }
 name = @{ (alpha | digit | special)+ }
 
 main = _{ SOI ~ main_body ~ EOI }
-main_body = _{ (version_stmt | import_stmt | recipe_stmt | dir_stmt | var_stmt | if_stmt)* }
-recipe_body = _{ (help_stmt | if_recipe_stmt | dir_stmt | require_stmt | var_stmt | run_stmt )* }
+main_body = _{ (version_stmt | import_stmt | recipe_stmt | dir_stmt | var_stmt | default_stmt | if_stmt)* }
+recipe_body = _{ (help_stmt | if_recipe_stmt | dir_stmt | require_stmt | var_stmt | default_stmt | run_stmt )* }
 
 dir_stmt = { "dir" ~ string }
 help_stmt = { "help" ~ string }
@@ -27,6 +27,7 @@ recipe_stmt = { "recipe" ~ name ~ "{" ~ recipe_body ~ "}" }
 require_stmt = { "require" ~ name }
 run_stmt = { ("run" | "$") ~ string }
 var_stmt = { "var" ~ name ~ "=" ~ string }
+default_stmt = { "default" ~ name ~ "=" ~ string }
 version_stmt = { "version" ~ string }
 
 // this is some weird stuff to avoid needing to use a precedence climber

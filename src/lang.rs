@@ -70,6 +70,7 @@ pub enum Statement {
   Require(String),
   Run(String),
   Var(String, String),
+  Default(String, String),
   Version(String),
 }
 
@@ -106,6 +107,13 @@ impl Statement {
         let var_name = consume_name(&mut inner).unwrap();
         let value = consume_string(&mut inner).unwrap();
         Var(var_name, value)
+      }
+
+      default_stmt => {
+        let mut inner = pair.into_inner();
+        let var_name = consume_name(&mut inner).unwrap();
+        let value = consume_string(&mut inner).unwrap();
+        Default(var_name, value)
       }
 
       dir_stmt => Dir(single_string(pair)),
@@ -228,6 +236,12 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
         vars.insert(name, value);
       }
 
+      Default(name, value) => {
+        if std::env::var(&name).is_err() {
+          vars.insert(name, value);
+        }
+      }
+
       Recipe(name, body) => {
         recipes.insert(name, compile_recipe(body, envs)?);
       }
@@ -277,6 +291,12 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
 
       Var(name, value) => {
         vars.insert(name, value);
+      }
+
+      Default(name, value) => {
+        if std::env::var(&name).is_err() {
+          vars.insert(name, value);
+        }
       }
 
       Run(cmd) => {
