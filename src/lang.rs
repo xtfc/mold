@@ -278,7 +278,6 @@ pub fn compile_recipe(
   let mut dir = None;
   let mut commands = vec![];
   let mut requires = super::TargetSet::new();
-  let mut vars = super::VarMap::new();
 
   let body = flatten(body, &mold.envs)?;
 
@@ -292,16 +291,6 @@ pub fn compile_recipe(
         dir = Some(s);
       }
 
-      Var(name, value) => {
-        vars.insert(name, value);
-      }
-
-      Default(name, value) => {
-        if !vars.contains_key(&name) && std::env::var(&name).is_err() {
-          vars.insert(name, value);
-        }
-      }
-
       Run(cmd) => {
         commands.push(cmd);
       }
@@ -310,7 +299,7 @@ pub fn compile_recipe(
         requires.insert(recipe);
       }
 
-      If(_, _) | Version(_) | Import(_, _) | Recipe(_, _) => {
+      If(_, _) | Version(_) | Import(_, _) | Recipe(_, _) | Var(_, _) | Default(_, _) => {
         unreachable!();
       }
     }
@@ -319,7 +308,6 @@ pub fn compile_recipe(
   Ok(super::Recipe {
     help,
     commands,
-    vars,
     dir,
     requires,
   })

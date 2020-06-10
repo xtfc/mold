@@ -16,7 +16,7 @@ name = @{ (alpha | digit | special)+ }
 
 main = _{ SOI ~ main_body ~ EOI }
 main_body = _{ (version_stmt | import_stmt | recipe_stmt | dir_stmt | var_stmt | default_stmt | if_stmt)* }
-recipe_body = _{ (help_stmt | if_recipe_stmt | dir_stmt | require_stmt | var_stmt | default_stmt | run_stmt )* }
+recipe_body = _{ (help_stmt | if_recipe_stmt | dir_stmt | require_stmt | run_stmt )* }
 
 dir_stmt = { "dir" ~ string }
 help_stmt = { "help" ~ string }

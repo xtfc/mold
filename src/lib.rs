@@ -78,9 +78,6 @@ pub struct Recipe {
   /// The command to execute
   pub commands: Vec<String>,
 
-  /// A list of environment variables
-  pub vars: VarMap,
-
   /// A list of prerequisite recipes
   pub requires: TargetSet,
 }
@@ -289,10 +286,7 @@ impl Mold {
   fn build_task(&self, name: &str) -> Result<Task, Error> {
     let recipe = self.recipe(name)?;
 
-    // variables prioritize the _recipe_ values, so it extends the _file_ values. this is because
-    // later assignments should override the previous value, and recipes are handled "after" files.
     let mut vars = self.vars.clone();
-    vars.extend(recipe.vars.clone());
 
     // insert var for where this recipe's mold file lives
     if let Some(source) = self.sources.get(name) {
