@@ -204,7 +204,7 @@ impl Mold {
 
     // if this file has a `dir` stmt, it overrides any other dir that was set
     if let Some(rel_path) = data.dir {
-      self.work_dir = Some(rel_path.to_string());
+      self.work_dir = Some(rel_path);
     }
 
     Ok(())
@@ -303,7 +303,7 @@ impl Mold {
     let work_dir = recipe
       .dir
       .clone()
-      .or(self.work_dir.clone())
+      .or_else(|| self.work_dir.clone())
       .map(|raw_path| {
         self
           .root_dir
