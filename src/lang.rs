@@ -214,6 +214,7 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
   let mut includes = super::IncludeVec::new();
   let mut recipes = super::RecipeMap::new();
   let mut vars = super::VarMap::new();
+  let mut defaults = super::VarMap::new();
 
   for stmt in statements {
     match stmt {
@@ -237,8 +238,8 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
       }
 
       Default(name, value) => {
-        if std::env::var(&name).is_err() {
-          vars.insert(name, value);
+        if !defaults.contains_key(&name) {
+          defaults.insert(name, value);
         }
       }
 
@@ -263,6 +264,7 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
     includes,
     recipes,
     vars,
+    defaults,
     dir,
   })
 }
@@ -276,6 +278,7 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
   let mut commands = vec![];
   let mut requires = super::TargetSet::new();
   let mut vars = super::VarMap::new();
+  let mut defaults = super::VarMap::new();
 
   let body = flatten(body, envs)?;
 
@@ -294,8 +297,8 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
       }
 
       Default(name, value) => {
-        if std::env::var(&name).is_err() {
-          vars.insert(name, value);
+        if !defaults.contains_key(&name) {
+          defaults.insert(name, value);
         }
       }
 
@@ -319,6 +322,7 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
     vars,
     dir,
     requires,
+    defaults,
   })
 }
 
