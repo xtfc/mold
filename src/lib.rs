@@ -42,9 +42,6 @@ pub struct Mold {
   /// A map of environment variables
   pub vars: VarMap,
 
-  /// A list of environment variables to fall back on if nothing is defined elsewhere
-  pub defaults: VarMap,
-
   /// List of Remotes that have been imported
   pub remotes: Vec<Remote>,
 
@@ -84,9 +81,6 @@ pub struct Recipe {
   /// A list of environment variables
   pub vars: VarMap,
 
-  /// A list of environment variables to fall back on if nothing is defined elsewhere
-  pub defaults: VarMap,
-
   /// A list of prerequisite recipes
   pub requires: TargetSet,
 }
@@ -104,9 +98,6 @@ pub struct Moldfile {
 
   /// A list of environment variables
   pub vars: VarMap,
-
-  /// A list of environment variables to fall back on if nothing is defined elsewhere
-  pub defaults: VarMap,
 
   /// Working directory relative to $MOLD_ROOT
   ///
@@ -138,7 +129,6 @@ impl Mold {
       sources: SourceMap::new(),
       remotes: vec![],
       work_dir: None,
-      defaults: VarMap::new(),
       envs,
       vars,
     };
@@ -169,7 +159,7 @@ impl Mold {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
 
-    let data = self::lang::compile(&contents, &self.envs)?;
+    let data = self::lang::compile(&contents, self)?;
     let root_dir = path.parent().unwrap_or(&Path::new("/")).to_path_buf();
 
     // check version requirements
@@ -215,21 +205,13 @@ impl Mold {
     }
 
     for (name, val) in data.vars {
-      let expanded_val = self.expand(&val, &self.vars, &self.defaults);
+      let expanded_val = self.expand(&val, &self.vars);
       self.vars.insert(name, expanded_val.into());
-    }
-
-    for (name, val) in data.defaults {
-      // don't insert if it already exists
-      if !self.defaults.contains_key(&name) {
-        let expanded_val = self.expand(&val, &self.vars, &self.defaults);
-        self.defaults.insert(name, expanded_val.into());
-      }
     }
 
     // if this file has a `dir` stmt, it overrides any other dir that was set
     if let Some(rel_path) = data.dir {
-      let expanded_path = self.expand(&rel_path, &self.vars, &self.defaults);
+      let expanded_path = self.expand(&rel_path, &self.vars);
       self.work_dir = Some(self.root_dir.join(expanded_path.to_string()));
     }
 
@@ -312,15 +294,6 @@ impl Mold {
     let mut vars = self.vars.clone();
     vars.extend(recipe.vars.clone());
 
-    // defaults prioritize the _file_ values, so it extends the _recipe_ values. this is because
-    // the defaults should only be assigned if no value exists yet, ie: the opposite of a var
-    // assignment; rather than the _last_ definition taking priority, the _first_ definition takes
-    // priority. because recipes are handled "after" files, the file value would already exist and
-    // would take priority. or something. I'm not sure if this behavior is correct at the moment
-    // but I'm rolling with it for now.
-    let mut defaults = recipe.defaults.clone();
-    defaults.extend(self.defaults.clone());
-
     // insert var for where this recipe's mold file lives
     if let Some(source) = self.sources.get(name) {
       vars.insert("MOLD_SOURCE".into(), source.to_string_lossy().into());
@@ -334,7 +307,7 @@ impl Mold {
     let mut commands = vec![];
 
     for command_str in &recipe.commands {
-      let args = self.build_args(command_str, &vars, &defaults)?;
+      let args = self.build_args(command_str, &vars)?;
 
       if args.is_empty() {
         continue;
@@ -344,7 +317,7 @@ impl Mold {
     }
 
     let work_dir = if let Some(rel_path) = &recipe.dir {
-      let expanded_path = self.expand(&rel_path, &vars, &defaults);
+      let expanded_path = self.expand(&rel_path, &vars);
       Some(self.root_dir.join(expanded_path.to_string()))
     } else {
       self.work_dir.clone()
@@ -365,31 +338,20 @@ impl Mold {
   }
 
   /// Perform variable expansion on a string
-  fn expand<'a>(
-    &self,
-    val: &'a str,
-    vars: &VarMap,
-    defaults: &VarMap,
-  ) -> std::borrow::Cow<'a, str> {
+  fn expand<'a>(&self, val: &'a str, vars: &VarMap) -> std::borrow::Cow<'a, str> {
     shellexpand::env_with_context_no_errors(val, |name| {
       vars
         .get(name)
         .map(std::string::ToString::to_string)
         .or_else(|| std::env::var(name).ok())
-        .or_else(|| defaults.get(name).map(std::string::ToString::to_string))
         .or_else(|| Some("".into()))
     })
   }
 
   /// Perform variable expansion on a string and return a list of arguments to
   /// pass to std::process::Command
-  fn build_args(
-    &self,
-    command: &str,
-    vars: &VarMap,
-    defaults: &VarMap,
-  ) -> Result<Vec<String>, Error> {
-    let expanded = self.expand(command, vars, defaults);
+  fn build_args(&self, command: &str, vars: &VarMap) -> Result<Vec<String>, Error> {
+    let expanded = self.expand(command, vars);
     Ok(shell_words::split(&expanded)?)
   }
 

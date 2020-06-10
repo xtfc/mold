@@ -205,16 +205,15 @@ fn parse(code: &str) -> Result<Vec<Statement>, Error> {
 }
 
 /// Given a &str of code and an EnvSet, compile it into a Moldfile
-pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Error> {
+pub fn compile(code: &str, mold: &mut super::Mold) -> Result<super::Moldfile, Error> {
   use Statement::*;
-  let statements = flatten(parse(code)?, envs)?;
+  let statements = flatten(parse(code)?, &mold.envs)?;
 
   let mut version = None;
   let mut dir = None;
   let mut includes = super::IncludeVec::new();
   let mut recipes = super::RecipeMap::new();
   let mut vars = super::VarMap::new();
-  let mut defaults = super::VarMap::new();
 
   for stmt in statements {
     match stmt {
@@ -238,13 +237,13 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
       }
 
       Default(name, value) => {
-        if !defaults.contains_key(&name) {
-          defaults.insert(name, value);
+        if !vars.contains_key(&name) && std::env::var(&name).is_err() {
+          vars.insert(name, value);
         }
       }
 
       Recipe(name, body) => {
-        recipes.insert(name, compile_recipe(body, envs)?);
+        recipes.insert(name, compile_recipe(body, mold)?);
       }
 
       Dir(path) => {
@@ -264,13 +263,15 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
     includes,
     recipes,
     vars,
-    defaults,
     dir,
   })
 }
 
 /// Given a Vec<Statement> and an EnvSet, compile it into a Recipe
-pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<super::Recipe, Error> {
+pub fn compile_recipe(
+  body: Vec<Statement>,
+  mold: &mut super::Mold,
+) -> Result<super::Recipe, Error> {
   use Statement::*;
 
   let mut help = None;
@@ -278,9 +279,8 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
   let mut commands = vec![];
   let mut requires = super::TargetSet::new();
   let mut vars = super::VarMap::new();
-  let mut defaults = super::VarMap::new();
 
-  let body = flatten(body, envs)?;
+  let body = flatten(body, &mold.envs)?;
 
   for stmt in body {
     match stmt {
@@ -297,8 +297,8 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
       }
 
       Default(name, value) => {
-        if !defaults.contains_key(&name) {
-          defaults.insert(name, value);
+        if !vars.contains_key(&name) && std::env::var(&name).is_err() {
+          vars.insert(name, value);
         }
       }
 
@@ -322,7 +322,6 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
     vars,
     dir,
     requires,
-    defaults,
   })
 }
 
