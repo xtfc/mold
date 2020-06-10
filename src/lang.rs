@@ -237,7 +237,10 @@ pub fn compile(code: &str, mold: &mut super::Mold) -> Result<super::Moldfile, Er
       }
 
       Default(name, value) => {
-        if !vars.contains_key(&name) && std::env::var(&name).is_err() {
+        if !vars.contains_key(&name)
+          && !mold.vars.contains_key(&name)
+          && std::env::var(&name).is_err()
+        {
           vars.insert(name, value);
         }
       }
