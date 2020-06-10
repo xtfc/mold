@@ -27,7 +27,7 @@ recipe_stmt = { "recipe" ~ name ~ "{" ~ recipe_body ~ "}" }
 require_stmt = { "require" ~ name }
 run_stmt = { ("run" | "$") ~ string }
 var_stmt = { "var" ~ name ~ "=" ~ string }
-default_stmt = { "default" ~ name ~ "=" ~ string }
+default_stmt = { "var" ~ name ~ ":=" ~ string }
 version_stmt = { "version" ~ string }
 
 // this is some weird stuff to avoid needing to use a precedence climber
