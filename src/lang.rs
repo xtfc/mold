@@ -70,6 +70,7 @@ pub enum Statement {
   Require(String),
   Run(String),
   Var(String, String),
+  Default(String, String),
   Version(String),
 }
 
@@ -106,6 +107,13 @@ impl Statement {
         let var_name = consume_name(&mut inner).unwrap();
         let value = consume_string(&mut inner).unwrap();
         Var(var_name, value)
+      }
+
+      default_stmt => {
+        let mut inner = pair.into_inner();
+        let var_name = consume_name(&mut inner).unwrap();
+        let value = consume_string(&mut inner).unwrap();
+        Default(var_name, value)
       }
 
       dir_stmt => Dir(single_string(pair)),
@@ -197,9 +205,9 @@ fn parse(code: &str) -> Result<Vec<Statement>, Error> {
 }
 
 /// Given a &str of code and an EnvSet, compile it into a Moldfile
-pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Error> {
+pub fn compile(code: &str, mold: &mut super::Mold) -> Result<super::Moldfile, Error> {
   use Statement::*;
-  let statements = flatten(parse(code)?, envs)?;
+  let statements = flatten(parse(code)?, &mold.envs)?;
 
   let mut version = None;
   let mut dir = None;
@@ -228,8 +236,17 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
         vars.insert(name, value);
       }
 
+      Default(name, value) => {
+        if !vars.contains_key(&name)
+          && !mold.vars.contains_key(&name)
+          && std::env::var(&name).is_err()
+        {
+          vars.insert(name, value);
+        }
+      }
+
       Recipe(name, body) => {
-        recipes.insert(name, compile_recipe(body, envs)?);
+        recipes.insert(name, compile_recipe(body, mold)?);
       }
 
       Dir(path) => {
@@ -254,16 +271,18 @@ pub fn compile(code: &str, envs: &super::EnvSet) -> Result<super::Moldfile, Erro
 }
 
 /// Given a Vec<Statement> and an EnvSet, compile it into a Recipe
-pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<super::Recipe, Error> {
+pub fn compile_recipe(
+  body: Vec<Statement>,
+  mold: &mut super::Mold,
+) -> Result<super::Recipe, Error> {
   use Statement::*;
 
   let mut help = None;
   let mut dir = None;
   let mut commands = vec![];
   let mut requires = super::TargetSet::new();
-  let mut vars = super::VarMap::new();
 
-  let body = flatten(body, envs)?;
+  let body = flatten(body, &mold.envs)?;
 
   for stmt in body {
     match stmt {
@@ -275,10 +294,6 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
         dir = Some(s);
       }
 
-      Var(name, value) => {
-        vars.insert(name, value);
-      }
-
       Run(cmd) => {
         commands.push(cmd);
       }
@@ -287,7 +302,7 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
         requires.insert(recipe);
       }
 
-      If(_, _) | Version(_) | Import(_, _) | Recipe(_, _) => {
+      If(_, _) | Version(_) | Import(_, _) | Recipe(_, _) | Var(_, _) | Default(_, _) => {
         unreachable!();
       }
     }
@@ -296,7 +311,6 @@ pub fn compile_recipe(body: Vec<Statement>, envs: &super::EnvSet) -> Result<supe
   Ok(super::Recipe {
     help,
     commands,
-    vars,
     dir,
     requires,
   })

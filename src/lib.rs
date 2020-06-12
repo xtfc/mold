@@ -54,7 +54,7 @@ pub struct Mold {
   /// Working directory
   ///
   /// This is overridden by a recipe's `dir`
-  pub work_dir: Option<PathBuf>,
+  pub work_dir: Option<String>,
 }
 
 /// An external module included for reuse
@@ -77,9 +77,6 @@ pub struct Recipe {
 
   /// The command to execute
   pub commands: Vec<String>,
-
-  /// A list of environment variables
-  pub vars: VarMap,
 
   /// A list of prerequisite recipes
   pub requires: TargetSet,
@@ -159,7 +156,7 @@ impl Mold {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
 
-    let data = self::lang::compile(&contents, &self.envs)?;
+    let data = self::lang::compile(&contents, self)?;
     let root_dir = path.parent().unwrap_or(&Path::new("/")).to_path_buf();
 
     // check version requirements
@@ -187,8 +184,7 @@ impl Mold {
 
       self.recipes.entry(new_key.clone()).or_insert(new_recipe);
 
-      // keep track of where this recipe came from so it can use things from
-      // its repo
+      // keep track of where this recipe came from so it can use things from its repo
       self.sources.entry(new_key).or_insert(root_dir.clone());
     }
 
@@ -204,15 +200,11 @@ impl Mold {
       self.open(&filepath, &include.prefix)?;
     }
 
-    for (name, val) in data.vars {
-      let expanded_val = self.expand(&val, &self.vars);
-      self.vars.insert(name, expanded_val.into());
-    }
+    self.vars.extend(data.vars);
 
     // if this file has a `dir` stmt, it overrides any other dir that was set
     if let Some(rel_path) = data.dir {
-      let expanded_path = self.expand(&rel_path, &self.vars);
-      self.work_dir = Some(self.root_dir.join(expanded_path.to_string()));
+      self.work_dir = Some(rel_path);
     }
 
     Ok(())
@@ -269,7 +261,7 @@ impl Mold {
   /// Try to locate a file or a directory, opening it if found
   pub fn discover(dir: &Path, file: Option<PathBuf>) -> Result<PathBuf, Error> {
     // I think this should take Option<&Path> but I couldn't figure out how to
-    // please the compiler when I have an existing Option<PathBuf>, so...  I'm
+    // please the compiler when I have an existing Option<PathBuf>, so... I'm
     // just using .clone() on it.
     match file {
       Some(file) => Self::discover_file(&dir.join(file)),
@@ -289,10 +281,13 @@ impl Mold {
   fn build_task(&self, name: &str) -> Result<Task, Error> {
     let recipe = self.recipe(name)?;
 
-    let mut vars = self.vars.clone();
-    vars.extend(recipe.vars.clone());
+    // expand all variables
+    let mut vars = VarMap::new();
+    for (name, value) in &self.vars {
+      vars.insert(name.clone(), self.expand(value, &vars).into());
+    }
 
-    // insert var for where this recipe's mold file lives
+    // insert var for where this recipe's moldfile lives
     if let Some(source) = self.sources.get(name) {
       vars.insert("MOLD_SOURCE".into(), source.to_string_lossy().into());
     } else {
@@ -302,24 +297,28 @@ impl Mold {
       ));
     }
 
-    let mut commands = vec![];
+    // select the recipe's working dir if it's defined, otherwise select the Mold's working dir. in
+    // both cases, we want to expand the variables afterwards and join it with $MOLD_ROOT. if
+    // neither dir is defined, the command will default to the current working dir.
+    let work_dir = recipe
+      .dir
+      .clone()
+      .or_else(|| self.work_dir.clone())
+      .map(|raw_path| {
+        self
+          .root_dir
+          .join(self.expand(&raw_path, &vars).to_string())
+      });
 
+    // build the command strings to execute
+    let mut commands = vec![];
     for command_str in &recipe.commands {
       let args = self.build_args(command_str, &vars)?;
-
       if args.is_empty() {
         continue;
       }
-
       commands.push(args);
     }
-
-    let work_dir = if let Some(rel_path) = &recipe.dir {
-      let expanded_path = self.expand(&rel_path, &self.vars);
-      Some(self.root_dir.join(expanded_path.to_string()))
-    } else {
-      self.work_dir.clone()
-    };
 
     Ok(Task {
       name: name.into(),
