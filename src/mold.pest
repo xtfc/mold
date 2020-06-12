@@ -15,13 +15,22 @@ special = { "_" | "-" | "/" | ":" }
 name = @{ (alpha | digit | special)+ }
 
 main = _{ SOI ~ main_body ~ EOI }
-main_body = _{ (version_stmt | import_stmt | recipe_stmt | dir_stmt | var_stmt | default_stmt | if_stmt)* }
-recipe_body = _{ (help_stmt | if_recipe_stmt | dir_stmt | require_stmt | run_stmt )* }
+main_body = _{ (version_stmt | import_stmt | recipe_stmt | dir_stmt | var_stmt | default_stmt | if_block)* }
+recipe_body = _{ (help_stmt | if_recipe_block | dir_stmt | require_stmt | run_stmt )* }
 
 dir_stmt = { "dir" ~ string }
 help_stmt = { "help" ~ string }
+
+if_block = { if_stmt ~ elif_stmt* ~ else_stmt? }
+if_stmt = { "if " ~ expr ~ "{" ~ main_body ~ "}"}
+elif_stmt = { "elif" ~ expr ~ "{" ~ main_body ~ "}" }
+else_stmt = { "else" ~ "{" ~ main_body ~ "}" }
+
+if_recipe_block = { if_recipe_stmt ~ elif_recipe_stmt* ~ else_recipe_stmt? }
 if_recipe_stmt = { "if " ~ expr ~ "{" ~ recipe_body ~ "}" }
-if_stmt = { "if " ~ expr ~ "{" ~ main_body ~ "}" }
+elif_recipe_stmt = { "elif " ~ expr ~ "{" ~ recipe_body ~ "}" }
+else_recipe_stmt = { "else " ~ "{" ~ recipe_body ~ "}" }
+
 import_stmt = { "import" ~ string ~ ("as" ~ name)? }
 recipe_stmt = { "recipe" ~ name ~ "{" ~ recipe_body ~ "}" }
 require_stmt = { "require" ~ name }
