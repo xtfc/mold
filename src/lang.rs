@@ -347,7 +347,6 @@ pub fn compile_recipe(
 /// work as expected.
 pub fn flatten(body: Vec<Statement>, envs: &super::EnvSet) -> Result<Vec<Statement>, Error> {
   let mut ret = vec![];
-
   for stmt in body {
     match stmt {
       // IfBlock is the only conditional structure we flatten, and it should only ever contain a
@@ -381,4 +380,61 @@ pub fn flatten(body: Vec<Statement>, envs: &super::EnvSet) -> Result<Vec<Stateme
   }
 
   Ok(ret)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::path::Path;
+
+  #[test]
+  fn test_unescape() {
+    assert_eq!(unescape(""), "");
+    assert_eq!(unescape("\\n"), "\n");
+    assert_eq!(unescape("\\x"), "x");
+    assert_eq!(unescape("\\r\\n\\t\\a"), "\r\n\ta");
+  }
+
+  #[test]
+  fn test_flatten() {
+    let ib = vec![Statement::IfBlock(vec![Statement::If(
+      Expr::Atom("linux".to_string()),
+      vec![Statement::Recipe("recipe1".to_string(), vec![])],
+    )])];
+    let mut es = super::super::EnvSet::new();
+
+    assert_eq!(flatten(ib.to_vec(), &es).unwrap().len(), 0);
+
+    es.insert("linux".to_string());
+    assert_eq!(
+      flatten(ib.to_vec(), &es).unwrap(),
+      vec![Statement::Recipe("recipe1".to_string(), vec![])]
+    );
+  }
+
+  #[test]
+  fn test_compile() {
+    let mut mold = super::super::Mold {
+      root_dir: Path::new(".").to_path_buf(),
+      mold_dir: Path::new(".").to_path_buf(),
+      remotes: vec![],
+      envs: super::super::EnvSet::new(),
+      recipes: super::super::RecipeMap::new(),
+      sources: super::super::SourceMap::new(),
+      vars: super::super::VarMap::new(),
+      work_dir: None,
+    };
+
+    let result = compile(
+      r#"version "0.6"
+      recipe hi {
+      }
+      "#,
+      &mut mold,
+    )
+    .unwrap();
+
+    assert_eq!(result.version, "0.6");
+    assert_eq!(result.recipes.len(), 1);
+  }
 }
