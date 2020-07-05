@@ -43,7 +43,7 @@ pub struct Args {
   #[structopt(long = "clone")]
   pub clone: bool,
 
-  /// Download all remote data
+  /// Explain commands to be run rather than executing them
   #[structopt(long = "explain", short = "x")]
   pub explain: bool,
 
