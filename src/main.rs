@@ -43,6 +43,10 @@ pub struct Args {
   #[structopt(long = "clone")]
   pub clone: bool,
 
+  /// Output a shell source-able listing of variables
+  #[structopt(long = "vars")]
+  pub vars: bool,
+
   /// Explain commands to be run rather than executing them
   #[structopt(long = "explain", short = "x")]
   pub explain: bool,
@@ -85,6 +89,12 @@ fn run(args: Args) -> Result<(), Error> {
   // early return if we passed a --update
   if args.update {
     return mold.update_all();
+  }
+
+  // list all variables if they're set
+  if args.vars {
+    mold.sh_vars()?;
+    return Ok(());
   }
 
   // early return and print help if we didn't pass any targets

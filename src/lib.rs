@@ -453,6 +453,20 @@ impl Mold {
 
     Ok(())
   }
+
+  /// Print all variables in a shell format
+  pub fn sh_vars(&self) -> Result<(), Error> {
+    // expand all variables
+    // expanded values are stored in this map so they can be used in later expansions
+    let mut vars = VarMap::new();
+    for (name, value) in &self.vars {
+      let expanded_value = self.expand(value, &vars);
+      println!("export {}={}", name, shell_words::quote(&expanded_value));
+      vars.insert(name.clone(), expanded_value.into());
+    }
+
+    Ok(())
+  }
 }
 
 /// An instantiation of a recipe ready for execution
