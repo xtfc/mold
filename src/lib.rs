@@ -1,3 +1,4 @@
+mod cargo;
 pub mod lang;
 pub mod remote;
 pub mod util;
