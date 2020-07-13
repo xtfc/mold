@@ -3,11 +3,11 @@ use std::hash::Hash;
 use std::hash::Hasher;
 
 pub fn hash_url_ref(url: &str, ref_: &str) -> String {
-  hash_string(&format!("{}@{}", url, ref_))
+    hash_string(&format!("{}@{}", url, ref_))
 }
 
 pub fn hash_string(string: &str) -> String {
-  let mut hasher = DefaultHasher::new();
-  string.hash(&mut hasher);
-  format!("{:016x}", hasher.finish())
+    let mut hasher = DefaultHasher::new();
+    string.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
