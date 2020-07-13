@@ -2,6 +2,10 @@ name: "Rust"
 
 on: ["push"]
 
+# sucks that it's so hard to self-host this CI stuff because of version pinning
+# during releases, since Mold was kinda designed to make CI jobs a lot easier
+# to write... oh well!
+
 jobs:
   build:
     name: "Standard Linux Build"
@@ -25,13 +29,13 @@ jobs:
     - uses: "actions/checkout@v2"
 
     - name: "Check formatting"
-      run: "cargo run -- c/fmtcheck"
+      run: "cargo fmt -- --check"
 
     - name: "Check linting"
-      run: "cargo run -- c/lint"
+      run: "cargo clippy -- -D warnings"
 
     - name: "Run tests"
-      run: "cargo run -- c/test"
+      run: "cargo test"
 
   linux:
     name: "Static Linux Build"
@@ -40,7 +44,7 @@ jobs:
     - uses: "actions/checkout@v2"
 
     - name: "Build static binary"
-      run: "cargo run -- staticbuild"
+      run: "sh mold/staticbuild.sh"
 
     - name: "Upload artifact"
       uses: "actions/upload-artifact@v1"

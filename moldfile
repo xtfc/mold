@@ -1,4 +1,4 @@
-version "0.6"
+version "0.7"
 import "github.com/xtfc/cargo.mold#0.6" as c/
 
 if linux {
