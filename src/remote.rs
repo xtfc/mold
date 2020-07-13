@@ -1,10 +1,9 @@
+use super::cargo::with_authentication;
 use super::util;
 use colored::*;
 use failure::Error;
 use git2::build::CheckoutBuilder;
 use git2::build::RepoBuilder;
-use git2::Cred;
-use git2::CredentialType;
 use git2::FetchOptions;
 use git2::RemoteCallbacks;
 use git2::Repository;
@@ -16,83 +15,72 @@ use std::str::FromStr;
 use std::string::ToString;
 use url::Url;
 
-/// Find ssh credentials in ~/.ssh/id_rsa{,.pub}
-fn git_credentials_callback(
-  _user: &str,
-  _user_from_url: Option<&str>,
-  _cred: CredentialType,
-) -> Result<Cred, git2::Error> {
-  if let Some(home_dir) = dirs_next::home_dir() {
-    let pub_key = home_dir.join(".ssh/id_rsa.pub");
-    let priv_key = home_dir.join(".ssh/id_rsa");
-    let credentials = Cred::ssh_key("git", Some(&pub_key), &priv_key, None)
-      .expect("Could not create credentials object");
-
-    Ok(credentials)
-  } else {
-    Err(git2::Error::from_str("Couldn't locate home directory"))
-  }
-}
-
-fn fetch_options<'a>() -> FetchOptions<'a> {
-  // establish credentials
-  let mut callbacks = RemoteCallbacks::new();
-  callbacks.credentials(git_credentials_callback);
-
-  // build fetch opts
-  let mut fetch = FetchOptions::new();
-  fetch.remote_callbacks(callbacks);
-
-  fetch
-}
-
 /// Clone a git repository
 fn pull(url: &str, path: &Path) -> Result<(), Error> {
-  // start spinner
-  let label = format!("{} {}...", "Cloning".green(), url);
-  let spinner = Spinner::new(Spinners::Dots, label);
+  let config = git2::Config::open_default()?;
 
-  // clone repo
-  let fetch = fetch_options();
-  RepoBuilder::new().fetch_options(fetch).clone(url, path)?;
+  with_authentication(url, &config, |creds| {
+    // start spinner
+    let label = format!("{} {}...", "Cloning".green(), url);
+    let spinner = Spinner::new(Spinners::Dots, label);
 
-  // finish spinner
-  spinner.stop();
-  println!();
-  Ok(())
+    // prep callbacks
+    let mut callbacks = RemoteCallbacks::new();
+    callbacks.credentials(creds);
+    let mut fetch = FetchOptions::new();
+    fetch.remote_callbacks(callbacks);
+
+    // clone repo
+    RepoBuilder::new().fetch_options(fetch).clone(url, path)?;
+
+    // finish spinner
+    spinner.stop();
+    println!();
+    Ok(())
+  })
 }
 
 fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
-  // start spinner
-  let label = format!("{} {} to {}...", "Updating".green(), path.display(), ref_);
-  let spinner = Spinner::new(Spinners::Dots, label);
+  let config = git2::Config::open_default()?;
 
-  // locate existing repo
-  let repo = Repository::discover(path)?;
-  let mut remote = repo.find_remote("origin")?;
+  // FIXME does this matter that it's got no URL?
+  with_authentication("", &config, |creds| {
+    // start spinner
+    let label = format!("{} {} to {}...", "Updating".green(), path.display(), ref_);
+    let spinner = Spinner::new(Spinners::Dots, label);
 
-  // fetch ref
-  let mut fetch = fetch_options();
-  remote.fetch(&[ref_], Some(&mut fetch), None)?;
+    // locate existing repo
+    let repo = Repository::discover(path)?;
+    let mut remote = repo.find_remote("origin")?;
 
-  // checkout the appropriate ref
-  let tag_name = format!("tags/{}", ref_);
-  let branch_name = format!("origin/{}", ref_);
-  let object = repo
-    .revparse_single(&tag_name)
-    .or_else(|_| repo.revparse_single(&branch_name))
-    .map_err(|_| failure::format_err!("Unable to locate ref '{}'", ref_.red()))?;
-  repo.set_head_detached(object.id())?;
+    // prep callbacks
+    let mut callbacks = RemoteCallbacks::new();
+    callbacks.credentials(creds);
+    let mut fetch = FetchOptions::new();
+    fetch.remote_callbacks(callbacks);
 
-  // force checkout
-  let mut checkout = CheckoutBuilder::new();
-  checkout.force();
-  repo.checkout_head(Some(&mut checkout))?;
+    // fetch ref
+    remote.fetch(&[ref_], Some(&mut fetch), None)?;
 
-  // finish spinner
-  spinner.stop();
-  println!();
-  Ok(())
+    // checkout the appropriate ref
+    let tag_name = format!("tags/{}", ref_);
+    let branch_name = format!("origin/{}", ref_);
+    let object = repo
+      .revparse_single(&tag_name)
+      .or_else(|_| repo.revparse_single(&branch_name))
+      .map_err(|_| failure::format_err!("Unable to locate ref '{}'", ref_.red()))?;
+    repo.set_head_detached(object.id())?;
+
+    // force checkout
+    let mut checkout = CheckoutBuilder::new();
+    checkout.force();
+    repo.checkout_head(Some(&mut checkout))?;
+
+    // finish spinner
+    spinner.stop();
+    println!();
+    Ok(())
+  })
 }
 
 #[derive(Debug, Clone)]
