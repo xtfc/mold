@@ -5,18 +5,7 @@
 use failure::Error;
 use failure::ResultExt;
 use std::env;
-
-fn get_ssh_creds(path: &str) -> Result<git2::Cred, git2::Error> {
-    if let Some(home_dir) = dirs_next::home_dir() {
-        let priv_key = home_dir.join(path);
-        let credentials = git2::Cred::ssh_key("git", None, &priv_key, None)
-            .expect("Could not create credentials object");
-
-        Ok(credentials)
-    } else {
-        Err(git2::Error::from_str("Couldn't locate home directory"))
-    }
-}
+use std::path::PathBuf;
 
 /// Prepare the authentication callbacks for cloning a git repository.
 ///
@@ -56,8 +45,18 @@ where
     let mut cred_helper_bad = None;
     let mut ssh_agent_attempts = Vec::new();
     let mut any_attempts = false;
-    let mut tried_rsa = false;
-    let mut tried_ed25519 = false;
+    let mut check_rsa = false;
+    let mut check_ed25519 = false;
+    let mut rsa_key = PathBuf::from("/root/.ssh/id_rsa");
+    let mut ed25519_key = PathBuf::from("/root/.ssh/id_ed25519");
+
+    if let Some(home_dir) = dirs_next::home_dir() {
+        rsa_key = home_dir.join(".ssh/id_rsa");
+        check_rsa = rsa_key.exists();
+
+        ed25519_key = home_dir.join(".ssh/id_ed25519");
+        check_ed25519 = ed25519_key.exists();
+    }
 
     let mut res = f(&mut |url, username, allowed| {
         any_attempts = true;
@@ -95,22 +94,21 @@ where
         // Some), hence the unwrap() here. We try custom usernames down below.
         //
         // NOTE this is modified from original Cargo source code! Mold does not use the ssh-agent.
-        if allowed.contains(git2::CredentialType::SSH_KEY) && !tried_rsa {
-            // If ssh-agent authentication fails, libgit2 will keep
-            // calling this callback asking for other authentication
-            // methods to try. Make sure we only try ssh-agent once,
-            // to avoid looping forever.
-            tried_rsa = true;
-            return get_ssh_creds(".ssh/id_rsa");
-        }
 
-        if allowed.contains(git2::CredentialType::SSH_KEY) && !tried_ed25519 {
-            // If ssh-agent authentication fails, libgit2 will keep
+        if allowed.contains(git2::CredentialType::SSH_KEY) {
+            // If key authentication fails, libgit2 will keep
             // calling this callback asking for other authentication
-            // methods to try. Make sure we only try ssh-agent once,
+            // methods to try. Make sure we only try each key once,
             // to avoid looping forever.
-            tried_ed25519 = true;
-            return get_ssh_creds(".ssh/id_ed25519");
+            if check_ed25519 {
+                check_ed25519 = false;
+                return git2::Cred::ssh_key("git", None, &ed25519_key, None);
+            }
+
+            if check_rsa {
+                check_rsa = false;
+                return git2::Cred::ssh_key("git", None, &rsa_key, None);
+            }
         }
 
         // Sometimes libgit2 will ask for a username/password in plaintext. This
