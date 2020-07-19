@@ -110,7 +110,13 @@ impl Mold {
         let mold_dir = root_dir.join(".mold");
 
         if !mold_dir.is_dir() {
-            fs::create_dir(&mold_dir)?;
+            fs::create_dir(&mold_dir).map_err(|err| {
+                failure::format_err!(
+                    "Could not create directory {}: {}",
+                    mold_dir.display().to_string().red(),
+                    err
+                )
+            })?;
         }
 
         let vars = indexmap! {
@@ -120,9 +126,25 @@ impl Mold {
 
         let envs = envs.into_iter().collect();
 
+        let root_dir = fs::canonicalize(&root_dir).map_err(|err| {
+            failure::format_err!(
+                "Couldn't canonicalize directory {}: {}",
+                root_dir.display().to_string().red(),
+                err
+            )
+        })?;
+
+        let mold_dir = fs::canonicalize(&mold_dir).map_err(|err| {
+            failure::format_err!(
+                "Couldn't canonicalize directory {}: {}",
+                mold_dir.display().to_string().red(),
+                err
+            )
+        })?;
+
         let mut mold = Mold {
-            root_dir: fs::canonicalize(root_dir)?,
-            mold_dir: fs::canonicalize(mold_dir)?,
+            root_dir,
+            mold_dir,
             recipes: RecipeMap::new(),
             sources: SourceMap::new(),
             remotes: vec![],
@@ -142,7 +164,14 @@ impl Mold {
         let mold_dir = root_dir.join(".mold");
 
         if mold_dir.is_dir() {
-            fs::remove_dir_all(&mold_dir)?;
+            fs::remove_dir_all(&mold_dir).map_err(|err| {
+                failure::format_err!(
+                    "Couldn't remove directory {}: {}",
+                    mold_dir.display().to_string().red(),
+                    err
+                )
+            })?;
+
             println!("{:>12} {}", "Deleted".red(), mold_dir.display());
         } else {
             println!("{:>12}", "Clean!".green());
@@ -153,19 +182,47 @@ impl Mold {
 
     /// Given a path, load the file into the current application
     fn open(&mut self, path: &Path, prefix: &str) -> Result<(), Error> {
-        let mut file = fs::File::open(path)?;
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
+        let mut file = fs::File::open(path).map_err(|err| {
+            failure::format_err!(
+                "Couldn't open {}: {}",
+                path.display().to_string().red(),
+                err
+            )
+        })?;
 
-        let data = self::lang::compile(&contents, self)?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).map_err(|err| {
+            failure::format_err!(
+                "Couldn't read {}: {}",
+                path.display().to_string().red(),
+                err
+            )
+        })?;
+
+        let data = self::lang::compile(&contents, self).map_err(|err| {
+            failure::format_err!(
+                "Couldn't compile {}: {}",
+                path.display().to_string().red(),
+                err
+            )
+        })?;
+
         let root_dir = path.parent().unwrap_or(&Path::new("/")).to_path_buf();
 
         // check version requirements
         let self_version = Version::parse(clap::crate_version!())?;
-        let target_version = VersionReq::parse(&data.version)?;
+        let target_version = VersionReq::parse(&data.version).map_err(|err| {
+            failure::format_err!(
+                "Couldn't parse version requirement {} from {}: {}",
+                data.version.red(),
+                path.display().to_string().red(),
+                err
+            )
+        })?;
+
         if !target_version.matches(&self_version) {
             return Err(failure::format_err!(
-                "Incompatible versions: file {} requires version {}, but current version is {}",
+                "{} requires version {}, but mold version is {}",
                 path.to_str().unwrap().blue(),
                 target_version.to_string().green(),
                 self_version.to_string().red()
@@ -191,8 +248,13 @@ impl Mold {
 
         for include in data.includes {
             if !include.remote.exists(&self.mold_dir) {
-                include.remote.pull(&self.mold_dir)?;
-                include.remote.checkout(&self.mold_dir)?;
+                include.remote.pull(&self.mold_dir).map_err(|err| {
+                    failure::format_err!("Couldn't clone {}: {}", include.remote.url.red(), err)
+                })?;
+
+                include.remote.checkout(&self.mold_dir).map_err(|err| {
+                    failure::format_err!("Couldn't checkout {}: {}", include.remote.ref_.red(), err)
+                })?;
             }
 
             let path = include.remote.path(&self.mold_dir);
@@ -217,6 +279,8 @@ impl Mold {
     /// will walk the entire file tree up to root, looking for a file with the
     /// given name.
     fn discover_file(name: &Path) -> Result<PathBuf, Error> {
+        log::debug!("Discovering file {}", name.display());
+
         // if it's an absolute path, we don't need to walk up the tree.
         if name.is_absolute() {
             if name.is_file() {
@@ -224,22 +288,26 @@ impl Mold {
             } else if name.exists() {
                 let name = format!("{}", name.display());
                 return Err(failure::format_err!(
-                    "'{}' exists, but is not a file",
+                    "{} exists, but is not a file",
                     name.red()
                 ));
             } else {
                 let name = format!("{}", name.display());
-                return Err(failure::format_err!("File '{}' does not exist", name.red()));
+                return Err(failure::format_err!("{} does not exist", name.red()));
             }
         }
 
         // walk up the tree until we find the file or hit the root
-        let mut path = std::env::current_dir()?;
+        let mut path = std::env::current_dir()
+            .map_err(|err| failure::format_err!("Couldn't identify working dir: {}", err))?;
+
+        log::debug!("Checking {}", path.join(name).display());
         while !path.join(name).is_file() {
             path.pop();
             if path.parent().is_none() {
                 break;
             }
+            log::debug!("Checking {}", path.join(name).display());
         }
 
         path.push(name);
@@ -248,15 +316,15 @@ impl Mold {
             Ok(path)
         } else {
             let name = format!("{}", name.display());
-            Err(failure::format_err!("Unable to locate a '{}'", name.red()))
+            Err(failure::format_err!("Couldn't discover {}", name.red()))
         }
     }
 
     /// Search a directory for default moldfile
     fn discover_dir(name: &Path) -> Result<PathBuf, Error> {
-        let path = Self::discover_file(&name.join("moldfile"))
-            .map_err(|_| failure::format_err!("Couldn't locate {}", "moldfile".red()))?;
-        Ok(path)
+        log::debug!("Discovering directory {}", name.display());
+        let path = name.join("moldfile");
+        Self::discover_file(&path)
     }
 
     /// Try to locate a file or a directory, opening it if found
@@ -274,7 +342,7 @@ impl Mold {
     fn recipe(&self, name: &str) -> Result<&Recipe, Error> {
         self.recipes
             .get(name)
-            .ok_or_else(|| failure::format_err!("Couldn't locate recipe '{}'", name.red()))
+            .ok_or_else(|| failure::format_err!("Couldn't find recipe {}", name.red()))
     }
 
     /// Construct a Task instance from a recipe name
@@ -292,7 +360,7 @@ impl Mold {
             vars.insert("MOLD_SOURCE".into(), source.to_string_lossy().into());
         } else {
             return Err(failure::format_err!(
-                "Couldn't locate source for recipe '{}'",
+                "Couldn't find source repository for {}",
                 name.red()
             ));
         }
@@ -347,7 +415,9 @@ impl Mold {
     /// pass to std::process::Command
     fn build_args(&self, command: &str, vars: &VarMap) -> Result<Vec<String>, Error> {
         let expanded = self.expand(command, vars);
-        Ok(shell_words::split(&expanded)?)
+        Ok(shell_words::split(&expanded).map_err(|err| {
+            failure::format_err!("Couldn't shell split string {}: {}", expanded.red(), err)
+        })?)
     }
 
     /// Find *all* dependencies for a given set of target recipes
@@ -377,6 +447,9 @@ impl Mold {
             let path = remote.path(&self.mold_dir);
             if path.is_dir() {
                 remote.checkout(&self.mold_dir)?;
+                remote.checkout(&self.mold_dir).map_err(|err| {
+                    failure::format_err!("Couldn't checkout {}: {}", remote.ref_.red(), err)
+                })?;
             }
         }
 
@@ -478,7 +551,7 @@ struct Task {
 impl Task {
     /// Populate a std::process::Command and spawn it
     fn execute(self) -> Result<(), Error> {
-        for args in self.commands {
+        for args in &self.commands {
             if args.is_empty() {
                 continue;
             }
@@ -496,12 +569,38 @@ impl Task {
                 "mold".white(),
                 self.name.cyan(),
                 "$".green(),
-                shell_words::join(&args),
+                shell_words::join(args),
             );
 
-            let exit_status = command.spawn().and_then(|mut handle| handle.wait())?;
+            use std::io::ErrorKind;
+            let exit_status = command
+                .spawn()
+                .and_then(|mut handle| handle.wait())
+                .map_err(|err| match err.kind() {
+                    ErrorKind::NotFound => failure::format_err!(
+                        "Recipe {} failed because command {} was not found",
+                        self.name.red(),
+                        args[0].red()
+                    ),
+
+                    ErrorKind::PermissionDenied => failure::format_err!(
+                        "Recipe {} failed because you do not have permission to execute command {}",
+                        self.name.red(),
+                        args[0].red()
+                    ),
+
+                    _ => failure::format_err!(
+                        "Recipe {} failed due to an unknown OS error: {}",
+                        self.name.red(),
+                        err
+                    ),
+                })?;
+
             if !exit_status.success() {
-                return Err(failure::err_msg("Recipe returned non-zero exit status"));
+                return Err(failure::format_err!(
+                    "Recipe {} returned non-zero exit status",
+                    self.name.red()
+                ));
             }
         }
 
