@@ -8,6 +8,7 @@ authors = [
 edition = "2018"
 
 [dependencies]
+atty = "0.2"
 clap = "2.33"
 colored = "1.8"
 dirs-next = "1.0"
