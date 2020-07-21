@@ -21,7 +21,13 @@ fn pull(url: &str, path: &Path) -> Result<(), Error> {
 
     with_authentication(url, &config, |creds| {
         // start spinner
-        let label = format!("{} {}...", "Cloning".green(), url);
+        log::info!("git clone {} {}", url, path.display());
+        let label = format!(
+            "{} {} into {}...",
+            "Cloning".green(),
+            url.yellow(),
+            path.display().to_string().yellow()
+        );
         let spinner = Spinner::new(Spinners::Dots, label);
 
         // prep callbacks
@@ -46,7 +52,12 @@ fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
     // FIXME does this matter that it's got no URL?
     with_authentication("", &config, |creds| {
         // start spinner
-        let label = format!("{} {} to {}...", "Updating".green(), path.display(), ref_);
+        let label = format!(
+            "{} {} to {}...",
+            "Updating".green(),
+            path.display().to_string().yellow(),
+            ref_.yellow()
+        );
         let spinner = Spinner::new(Spinners::Dots, label);
 
         // locate existing repo
