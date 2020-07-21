@@ -19,14 +19,15 @@ fn with_spinner<F>(label: String, f: F) -> Result<(), Error>
 where
     F: FnOnce() -> Result<(), Error>,
 {
-    if atty::is(atty::Stream::Stdout) {
+    // spinners don't work on Windows or without a TTY
+    if atty::is(atty::Stream::Stdout) && std::env::consts::FAMILY != "windows" {
         let spinner = Spinner::new(Spinners::Dots, label);
         let res = f();
-        // finish spinner
         spinner.stop();
         println!();
         res
     } else {
+        // without a spinner, just print the line.
         println!("{}", label);
         f()
     }
