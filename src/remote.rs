@@ -15,6 +15,23 @@ use std::str::FromStr;
 use std::string::ToString;
 use url::Url;
 
+fn with_spinner<F>(label: String, f: F) -> Result<(), Error>
+where
+    F: FnOnce() -> Result<(), Error>,
+{
+    if atty::is(atty::Stream::Stdout) {
+        let spinner = Spinner::new(Spinners::Dots, label);
+        let res = f();
+        // finish spinner
+        spinner.stop();
+        println!();
+        res
+    } else {
+        println!("{}", label);
+        f()
+    }
+}
+
 /// Clone a git repository
 fn pull(url: &str, path: &Path) -> Result<(), Error> {
     let config = git2::Config::open_default()?;
@@ -28,21 +45,18 @@ fn pull(url: &str, path: &Path) -> Result<(), Error> {
             url.yellow(),
             path.display().to_string().yellow()
         );
-        let spinner = Spinner::new(Spinners::Dots, label);
 
-        // prep callbacks
-        let mut callbacks = RemoteCallbacks::new();
-        callbacks.credentials(creds);
-        let mut fetch = FetchOptions::new();
-        fetch.remote_callbacks(callbacks);
+        with_spinner(label, || {
+            // prep callbacks
+            let mut callbacks = RemoteCallbacks::new();
+            callbacks.credentials(creds);
+            let mut fetch = FetchOptions::new();
+            fetch.remote_callbacks(callbacks);
 
-        // clone repo
-        RepoBuilder::new().fetch_options(fetch).clone(url, path)?;
-
-        // finish spinner
-        spinner.stop();
-        println!();
-        Ok(())
+            // clone repo
+            RepoBuilder::new().fetch_options(fetch).clone(url, path)?;
+            Ok(())
+        })
     })
 }
 
@@ -58,39 +72,37 @@ fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
             path.display().to_string().yellow(),
             ref_.yellow()
         );
-        let spinner = Spinner::new(Spinners::Dots, label);
 
-        // locate existing repo
-        let repo = Repository::discover(path)?;
-        let mut remote = repo.find_remote("origin")?;
+        with_spinner(label, || {
+            // locate existing repo
+            let repo = Repository::discover(path)?;
+            let mut remote = repo.find_remote("origin")?;
 
-        // prep callbacks
-        let mut callbacks = RemoteCallbacks::new();
-        callbacks.credentials(creds);
-        let mut fetch = FetchOptions::new();
-        fetch.remote_callbacks(callbacks);
+            // prep callbacks
+            let mut callbacks = RemoteCallbacks::new();
+            callbacks.credentials(creds);
+            let mut fetch = FetchOptions::new();
+            fetch.remote_callbacks(callbacks);
 
-        // fetch ref
-        remote.fetch(&[ref_], Some(&mut fetch), None)?;
+            // fetch ref
+            remote.fetch(&[ref_], Some(&mut fetch), None)?;
 
-        // checkout the appropriate ref
-        let tag_name = format!("tags/{}", ref_);
-        let branch_name = format!("origin/{}", ref_);
-        let object = repo
-            .revparse_single(&tag_name)
-            .or_else(|_| repo.revparse_single(&branch_name))
-            .map_err(|_| failure::format_err!("Unable to locate ref '{}'", ref_.red()))?;
-        repo.set_head_detached(object.id())?;
+            // checkout the appropriate ref
+            let tag_name = format!("tags/{}", ref_);
+            let branch_name = format!("origin/{}", ref_);
+            let object = repo
+                .revparse_single(&tag_name)
+                .or_else(|_| repo.revparse_single(&branch_name))
+                .map_err(|_| failure::format_err!("Unable to locate ref '{}'", ref_.red()))?;
+            repo.set_head_detached(object.id())?;
 
-        // force checkout
-        let mut checkout = CheckoutBuilder::new();
-        checkout.force();
-        repo.checkout_head(Some(&mut checkout))?;
+            // force checkout
+            let mut checkout = CheckoutBuilder::new();
+            checkout.force();
+            repo.checkout_head(Some(&mut checkout))?;
 
-        // finish spinner
-        spinner.stop();
-        println!();
-        Ok(())
+            Ok(())
+        })
     })
 }
 
