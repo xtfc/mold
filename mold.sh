@@ -25,7 +25,7 @@ if [ "$PLATFORM" = "windows" ]; then
   EXT=".exe"
 fi
 
-VER="0.7.0-rc1"
+VER="0.7.0"
 EXE="./.mold-$VER"
 URL="https://github.com/xtfc/mold/releases/download/v$VER/mold-v$VER-$PLATFORM$EXT"
 
