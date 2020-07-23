@@ -202,7 +202,7 @@ impl Remote {
 
         with_spinner(label, || {
             // first attempt to pull with an implicit https://
-            func(&format!("https://{}", self.url), &path).or_else(|_| pull(&self.url, &path))
+            func(&format!("https://{}", self.url), &path).or_else(|_| func(&self.url, &path))
         })
     }
 
