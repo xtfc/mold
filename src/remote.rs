@@ -75,6 +75,10 @@ fn pull(url: &str, path: &Path) -> Result<(), Error> {
 fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
     let config = git2::Config::open_default()?;
 
+    if !path.is_dir() {
+        return Err(failure::format_err!("{} does not exist", path.display()));
+    }
+
     // FIXME does this matter that it's got no URL?
     with_authentication("", &config, |creds| {
         log::info!("cd {} && libgit2 checkout {}", path.display(), ref_);
@@ -119,12 +123,15 @@ fn pull_git(url: &str, path: &Path) -> Result<(), Error> {
 }
 
 fn checkout_git(path: &Path, ref_: &str) -> Result<(), Error> {
-    // start spinner
     log::info!(
         "cd {} && git fetch --all --prune && git checkout {}",
         path.display(),
         ref_
     );
+
+    if !path.is_dir() {
+        return Err(failure::format_err!("{} does not exist", path.display()));
+    }
 
     let mut cmd = new_cmd();
     cmd.args(&["fetch", "--all", "--prune"]).current_dir(path);
