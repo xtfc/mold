@@ -59,26 +59,16 @@ fn pull(url: &str, path: &Path) -> Result<(), Error> {
     let config = git2::Config::open_default()?;
 
     with_authentication(url, &config, |creds| {
-        // start spinner
         log::info!("libgit2 clone {} {}", url, path.display());
-        let label = format!(
-            "{} {} into {}...",
-            "Cloning".green(),
-            url.yellow(),
-            path.display().to_string().yellow()
-        );
+        // prep callbacks
+        let mut callbacks = RemoteCallbacks::new();
+        callbacks.credentials(creds);
+        let mut fetch = FetchOptions::new();
+        fetch.remote_callbacks(callbacks);
 
-        with_spinner(label, || {
-            // prep callbacks
-            let mut callbacks = RemoteCallbacks::new();
-            callbacks.credentials(creds);
-            let mut fetch = FetchOptions::new();
-            fetch.remote_callbacks(callbacks);
-
-            // clone repo
-            RepoBuilder::new().fetch_options(fetch).clone(url, path)?;
-            Ok(())
-        })
+        // clone repo
+        RepoBuilder::new().fetch_options(fetch).clone(url, path)?;
+        Ok(())
     })
 }
 
@@ -87,63 +77,45 @@ fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
 
     // FIXME does this matter that it's got no URL?
     with_authentication("", &config, |creds| {
-        // start spinner
-        let label = format!(
-            "{} {} to {}...",
-            "Updating".green(),
-            path.display().to_string().yellow(),
-            ref_.yellow()
-        );
+        log::info!("cd {} && libgit2 checkout {}", path.display(), ref_);
+        // locate existing repo
+        let repo = Repository::discover(path)?;
+        let mut remote = repo.find_remote("origin")?;
 
-        with_spinner(label, || {
-            log::info!("cd {} && libgit2 checkout {}", path.display(), ref_);
-            // locate existing repo
-            let repo = Repository::discover(path)?;
-            let mut remote = repo.find_remote("origin")?;
+        // prep callbacks
+        let mut callbacks = RemoteCallbacks::new();
+        callbacks.credentials(creds);
+        let mut fetch = FetchOptions::new();
+        fetch.remote_callbacks(callbacks);
 
-            // prep callbacks
-            let mut callbacks = RemoteCallbacks::new();
-            callbacks.credentials(creds);
-            let mut fetch = FetchOptions::new();
-            fetch.remote_callbacks(callbacks);
+        // fetch ref
+        remote.fetch(&[ref_], Some(&mut fetch), None)?;
 
-            // fetch ref
-            remote.fetch(&[ref_], Some(&mut fetch), None)?;
+        // checkout the appropriate ref
+        let tag_name = format!("tags/{}", ref_);
+        let branch_name = format!("origin/{}", ref_);
+        let object = repo
+            .revparse_single(&tag_name)
+            .or_else(|_| repo.revparse_single(&branch_name))
+            .map_err(|_| failure::format_err!("Unable to locate ref '{}'", ref_.red()))?;
+        repo.set_head_detached(object.id())?;
 
-            // checkout the appropriate ref
-            let tag_name = format!("tags/{}", ref_);
-            let branch_name = format!("origin/{}", ref_);
-            let object = repo
-                .revparse_single(&tag_name)
-                .or_else(|_| repo.revparse_single(&branch_name))?;
-            repo.set_head_detached(object.id())?;
+        // force checkout
+        let mut checkout = CheckoutBuilder::new();
+        checkout.force();
+        repo.checkout_head(Some(&mut checkout))?;
 
-            // force checkout
-            let mut checkout = CheckoutBuilder::new();
-            checkout.force();
-            repo.checkout_head(Some(&mut checkout))?;
-
-            Ok(())
-        })
+        Ok(())
     })
 }
 
 fn pull_git(url: &str, path: &Path) -> Result<(), Error> {
     // start spinner
     log::info!("git clone {} {}", url, path.display());
-    let label = format!(
-        "{} {} into {}...",
-        "Cloning".green(),
-        url.yellow(),
-        path.display().to_string().yellow()
-    );
-
-    with_spinner(label, || {
-        let mut cmd = new_cmd();
-        cmd.arg("clone").arg(url).arg(path);
-        cmd.spawn().and_then(|mut handle| handle.wait())?;
-        Ok(())
-    })
+    let mut cmd = new_cmd();
+    cmd.arg("clone").arg(url).arg(path);
+    cmd.spawn().and_then(|mut handle| handle.wait())?;
+    Ok(())
 }
 
 fn checkout_git(path: &Path, ref_: &str) -> Result<(), Error> {
@@ -153,30 +125,22 @@ fn checkout_git(path: &Path, ref_: &str) -> Result<(), Error> {
         path.display(),
         ref_
     );
-    let label = format!(
-        "{} {} to {}...",
-        "Updating".green(),
-        path.display().to_string().yellow(),
-        ref_.yellow()
-    );
 
-    with_spinner(label, || {
-        let mut cmd = new_cmd();
-        cmd.args(&["fetch", "--all", "--prune"]).current_dir(path);
-        cmd.spawn().and_then(|mut handle| handle.wait())?;
+    let mut cmd = new_cmd();
+    cmd.args(&["fetch", "--all", "--prune"]).current_dir(path);
+    cmd.spawn().and_then(|mut handle| handle.wait())?;
 
-        let refs = vec![format!("tags/{}", ref_), format!("origin/{}", ref_)];
-        for target in refs {
-            if ref_exists(path, &target)? {
-                let mut command = new_cmd();
-                command.arg("checkout").arg(target).current_dir(path);
-                command.spawn().and_then(|mut handle| handle.wait())?;
-                break;
-            }
+    let refs = vec![format!("tags/{}", ref_), format!("origin/{}", ref_)];
+    for target in refs {
+        if ref_exists(path, &target)? {
+            let mut command = new_cmd();
+            command.arg("checkout").arg(target).current_dir(path);
+            command.spawn().and_then(|mut handle| handle.wait())?;
+            break;
         }
+    }
 
-        Ok(())
-    })
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -220,22 +184,32 @@ impl Remote {
 
     pub fn pull(&self, mold_dir: &Path, use_git: bool) -> Result<(), Error> {
         let path = self.path(mold_dir);
-        // first attempt to pull with an implicit https://
-        if use_git {
-            pull_git(&format!("https://{}", self.url), &path)
-                .or_else(|_| pull_git(&self.url, &path))
-        } else {
-            pull(&format!("https://{}", self.url), &path).or_else(|_| pull(&self.url, &path))
-        }
+        let func = if use_git { pull_git } else { pull };
+
+        let label = format!(
+            "{} {} into {}...",
+            "Cloning".green(),
+            self.url.yellow(),
+            path.display().to_string().yellow()
+        );
+
+        with_spinner(label, || {
+            // first attempt to pull with an implicit https://
+            func(&format!("https://{}", self.url), &path).or_else(|_| pull(&self.url, &path))
+        })
     }
 
     pub fn checkout(&self, mold_dir: &Path, use_git: bool) -> Result<(), Error> {
         let path = self.path(mold_dir);
-        if use_git {
-            checkout_git(&path, &self.ref_)
-        } else {
-            checkout(&path, &self.ref_)
-        }
+        let func = if use_git { checkout_git } else { checkout };
+        let label = format!(
+            "{} {} to {}...",
+            "Updating".green(),
+            path.display().to_string().yellow(),
+            self.ref_.yellow()
+        );
+
+        with_spinner(label, || func(&path, &self.ref_))
     }
 
     /// Parse a string into an Remote
