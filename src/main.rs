@@ -1,3 +1,4 @@
+use colored::*;
 use exitfailure::ExitFailure;
 use failure::Error;
 use mold::Mold;
@@ -79,7 +80,16 @@ fn run(args: Args) -> Result<(), Error> {
             format!("import \"{}\"\n", import)
         };
 
-        let mut file = std::fs::OpenOptions::new().append(true).open(filepath)?;
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&filepath)
+            .map_err(|err| {
+                failure::format_err!(
+                    "Couldn't open file {} for appending: {}",
+                    filepath.display().to_string().red(),
+                    err
+                )
+            })?;
         file.write_all(line.as_bytes())?;
         return Ok(());
     }
