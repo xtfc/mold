@@ -52,6 +52,10 @@ pub struct Args {
     #[structopt(long = "git")]
     pub git: bool,
 
+    /// Skip variable definitions in moldfiles
+    #[structopt(long = "no-vars")]
+    pub no_vars: bool,
+
     /// Explain commands to be run rather than executing them
     #[structopt(long = "explain", short = "x")]
     pub explain: bool,
@@ -98,7 +102,7 @@ fn run(args: Args) -> Result<(), Error> {
         return Ok(());
     }
 
-    let mold = Mold::init(&filepath, envs, args.git)?;
+    let mold = Mold::init(&filepath, envs, args.git, !args.no_vars)?;
 
     // early return if we passed a --update
     if args.update {
