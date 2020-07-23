@@ -48,6 +48,10 @@ pub struct Args {
     #[structopt(long = "vars")]
     pub vars: bool,
 
+    /// Use external git binary rather than libgit2
+    #[structopt(long = "git")]
+    pub git: bool,
+
     /// Explain commands to be run rather than executing them
     #[structopt(long = "explain", short = "x")]
     pub explain: bool,
@@ -94,7 +98,7 @@ fn run(args: Args) -> Result<(), Error> {
         return Ok(());
     }
 
-    let mold = Mold::init(&filepath, envs)?;
+    let mold = Mold::init(&filepath, envs, args.git)?;
 
     // early return if we passed a --update
     if args.update {

@@ -56,6 +56,9 @@ pub struct Mold {
     ///
     /// This is overridden by a recipe's `dir`
     pub work_dir: Option<String>,
+
+    /// Use external git binary rather than libgit2
+    pub use_git: bool,
 }
 
 /// An external module included for reuse
@@ -105,7 +108,7 @@ pub struct Moldfile {
 
 impl Mold {
     /// Create a new, empty application and import the given path into it
-    pub fn init(path: &Path, envs: Vec<String>) -> Result<Mold, Error> {
+    pub fn init(path: &Path, envs: Vec<String>, use_git: bool) -> Result<Mold, Error> {
         let root_dir = path.parent().unwrap_or(&Path::new("/")).to_path_buf();
         let mold_dir = root_dir.join(".mold");
 
@@ -151,6 +154,7 @@ impl Mold {
             work_dir: None,
             envs,
             vars,
+            use_git,
         };
 
         mold.open(path, "")?;
@@ -248,13 +252,23 @@ impl Mold {
 
         for include in data.includes {
             if !include.remote.exists(&self.mold_dir) {
-                include.remote.pull(&self.mold_dir).map_err(|err| {
-                    failure::format_err!("Couldn't clone {}: {}", include.remote.url.red(), err)
-                })?;
+                include
+                    .remote
+                    .pull(&self.mold_dir, self.use_git)
+                    .map_err(|err| {
+                        failure::format_err!("Couldn't clone {}: {}", include.remote.url.red(), err)
+                    })?;
 
-                include.remote.checkout(&self.mold_dir).map_err(|err| {
-                    failure::format_err!("Couldn't checkout {}: {}", include.remote.ref_.red(), err)
-                })?;
+                include
+                    .remote
+                    .checkout(&self.mold_dir, self.use_git)
+                    .map_err(|err| {
+                        failure::format_err!(
+                            "Couldn't checkout {}: {}",
+                            include.remote.ref_.red(),
+                            err
+                        )
+                    })?;
             }
 
             let path = include.remote.path(&self.mold_dir);
@@ -446,10 +460,11 @@ impl Mold {
         for remote in &self.remotes {
             let path = remote.path(&self.mold_dir);
             if path.is_dir() {
-                remote.checkout(&self.mold_dir)?;
-                remote.checkout(&self.mold_dir).map_err(|err| {
-                    failure::format_err!("Couldn't checkout {}: {}", remote.ref_.red(), err)
-                })?;
+                remote
+                    .checkout(&self.mold_dir, self.use_git)
+                    .map_err(|err| {
+                        failure::format_err!("Couldn't checkout {}: {}", remote.ref_.red(), err)
+                    })?;
             }
         }
 
