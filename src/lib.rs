@@ -59,6 +59,9 @@ pub struct Mold {
 
     /// Use external git binary rather than libgit2
     pub use_git: bool,
+
+    /// Skip variables when compiling moldfiles
+    pub use_vars: bool,
 }
 
 /// An external module included for reuse
@@ -108,7 +111,12 @@ pub struct Moldfile {
 
 impl Mold {
     /// Create a new, empty application and import the given path into it
-    pub fn init(path: &Path, envs: Vec<String>, use_git: bool) -> Result<Mold, Error> {
+    pub fn init(
+        path: &Path,
+        envs: Vec<String>,
+        use_git: bool,
+        use_vars: bool,
+    ) -> Result<Mold, Error> {
         let root_dir = path.parent().unwrap_or(&Path::new("/")).to_path_buf();
         let mold_dir = root_dir.join(".mold");
 
@@ -155,6 +163,7 @@ impl Mold {
             envs,
             vars,
             use_git,
+            use_vars,
         };
 
         mold.open(path, "")?;
