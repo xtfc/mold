@@ -11,6 +11,8 @@ use spinners::Spinner;
 use spinners::Spinners;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
+use std::process::Stdio;
 use std::str::FromStr;
 use std::string::ToString;
 use url::Url;
@@ -33,13 +35,32 @@ where
     }
 }
 
+fn new_cmd() -> Command {
+    let mut cmd = Command::new("git");
+    cmd.stderr(Stdio::null()).stdout(Stdio::null());
+    cmd
+}
+
+fn ref_exists(path: &Path, ref_: &str) -> Result<bool, Error> {
+    let exists = new_cmd()
+        .arg("rev-parse")
+        .arg(ref_)
+        .arg("--")
+        .current_dir(path)
+        .spawn()
+        .and_then(|mut handle| handle.wait())?
+        .success();
+
+    Ok(exists)
+}
+
 /// Clone a git repository
 fn pull(url: &str, path: &Path) -> Result<(), Error> {
     let config = git2::Config::open_default()?;
 
     with_authentication(url, &config, |creds| {
         // start spinner
-        log::info!("git clone {} {}", url, path.display());
+        log::info!("libgit2 clone {} {}", url, path.display());
         let label = format!(
             "{} {} into {}...",
             "Cloning".green(),
@@ -75,6 +96,7 @@ fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
         );
 
         with_spinner(label, || {
+            log::info!("cd {} && libgit2 checkout {}", path.display(), ref_);
             // locate existing repo
             let repo = Repository::discover(path)?;
             let mut remote = repo.find_remote("origin")?;
@@ -103,6 +125,57 @@ fn checkout(path: &Path, ref_: &str) -> Result<(), Error> {
 
             Ok(())
         })
+    })
+}
+
+fn pull_git(url: &str, path: &Path) -> Result<(), Error> {
+    // start spinner
+    log::info!("git clone {} {}", url, path.display());
+    let label = format!(
+        "{} {} into {}...",
+        "Cloning".green(),
+        url.yellow(),
+        path.display().to_string().yellow()
+    );
+
+    with_spinner(label, || {
+        let mut cmd = new_cmd();
+        cmd.arg("clone").arg(url).arg(path);
+        cmd.spawn().and_then(|mut handle| handle.wait())?;
+        Ok(())
+    })
+}
+
+fn checkout_git(path: &Path, ref_: &str) -> Result<(), Error> {
+    // start spinner
+    log::info!(
+        "cd {} && git fetch --all --prune && git checkout {}",
+        path.display(),
+        ref_
+    );
+    let label = format!(
+        "{} {} to {}...",
+        "Updating".green(),
+        path.display().to_string().yellow(),
+        ref_.yellow()
+    );
+
+    with_spinner(label, || {
+        let mut cmd = new_cmd();
+        cmd.args(&["fetch", "--all", "--prune"]).current_dir(path);
+        cmd.spawn().and_then(|mut handle| handle.wait())?;
+
+        let refs = vec![format!("tags/{}", ref_), format!("origin/{}", ref_)];
+        for target in refs {
+            if ref_exists(path, &target)? {
+                let mut command = new_cmd();
+                command.arg("checkout").arg(target).current_dir(path);
+                command.spawn().and_then(|mut handle| handle.wait())?;
+                break;
+            }
+        }
+
+        Ok(())
     })
 }
 
@@ -145,15 +218,24 @@ impl Remote {
         self.path(mold_dir).is_dir()
     }
 
-    pub fn pull(&self, mold_dir: &Path) -> Result<(), Error> {
+    pub fn pull(&self, mold_dir: &Path, use_git: bool) -> Result<(), Error> {
         let path = self.path(mold_dir);
         // first attempt to pull with an implicit https://
-        pull(&format!("https://{}", self.url), &path).or_else(|_| pull(&self.url, &path))
+        if use_git {
+            pull_git(&format!("https://{}", self.url), &path)
+                .or_else(|_| pull_git(&self.url, &path))
+        } else {
+            pull(&format!("https://{}", self.url), &path).or_else(|_| pull(&self.url, &path))
+        }
     }
 
-    pub fn checkout(&self, mold_dir: &Path) -> Result<(), Error> {
+    pub fn checkout(&self, mold_dir: &Path, use_git: bool) -> Result<(), Error> {
         let path = self.path(mold_dir);
-        checkout(&path, &self.ref_)
+        if use_git {
+            checkout_git(&path, &self.ref_)
+        } else {
+            checkout(&path, &self.ref_)
+        }
     }
 
     /// Parse a string into an Remote
